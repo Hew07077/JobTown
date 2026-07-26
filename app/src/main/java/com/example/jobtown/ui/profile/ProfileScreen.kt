@@ -1,175 +1,248 @@
 package com.example.jobtown.ui.profile
 
-import android.util.Patterns
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.jobtown.Screen
 import com.example.jobtown.data.User
-import com.example.jobtown.ui.theme.DeepGreenDark
-import com.example.jobtown.ui.theme.SageGreenMain
+import com.example.jobtown.data.UserRole
+import com.example.jobtown.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     navController: NavController,
-    currentUser: User?,
-    onUpdateUser: (User) -> Unit,
-    onLogout: () -> Unit
+    currentUser: User? = null,
+    onLogout: () -> Unit = {}
 ) {
-    var nameInput by remember { mutableStateOf(currentUser?.name ?: "") }
-    var emailInput by remember { mutableStateOf(currentUser?.email ?: "") }
-    var feedbackMsg by remember { mutableStateOf("") }
-    var isError by remember { mutableStateOf(false) }
+    val isEmployer = currentUser?.role == UserRole.EMPLOYER
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("User Profile", fontWeight = FontWeight.Bold, color = DeepGreenDark) },
+                title = {
+                    Text(
+                        text = "Profile",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextDark
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        navController.navigate(Screen.Home.route) {
-                            popUpTo(Screen.Home.route) { inclusive = true }
+                    IconButton(
+                        onClick = {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(Screen.Home.route) { inclusive = true }
+                            }
                         }
-                    }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back to Home", tint = DeepGreenDark)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back to Home",
+                            tint = DeepGreenDark
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
             )
-        }
+        },
+        containerColor = BackgroundWhite
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(Color(0xFFFAFAFA))
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .verticalScroll(rememberScrollState())
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // User Initial Icon
             Surface(
-                shape = RoundedCornerShape(50.dp),
                 color = SageGreenMain,
-                modifier = Modifier.size(80.dp)
+                shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(90.dp)
+                            .clip(CircleShape)
+                            .background(SageGreenLight)
+                            .border(2.dp, SageGreenDark, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isEmployer) Icons.Default.Business else Icons.Default.Person,
+                            contentDescription = "Avatar",
+                            tint = DeepGreenDark,
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     Text(
-                        text = if (nameInput.isNotEmpty()) nameInput.take(1).uppercase() else "U",
-                        fontSize = 32.sp,
+                        text = currentUser?.name ?: "User Name",
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
+                        color = TextDark
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = currentUser?.email ?: "user@example.com",
+                        fontSize = 14.sp,
                         color = DeepGreenDark
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Surface(
+                        color = DeepGreenDark,
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = if (isEmployer) "Employer Account" else "Job Seeker",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ProfileOptionItem(
+                    icon = Icons.Default.Edit,
+                    title = "Edit Profile",
+                    onClick = { }
+                )
+
+                if (!isEmployer) {
+                    ProfileOptionItem(
+                        icon = Icons.Default.Description,
+                        title = "Resume / CV",
+                        onClick = { }
+                    )
+                }
+
+                ProfileOptionItem(
+                    icon = Icons.Default.Notifications,
+                    title = "Notifications",
+                    onClick = { }
+                )
+
+                ProfileOptionItem(
+                    icon = Icons.Default.Settings,
+                    title = "Settings",
+                    onClick = { }
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = onLogout,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ExitToApp,
+                        contentDescription = "Logout",
+                        tint = Color.Red
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Log Out",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Red
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
 
-            OutlinedTextField(
-                value = nameInput,
-                onValueChange = { nameInput = it; feedbackMsg = "" },
-                label = { Text("Display Name") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            OutlinedTextField(
-                value = emailInput,
-                onValueChange = { emailInput = it; feedbackMsg = "" },
-                label = { Text("Email Address") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Read-only Account Role Field
-            OutlinedTextField(
-                value = currentUser?.role?.replaceFirstChar { it.uppercase() } ?: "Seeker",
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Account Role (Fixed)") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    disabledTextColor = Color.Gray,
-                    disabledBorderColor = Color.LightGray,
-                    disabledLabelColor = Color.Gray
-                ),
-                enabled = false
-            )
-
-            if (feedbackMsg.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = feedbackMsg,
-                    color = if (isError) Color.Red else Color(0xFF2E7D32),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
+@Composable
+fun ProfileOptionItem(
+    icon: ImageVector,
+    title: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(SageGreenLight),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = DeepGreenDark,
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.width(16.dp))
 
-            Button(
-                onClick = {
-                    val trimmedName = nameInput.trim()
-                    val trimmedEmail = emailInput.trim()
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = TextDark,
+                modifier = Modifier.weight(1f)
+            )
 
-                    if (trimmedName.isBlank() || trimmedEmail.isBlank()) {
-                        isError = true
-                        feedbackMsg = "Fields cannot be blank."
-                    } else if (!Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()) {
-                        isError = true
-                        feedbackMsg = "Please enter a valid email format."
-                    } else if (currentUser != null) {
-                        val updated = currentUser.copy(
-                            name = trimmedName,
-                            email = trimmedEmail
-                        )
-                        onUpdateUser(updated)
-                        isError = false
-                        feedbackMsg = "Profile successfully updated!"
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = SageGreenMain)
-            ) {
-                Text("Save Changes", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DeepGreenDark)
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(
-                onClick = onLogout,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.1f))
-            ) {
-                Text("Log Out", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Red)
-            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = SageGreenDark
+            )
         }
     }
 }

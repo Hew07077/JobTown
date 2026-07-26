@@ -1,14 +1,18 @@
 package com.example.jobtown.data
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class JobApplication(
-    val id: String,
-    val jobId: String,
-    val applicantUid: String,
-    val applicantName: String,
+    val id: String = "",
+    val jobId: String = "",
+    val userId: String = "",
     val jobTitle: String = "",
     val companyName: String = "",
+    val applicantName: String = "",
+    val applicantEmail: String = "",
+    val resumeUrl: String = "",
+    val coverLetter: String = "",
     val status: String = "Pending",
-    val appliedDate: String = "Today",
-    val appliedAt: Long = System.currentTimeMillis(),
-    val matchScore: Int = 80
+    val appliedAt: String = ""
 )

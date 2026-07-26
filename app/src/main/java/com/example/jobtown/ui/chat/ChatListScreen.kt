@@ -9,122 +9,186 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
-import com.example.jobtown.data.JobApplication
-import com.example.jobtown.ui.theme.DarkTextPurple
+import com.example.jobtown.data.ChatRoom
+import com.example.jobtown.data.User
 import com.example.jobtown.ui.theme.DeepGreenDark
+import com.example.jobtown.ui.theme.SageGreenDark
+import com.example.jobtown.ui.theme.SageGreenLight
+import com.example.jobtown.ui.theme.SageGreenMain
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatListScreen(
-    navController: NavController,
-    userRole: String = "seeker",
-    userId: String = "",
-    applications: List<JobApplication> = emptyList(),
-    onUpdateStatus: (String, String) -> Unit = { _, _ -> }
+    currentUser: User?,
+    chatRooms: List<ChatRoom>,
+    isLoading: Boolean,
+    onChatRoomClick: (String, String) -> Unit // roomId, otherUserName
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFFAFAFA))
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Header Section
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(130.dp),
-                color = Color(0xFFA1C695),
-                shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.padding(24.dp)
-                ) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
                     Text(
-                        text = "Messages",
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = DarkTextPurple,
-                        textAlign = TextAlign.Center
+                        text = "MESSAGES",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = SageGreenDark,
+                        letterSpacing = 1.2.sp
                     )
-                }
-            }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Conversations",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = DeepGreenDark
+            )
+            Spacer(modifier = Modifier.height(12.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (applications.isEmpty()) {
+            if (isLoading) {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
+                        .fillMaxWidth()
+                        .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "No active conversations found.",
-                        fontSize = 15.sp,
-                        color = Color.Gray,
-                        textAlign = TextAlign.Center
-                    )
+                    CircularProgressIndicator(color = SageGreenDark)
+                }
+            } else if (chatRooms.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(SageGreenLight),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Forum,
+                                contentDescription = null,
+                                tint = DeepGreenDark,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Text(
+                            text = "No messages yet",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = DeepGreenDark
+                        )
+                        Text(
+                            text = "Conversations with employers or applicants will appear here once started.",
+                            fontSize = 13.sp,
+                            color = Color.Gray,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentPadding = PaddingValues(bottom = 80.dp, top = 4.dp)
                 ) {
-                    items(applications) { app ->
+                    items(chatRooms) { room ->
+                        // Determine the name of the other participant relative to currentUser
+                        val isUser1 = room.user1Id == currentUser?.id
+                        val otherName = if (isUser1) room.user2Name else room.user1Name
+                        val otherId = if (isUser1) room.user2Id else room.user1Id
+
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { /* Open Chat Detail */ },
+                                .clickable { onChatRoomClick(room.id, otherName) },
                             shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(containerColor = Color.White),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Surface(
-                                    modifier = Modifier.size(48.dp),
-                                    shape = CircleShape,
-                                    color = Color(0xFFA1C695).copy(alpha = 0.3f)
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(SageGreenLight),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Person,
-                                            contentDescription = null,
-                                            tint = DeepGreenDark
-                                        )
-                                    }
+                                    Text(
+                                        text = otherName.take(1).uppercase(),
+                                        fontWeight = FontWeight.Bold,
+                                        color = DeepGreenDark,
+                                        fontSize = 18.sp
+                                    )
                                 }
 
-                                Spacer(modifier = Modifier.width(16.dp))
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Application #${app.id.takeLast(4)}",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = DeepGreenDark
-                                    )
+                                Column(
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = otherName,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = DeepGreenDark
+                                        )
+                                        if (room.lastMessageTimestamp > 0L) {
+                                            Text(
+                                                text = formatTime(room.lastMessageTimestamp),
+                                                fontSize = 11.sp,
+                                                color = Color.Gray
+                                            )
+                                        }
+                                    }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "Status: ${app.status.replaceFirstChar { it.uppercase() }}",
+                                        text = if (room.lastMessage.isNotBlank()) room.lastMessage else "Tap to start chatting...",
                                         fontSize = 13.sp,
-                                        color = DarkTextPurple,
+                                        color = if (room.lastMessage.isNotBlank()) Color.Gray else SageGreenDark,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -133,7 +197,8 @@ fun ChatListScreen(
                                 Icon(
                                     imageVector = Icons.Default.ChevronRight,
                                     contentDescription = null,
-                                    tint = Color.Gray
+                                    tint = SageGreenMain,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
@@ -142,4 +207,9 @@ fun ChatListScreen(
             }
         }
     }
+}
+
+private fun formatTime(timestamp: Long): String {
+    val sdf = SimpleDateFormat("MMM dd, hh:mm a", Locale.getDefault())
+    return sdf.format(Date(timestamp))
 }

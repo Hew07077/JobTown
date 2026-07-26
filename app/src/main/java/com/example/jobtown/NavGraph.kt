@@ -11,13 +11,13 @@ import com.example.jobtown.ui.applied.MyAppliedScreen
 import com.example.jobtown.ui.auth.CompleteProfileScreen
 import com.example.jobtown.ui.auth.LoginScreen
 import com.example.jobtown.ui.auth.SignUpScreen
+import com.example.jobtown.ui.auth.StartupScreen
 import com.example.jobtown.ui.chat.ChatListScreen
 import com.example.jobtown.ui.home.HomeScreen
 import com.example.jobtown.ui.job.JobDetailScreen
 import com.example.jobtown.ui.job.PostJobScreen
 import com.example.jobtown.ui.profile.ProfileScreen
 import com.example.jobtown.ui.schedule.ScheduleScreen
-import com.example.jobtown.ui.startup.StartupScreen
 
 @Composable
 fun NavGraph(
@@ -34,79 +34,117 @@ fun NavGraph(
 ) {
     NavHost(
         navController = navController,
-        startDestination = Screen.Startup.route
+        startDestination = "startup"
     ) {
-        composable(Screen.Startup.route) {
-            StartupScreen(navController = navController)
-        }
-        composable(Screen.Login.route) {
-            LoginScreen(
-                navController = navController,
-                onLoginSuccess = onLoginSuccess
-            )
-        }
-        composable(Screen.SignUp.route) {
-            SignUpScreen(
-                navController = navController,
-                onSignUpSuccess = { user ->
-                    onLoginSuccess(user)
+        composable("startup") {
+            StartupScreen(
+                onNavigateToLogin = {
+                    navController.navigate("login") {
+                        popUpTo("startup") { inclusive = true }
+                    }
                 }
             )
         }
-        composable(Screen.CompleteProfile.route) {
-            CompleteProfileScreen(
-                navController = navController,
-                currentUser = currentUser,
-                onUpdateUser = onUpdateUser
+        composable("login") {
+            LoginScreen(
+                onLoginSuccess = { user ->
+                    onLoginSuccess(user)
+                    navController.navigate("home") {
+                        popUpTo("startup") { inclusive = true }
+                    }
+                },
+                onSignUpClick = {
+                    navController.navigate("sign_up")
+                }
             )
         }
-        composable(Screen.Home.route) {
+        composable("sign_up") {
+            SignUpScreen(
+                onNextClick = { name, email, password, role ->
+                    val newUser = User(
+                        id = "user_${System.currentTimeMillis()}",
+                        name = name,
+                        email = email,
+                        password = password,
+                        role = role
+                    )
+                    onLoginSuccess(newUser)
+                    navController.navigate("complete_profile")
+                },
+                onLoginClick = {
+                    navController.navigate("login")
+                }
+            )
+        }
+        composable("complete_profile") {
+            CompleteProfileScreen(
+                user = currentUser,
+                onComplete = { updatedUser ->
+                    onUpdateUser(updatedUser)
+                    navController.navigate("home") {
+                        popUpTo("startup") { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable("home") {
             HomeScreen(
                 navController = navController,
-                jobs = jobs,
                 currentUser = currentUser,
-                onSearch = onSearch
+                jobsList = jobs,
+                isLoading = false,
+                onJobClick = { jobId ->
+                    navController.navigate("job_detail/$jobId")
+                },
+                onPostJobClick = {
+                    navController.navigate("post_job")
+                },
+                onProfileClick = {
+                    navController.navigate("profile")
+                }
             )
         }
-        composable(Screen.PostJob.route) {
+        composable("post_job") {
             PostJobScreen(
                 navController = navController,
                 currentUser = currentUser,
-                onJobPosted = onJobPosted
+                onJobPosted = { job ->
+                    onJobPosted(job)
+                    navController.popBackStack()
+                }
             )
         }
-        composable(Screen.Chat.route) {
+        composable("chat") {
             ChatListScreen(
                 navController = navController,
-                userRole = currentUser?.role ?: "seeker",
-                userId = currentUser?.id ?: "",
-                applications = applications,
-                onUpdateStatus = onUpdateStatus
+                user = currentUser,
+                chats = emptyList()
             )
         }
-        composable(Screen.Applied.route) {
+        composable("applied") {
             MyAppliedScreen(
                 navController = navController,
-                applications = applications,
-                allJobs = jobs,
-                userRole = currentUser?.role ?: "seeker",
-                userId = currentUser?.id ?: "",
-                onUpdateApplicationStatus = onUpdateStatus
+                user = currentUser,
+                applications = applications
             )
         }
-        composable(Screen.Schedule.route) {
-            ScheduleScreen(navController = navController)
-
-
-
-
+        composable("schedule") {
+            ScheduleScreen(
+                navController = navController,
+                user = currentUser,
+                schedules = emptyList()
+            )
         }
-        composable(Screen.Profile.route) {
+        composable("profile") {
             ProfileScreen(
                 navController = navController,
                 currentUser = currentUser,
-                onUpdateUser = onUpdateUser,
-                onLogout = onLogout
+                onLogout = {
+                    onLogout()
+                    navController.navigate("startup") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
             )
         }
         composable("job_detail/{jobId}") { backStackEntry ->
@@ -115,10 +153,7 @@ fun NavGraph(
             if (job != null) {
                 JobDetailScreen(
                     navController = navController,
-                    job = job,
-                    onApplyClick = {
-                        navController.popBackStack()
-                    }
+                    job = job
                 )
             }
         }
