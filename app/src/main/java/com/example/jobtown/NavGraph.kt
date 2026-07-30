@@ -12,6 +12,7 @@ import com.example.jobtown.ui.auth.CompleteProfileScreen
 import com.example.jobtown.ui.auth.LoginScreen
 import com.example.jobtown.ui.auth.SignUpScreen
 import com.example.jobtown.ui.auth.StartupScreen
+import com.example.jobtown.ui.chat.ChatDetailScreen
 import com.example.jobtown.ui.chat.ChatListScreen
 import com.example.jobtown.ui.home.HomeScreen
 import com.example.jobtown.ui.job.JobDetailScreen
@@ -116,9 +117,22 @@ fun NavGraph(
         }
         composable("chat") {
             ChatListScreen(
+                currentUser = currentUser,
+                chatRooms = emptyList(),
+                isLoading = false,
+                onChatRoomClick = { roomId, otherUserName ->
+                    navController.navigate("chat_detail/$roomId/$otherUserName")
+                }
+            )
+        }
+        composable("chat_detail/{roomId}/{otherUserName}") { backStackEntry ->
+            val roomId = backStackEntry.arguments?.getString("roomId") ?: ""
+            val otherUserName = backStackEntry.arguments?.getString("otherUserName") ?: ""
+            ChatDetailScreen(
                 navController = navController,
-                user = currentUser,
-                chats = emptyList()
+                chatTitle = "Chat",
+                companyName = otherUserName,
+                currentUserId = currentUser?.id ?: ""
             )
         }
         composable("applied") {
