@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.*
@@ -19,14 +20,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.jobtown.data.Job
-import com.example.jobtown.ui.theme.DarkTextPurple
-import com.example.jobtown.ui.theme.DeepGreenDark
+import com.example.jobtown.ui.theme.*
 
 @Composable
 fun JobDetailScreen(
     navController: NavController,
     jobId: String? = null,
-    job: Job? = null
+    job: Job? = null,
+    isApplied: Boolean = false,
+    onApplyClick: () -> Unit = {}
 ) {
     val displayJob = job ?: Job(
         id = jobId ?: "1",
@@ -41,43 +43,71 @@ fun JobDetailScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFFAFAFA))
+            .background(BackgroundWhite)
     ) {
         Column(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Header Surface
+            // Header Hero Banner
             Surface(
-                color = Color(0xFFA1C695),
+                color = SageGreenMain,
                 shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(24.dp)) {
+                Column(
+                    modifier = Modifier
+                        .statusBarsPadding()
+                        .padding(24.dp)
+                ) {
                     IconButton(
                         onClick = { navController.popBackStack() },
                         modifier = Modifier.padding(bottom = 8.dp)
                     ) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = DarkTextPurple)
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            tint = DeepGreenDark
+                        )
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Surface(
                             color = Color.White,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.size(52.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.size(56.dp),
+                            shadowElevation = 2.dp
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Work, contentDescription = null, tint = DeepGreenDark)
+                                Icon(
+                                    imageVector = Icons.Default.Work,
+                                    contentDescription = null,
+                                    tint = DeepGreenDark,
+                                    modifier = Modifier.size(28.dp)
+                                )
                             }
                         }
 
                         Spacer(modifier = Modifier.width(16.dp))
 
-                        Column {
-                            Text(displayJob.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = DarkTextPurple)
-                            Text(displayJob.company, fontSize = 14.sp, color = DeepGreenDark, fontWeight = FontWeight.Medium)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = displayJob.title,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DeepGreenDark
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = displayJob.company,
+                                fontSize = 14.sp,
+                                color = TextDark.copy(alpha = 0.8f),
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
                 }
@@ -85,47 +115,137 @@ fun JobDetailScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Details Body
+            // Job Metadata & Details Body
             Column(modifier = Modifier.padding(horizontal = 24.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(displayJob.location, fontSize = 14.sp, color = Color.Gray)
+                // Location Chip
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    Surface(
+                        color = SageGreenLight,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LocationOn,
+                                contentDescription = null,
+                                tint = DeepGreenDark,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = displayJob.location,
+                                fontSize = 13.sp,
+                                color = DeepGreenDark,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Text(displayJob.salary, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                // Salary Card Display
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(16.dp),
+                    tonalElevation = 1.dp,
+                    shadowElevation = 1.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(SageGreenLight, RoundedCornerShape(10.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AttachMoney,
+                                contentDescription = null,
+                                tint = DeepGreenDark
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column {
+                            Text(
+                                text = "Offered Salary",
+                                fontSize = 12.sp,
+                                color = TextDark.copy(alpha = 0.6f)
+                            )
+                            Text(
+                                text = displayJob.salary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DeepGreenDark
+                            )
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                Text("Job Description", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DarkTextPurple)
+                // Job Description
+                Text(
+                    text = "Job Description",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = DeepGreenDark
+                )
+
                 Spacer(modifier = Modifier.height(8.dp))
+
                 Text(
                     text = displayJob.description,
                     fontSize = 14.sp,
-                    color = Color.DarkGray,
+                    color = TextDark.copy(alpha = 0.8f),
                     lineHeight = 22.sp
                 )
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
 
         // Apply Bottom Action Bar
         Surface(
             color = Color.White,
-            shadowElevation = 8.dp,
+            shadowElevation = 12.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Box(modifier = Modifier.padding(20.dp)) {
+            Box(
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(20.dp)
+            ) {
                 Button(
-                    onClick = { /* Handle application submit */ },
+                    onClick = onApplyClick,
+                    enabled = !isApplied,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
                     shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DeepGreenDark,
+                        disabledContainerColor = SageGreenLight
+                    )
                 ) {
-                    Text("Apply Now", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(
+                        text = if (isApplied) "Application Submitted" else "Apply Now",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isApplied) DeepGreenDark else Color.White
+                    )
                 }
             }
         }

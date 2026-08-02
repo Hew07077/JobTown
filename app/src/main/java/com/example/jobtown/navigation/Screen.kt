@@ -1,0 +1,25 @@
+package com.example.jobtown
+
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+
+sealed class Screen(val route: String) {
+    object Home : Screen("home")
+    object Applied : Screen("applied")
+    object Schedule : Screen("schedule")
+    object Chat : Screen("chat")
+
+    object ChatDetail : Screen("chat_detail/{chatRoomId}?company={company}&title={title}&initialQuestion={initialQuestion}") {
+        fun createRoute(
+            chatRoomId: String,
+            company: String = "",
+            title: String = "",
+            initialQuestion: String = ""
+        ): String {
+            val encodedCompany = URLEncoder.encode(company, StandardCharsets.UTF_8.toString())
+            val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
+            val encodedQuestion = URLEncoder.encode(initialQuestion, StandardCharsets.UTF_8.toString())
+            return "chat_detail/$chatRoomId?company=$encodedCompany&title=$encodedTitle&initialQuestion=$encodedQuestion"
+        }
+    }
+}

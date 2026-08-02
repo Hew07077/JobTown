@@ -21,7 +21,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.example.jobtown.Screen
 import com.example.jobtown.data.User
 import com.example.jobtown.data.UserRole
 import com.example.jobtown.ui.theme.*
@@ -47,16 +46,10 @@ fun ProfileScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            navController.navigate(Screen.Home.route) {
-                                popUpTo(Screen.Home.route) { inclusive = true }
-                            }
-                        }
-                    ) {
+                    IconButton(onClick = { navController.popBackStack() }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back to Home",
+                            contentDescription = "Back",
                             tint = DeepGreenDark
                         )
                     }

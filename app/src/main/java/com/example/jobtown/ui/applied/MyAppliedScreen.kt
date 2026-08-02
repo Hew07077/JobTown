@@ -4,71 +4,201 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.jobtown.data.JobApplication
 import com.example.jobtown.data.User
-import com.example.jobtown.data.UserRole
+import com.example.jobtown.ui.theme.BackgroundWhite
+import com.example.jobtown.ui.theme.DeepGreenDark
+import com.example.jobtown.ui.theme.SageGreenMain
+import com.example.jobtown.ui.theme.TextDark
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyAppliedScreen(
     navController: NavController,
     user: User?,
-    applications: List<JobApplication>
+    applications: List<JobApplication>,
+    isLoading: Boolean,
+    onRefresh: () -> Unit,
+    onChatWithCompany: (JobApplication) -> Unit
 ) {
-    val isEmployer = user?.role == UserRole.EMPLOYER
-
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(text = if (isEmployer) "Manage Job Applications" else "My Applications")
-                }
+                    Text(
+                        text = "My Applications",
+                        fontWeight = FontWeight.Bold,
+                        color = TextDark
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
             )
-        }
-    ) { paddingValues ->
+        },
+        containerColor = BackgroundWhite
+    ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
+                .padding(innerPadding)
         ) {
-            if (applications.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = if (isEmployer) "No applications submitted for your jobs yet." else "You haven't applied to any jobs yet.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+            when {
+                isLoading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = DeepGreenDark
                     )
                 }
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(applications) { app ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(text = app.jobTitle, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(text = "Company: ${app.companyName}", fontSize = 14.sp)
-                                if (isEmployer) {
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(text = "Applicant: ${app.applicantName} (${app.applicantEmail})", fontSize = 13.sp)
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(text = "Status: ${app.status}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-                            }
+                applications.isEmpty() -> {
+                    Text(
+                        text = "No job applications found.",
+                        color = TextDark.copy(alpha = 0.6f),
+                        fontSize = 14.sp,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(applications, key = { it.id.ifBlank { it.jobTitle + it.companyName } }) { application ->
+                            ApplicationCard(
+                                application = application,
+                                onChatWithCompany = { onChatWithCompany(application) }
+                            )
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun ApplicationCard(
+    application: JobApplication,
+    onChatWithCompany: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = SageGreenMain.copy(alpha = 0.3f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Business,
+                                contentDescription = null,
+                                tint = DeepGreenDark,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = application.jobTitle,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = TextDark
+                        )
+                        Text(
+                            text = application.companyName,
+                            fontSize = 13.sp,
+                            color = TextDark.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = SageGreenMain.copy(alpha = 0.4f)
+                ) {
+                    Text(
+                        text = application.status.ifBlank { "Pending" },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = DeepGreenDark,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.LocationOn,
+                    contentDescription = null,
+                    tint = TextDark.copy(alpha = 0.5f),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = application.location.ifBlank { "Remote" },
+                    fontSize = 12.sp,
+                    color = TextDark.copy(alpha = 0.5f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Action Button: Direct Trigger
+            Button(
+                onClick = onChatWithCompany,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                shape = RoundedCornerShape(22.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Chat,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Chat with Employer",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
             }
         }
     }

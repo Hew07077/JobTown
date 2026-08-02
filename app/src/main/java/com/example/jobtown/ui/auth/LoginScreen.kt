@@ -26,8 +26,11 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.jobtown.R
+import com.example.jobtown.data.SupabaseClient
 import com.example.jobtown.data.User
 import com.example.jobtown.ui.theme.*
+import io.github.jan.supabase.gotrue.auth
+import io.github.jan.supabase.gotrue.providers.builtin.Email
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -137,14 +140,32 @@ fun LoginScreen(
                                     isLoading = true
                                     errorMessage = ""
                                     scope.launch {
-                                        val bypassUser = User(
-                                            id = "user_${email.hashCode()}",
-                                            name = email.substringBefore("@"),
-                                            email = email.trim(),
-                                            password = password
-                                        )
-                                        isLoading = false
-                                        onLoginSuccess(bypassUser)
+                                        try {
+                                            // 1. Authenticate with Supabase
+                                            SupabaseClient.client.auth.signInWith(Email) {
+                                                this.email = email.trim()
+                                                this.password = password.trim()
+                                            }
+
+                                            // 2. Fetch authenticated user details safely
+                                            val currentAuthUser = SupabaseClient.client.auth.currentUserOrNull()
+
+                                            val authenticatedUser = User(
+                                                id = currentAuthUser?.id ?: "user_${email.hashCode()}",
+                                                name = email.substringBefore("@"),
+                                                email = email.trim(),
+                                                password = password
+                                            )
+
+                                            isLoading = false
+                                            onLoginSuccess(authenticatedUser)
+
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                            isLoading = false
+                                            // 3. User-friendly error message (prevents raw stack traces)
+                                            errorMessage = "Invalid email or password. Please try again."
+                                        }
                                     }
                                 }
                             }

@@ -4,8 +4,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
@@ -44,11 +46,14 @@ fun SignUpScreen(
     var selectedRole by remember { mutableStateOf(UserRole.JOB_SEEKER) }
     var errorMessage by remember { mutableStateOf("") }
 
+    val scrollState = rememberScrollState()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(BackgroundWhite)
     ) {
+        // Top Gradient Header Background
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -59,10 +64,13 @@ fun SignUpScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(scrollState)
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            Spacer(modifier = Modifier.height(20.dp))
+
             Surface(
                 modifier = Modifier
                     .size(90.dp)
@@ -81,7 +89,12 @@ fun SignUpScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text("Create Account", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = DeepGreenDark)
+            Text(
+                text = "Create Account",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = DeepGreenDark
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -92,6 +105,7 @@ fun SignUpScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
+                    // Full Name Input
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it; errorMessage = "" },
@@ -104,6 +118,7 @@ fun SignUpScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
+                    // Email Input
                     OutlinedTextField(
                         value = email,
                         onValueChange = { email = it; errorMessage = "" },
@@ -117,6 +132,7 @@ fun SignUpScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
+                    // Password Input
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it; errorMessage = "" },
@@ -136,6 +152,7 @@ fun SignUpScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
+                    // Confirm Password Input
                     OutlinedTextField(
                         value = confirmPassword,
                         onValueChange = { confirmPassword = it; errorMessage = "" },
@@ -155,9 +172,11 @@ fun SignUpScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    // Role Selector Header
                     Text("I am a:", fontWeight = FontWeight.Bold, color = DeepGreenDark, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(4.dp))
 
+                    // Role Selection Radio Options
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -205,15 +224,18 @@ fun SignUpScreen(
 
                     Button(
                         onClick = {
+                            val cleanName = name.trim()
+                            val cleanEmail = email.trim().lowercase()
+
                             when {
-                                name.isBlank() -> errorMessage = "Please enter your full name."
-                                email.isBlank() || !email.contains("@") -> errorMessage = "Please enter a valid email."
+                                cleanName.isBlank() -> errorMessage = "Please enter your full name."
+                                cleanEmail.isBlank() || !cleanEmail.contains("@") -> errorMessage = "Please enter a valid email address."
                                 password.isBlank() -> errorMessage = "Please enter a password."
-                                password.length < 6 -> errorMessage = "Password must be at least 6 characters."
+                                password.length < 6 -> errorMessage = "Password must be at least 6 characters long."
                                 password != confirmPassword -> errorMessage = "Passwords do not match."
                                 else -> {
                                     errorMessage = ""
-                                    onNextClick(name.trim(), email.trim(), password, selectedRole)
+                                    onNextClick(cleanName, cleanEmail, password, selectedRole)
                                 }
                             }
                         },
@@ -230,7 +252,7 @@ fun SignUpScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            Row {
+            Row(modifier = Modifier.padding(bottom = 16.dp)) {
                 Text(text = "Already have an account? ", color = TextDark.copy(alpha = 0.7f), fontSize = 14.sp)
                 Text(
                     text = "Log In",
