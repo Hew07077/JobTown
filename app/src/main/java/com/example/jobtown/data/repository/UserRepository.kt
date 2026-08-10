@@ -14,7 +14,28 @@ object UserRepository {
     // --- USERS ---
     suspend fun saveUserToSupabase(user: User): Boolean = withContext(Dispatchers.IO) {
         try {
-            SupabaseClient.client.from("users").upsert(user)
+            // Manually check whether a row with this email already exists,
+            // then either UPDATE or INSERT accordingly. This avoids relying
+            // on upsert(...) { onConflict = "email" }, whose exact syntax
+            // depends on the installed supabase-kt version -- update()/
+            // insert() below use the same proven syntax already working
+            // elsewhere in this file.
+            //
+            // This matters because a user's Auth account can end up created
+            // (with a fresh id) before their profile row exists -- e.g. a
+            // previous attempt crashed between signUpWith() and this call.
+            // Without this check, retrying would try to INSERT a second row
+            // with the same email and hit the unique constraint
+            // ("duplicate key value violates unique constraint users_email_key")
+            // instead of updating the existing row.
+            val existing = findUserByEmail(user.email)
+            if (existing != null) {
+                SupabaseClient.client.from("users").update(user) {
+                    filter { eq("email", user.email) }
+                }
+            } else {
+                SupabaseClient.client.from("users").insert(user)
+            }
             true
         } catch (e: Exception) {
             e.printStackTrace()
