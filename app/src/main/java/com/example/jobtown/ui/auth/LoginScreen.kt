@@ -28,7 +28,9 @@ import androidx.compose.ui.unit.sp
 import com.example.jobtown.R
 import com.example.jobtown.data.SupabaseClient
 import com.example.jobtown.data.User
+import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
+import com.example.jobtown.utils.ValidationUtils
 import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.gotrue.providers.builtin.Email
 import kotlinx.coroutines.launch
@@ -44,6 +46,11 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+
+    // Field-level validation errors, shown inline right under each input.
+    var emailError by remember { mutableStateOf<String?>(null) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+
     val scope = rememberCoroutineScope()
 
     Box(
@@ -96,10 +103,18 @@ fun LoginScreen(
                 Column(modifier = Modifier.padding(20.dp)) {
                     OutlinedTextField(
                         value = email,
-                        onValueChange = { email = it; errorMessage = "" },
+                        onValueChange = {
+                            email = it.take(ValidationUtils.EMAIL_MAX_LENGTH)
+                            emailError = null
+                            errorMessage = ""
+                        },
                         label = { Text("Email Address") },
                         leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = SageGreenDark) },
                         singleLine = true,
+                        isError = emailError != null,
+                        supportingText = {
+                            emailError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) }
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
@@ -109,7 +124,11 @@ fun LoginScreen(
 
                     OutlinedTextField(
                         value = password,
-                        onValueChange = { password = it; errorMessage = "" },
+                        onValueChange = {
+                            password = it.take(ValidationUtils.PASSWORD_MAX_LENGTH)
+                            passwordError = null
+                            errorMessage = ""
+                        },
                         label = { Text("Password") },
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = SageGreenDark) },
                         trailingIcon = {
@@ -119,6 +138,10 @@ fun LoginScreen(
                             }
                         },
                         singleLine = true,
+                        isError = passwordError != null,
+                        supportingText = {
+                            passwordError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) }
+                        },
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
@@ -133,40 +156,55 @@ fun LoginScreen(
 
                     Button(
                         onClick = {
-                            when {
-                                email.isBlank() -> errorMessage = "Please enter your email address."
-                                password.isBlank() -> errorMessage = "Please enter your password."
-                                else -> {
-                                    isLoading = true
-                                    errorMessage = ""
-                                    scope.launch {
-                                        try {
-                                            // 1. Authenticate with Supabase
-                                            SupabaseClient.client.auth.signInWith(Email) {
-                                                this.email = email.trim()
-                                                this.password = password.trim()
-                                            }
+                            // Validate every field before we ever touch the network.
+                            val emailValidation = ValidationUtils.validateEmail(email)
+                            val passwordValidation = ValidationUtils.validateLoginPassword(password)
+                            emailError = emailValidation
+                            passwordError = passwordValidation
 
-                                            // 2. Fetch authenticated user details safely
-                                            val currentAuthUser = SupabaseClient.client.auth.currentUserOrNull()
+                            if (emailValidation != null || passwordValidation != null) {
+                                return@Button
+                            }
 
-                                            val authenticatedUser = User(
-                                                id = currentAuthUser?.id ?: "user_${email.hashCode()}",
-                                                name = email.substringBefore("@"),
-                                                email = email.trim(),
-                                                password = password
-                                            )
-
-                                            isLoading = false
-                                            onLoginSuccess(authenticatedUser)
-
-                                        } catch (e: Exception) {
-                                            e.printStackTrace()
-                                            isLoading = false
-                                            // 3. User-friendly error message (prevents raw stack traces)
-                                            errorMessage = "Invalid email or password. Please try again."
-                                        }
+                            isLoading = true
+                            errorMessage = ""
+                            scope.launch {
+                                try {
+                                    // 1. Authenticate with Supabase
+                                    SupabaseClient.client.auth.signInWith(Email) {
+                                        this.email = email.trim()
+                                        this.password = password.trim()
                                     }
+
+                                    // 2. Fetch authenticated user details safely
+                                    val currentAuthUser = SupabaseClient.client.auth.currentUserOrNull()
+
+                                    // 3. Pull the real profile row (name, phone, location, bio,
+                                    //    role, etc.) from the "users" table instead of guessing
+                                    //    one locally -- this is what was previously missing.
+                                    val storedUser = UserRepository.findUserByEmail(email.trim())
+
+                                    val authenticatedUser = storedUser?.copy(
+                                        id = currentAuthUser?.id ?: storedUser.id,
+                                        password = password
+                                    ) ?: User(
+                                        // Fallback only if no matching row exists yet in the
+                                        // database (e.g. account created outside the normal
+                                        // signup flow).
+                                        id = currentAuthUser?.id ?: "user_${email.hashCode()}",
+                                        name = email.substringBefore("@"),
+                                        email = email.trim(),
+                                        password = password
+                                    )
+
+                                    isLoading = false
+                                    onLoginSuccess(authenticatedUser)
+
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    isLoading = false
+                                    // 3. User-friendly error message (prevents raw stack traces)
+                                    errorMessage = "Invalid email or password. Please try again."
                                 }
                             }
                         },

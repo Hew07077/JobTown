@@ -16,11 +16,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.jobtown.data.SupabaseClient
 import com.example.jobtown.data.User
+import com.example.jobtown.data.UserRole
 import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
+import com.example.jobtown.utils.ValidationUtils
 import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.gotrue.providers.builtin.Email
 import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,9 +38,19 @@ fun CompleteProfileScreen(
     var portfolioUrl by remember { mutableStateOf("") }
     var bio by remember { mutableStateOf(user?.bio ?: "") }
 
+    val isEmployer = user?.role == UserRole.EMPLOYER
+    val displayName = (if (isEmployer) user?.companyName else user?.name)?.ifBlank { null } ?: "User"
+
     var expandedExperience by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+
+    // Field-level validation errors, shown inline right under each input.
+    var phoneError by remember { mutableStateOf<String?>(null) }
+    var locationError by remember { mutableStateOf<String?>(null) }
+    var skillsError by remember { mutableStateOf<String?>(null) }
+    var portfolioUrlError by remember { mutableStateOf<String?>(null) }
+    var bioError by remember { mutableStateOf<String?>(null) }
 
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -64,7 +77,7 @@ fun CompleteProfileScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Almost Done, ${user?.name ?: "User"}! ✨",
+                text = "Almost Done, $displayName! ✨",
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = DeepGreenDark
@@ -78,12 +91,20 @@ fun CompleteProfileScreen(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Phone Input
+            // Phone Input -- digits only (optional leading +), 7-15 digits
             OutlinedTextField(
                 value = phone,
-                onValueChange = { phone = it; errorMessage = "" },
+                onValueChange = {
+                    phone = ValidationUtils.filterPhoneInput(it)
+                    phoneError = null
+                    errorMessage = ""
+                },
                 label = { Text("Phone Number") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                isError = phoneError != null,
+                supportingText = {
+                    phoneError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 singleLine = true
@@ -92,8 +113,16 @@ fun CompleteProfileScreen(
             // Location Input
             OutlinedTextField(
                 value = location,
-                onValueChange = { location = it; errorMessage = "" },
-                label = { Text("Location (City, Country)") },
+                onValueChange = {
+                    location = it.take(ValidationUtils.LOCATION_MAX_LENGTH)
+                    locationError = null
+                    errorMessage = ""
+                },
+                label = { Text(if (isEmployer) "Company Location (City, Country)" else "Location (City, Country)") },
+                isError = locationError != null,
+                supportingText = {
+                    locationError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 singleLine = true
@@ -102,8 +131,20 @@ fun CompleteProfileScreen(
             // Skills Input
             OutlinedTextField(
                 value = skills,
-                onValueChange = { skills = it; errorMessage = "" },
-                label = { Text("Key Skills (e.g., Kotlin, React, UI/UX)") },
+                onValueChange = {
+                    skills = it.take(ValidationUtils.SKILLS_MAX_LENGTH)
+                    skillsError = null
+                    errorMessage = ""
+                },
+                label = { Text(if (isEmployer) "Key Skills Needed (e.g., Kotlin, React, UI/UX)" else "Key Skills (e.g., Kotlin, React, UI/UX)") },
+                isError = skillsError != null,
+                supportingText = {
+                    Text(
+                        text = skillsError ?: "${skills.length}/${ValidationUtils.SKILLS_MAX_LENGTH}",
+                        color = if (skillsError != null) Color.Red else TextDark.copy(alpha = 0.5f),
+                        fontSize = 12.sp
+                    )
+                },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 singleLine = true
@@ -119,7 +160,7 @@ fun CompleteProfileScreen(
                     value = experienceLevel,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Experience Level") },
+                    label = { Text(if (isEmployer) "Experience Level Required" else "Experience Level") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedExperience) },
                     modifier = Modifier
                         .menuAnchor()
@@ -143,11 +184,20 @@ fun CompleteProfileScreen(
                 }
             }
 
-            // Portfolio URL Input
+            // Portfolio URL Input -- optional, but must be a valid URL if provided
             OutlinedTextField(
                 value = portfolioUrl,
-                onValueChange = { portfolioUrl = it; errorMessage = "" },
-                label = { Text("Portfolio / LinkedIn / GitHub URL") },
+                onValueChange = {
+                    portfolioUrl = it.take(ValidationUtils.URL_MAX_LENGTH)
+                    portfolioUrlError = null
+                    errorMessage = ""
+                },
+                label = { Text(if (isEmployer) "Company Website / LinkedIn URL" else "Portfolio / LinkedIn / GitHub URL") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                isError = portfolioUrlError != null,
+                supportingText = {
+                    portfolioUrlError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 singleLine = true
@@ -156,8 +206,20 @@ fun CompleteProfileScreen(
             // Bio Summary Input
             OutlinedTextField(
                 value = bio,
-                onValueChange = { bio = it; errorMessage = "" },
-                label = { Text("Professional Summary / Bio") },
+                onValueChange = {
+                    bio = it.take(ValidationUtils.BIO_MAX_LENGTH)
+                    bioError = null
+                    errorMessage = ""
+                },
+                label = { Text(if (isEmployer) "Company Description" else "Professional Summary / Bio") },
+                isError = bioError != null,
+                supportingText = {
+                    Text(
+                        text = bioError ?: "${bio.length}/${ValidationUtils.BIO_MAX_LENGTH}",
+                        color = if (bioError != null) Color.Red else TextDark.copy(alpha = 0.5f),
+                        fontSize = 12.sp
+                    )
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(110.dp),
@@ -178,15 +240,53 @@ fun CompleteProfileScreen(
                         return@Button
                     }
 
+                    // Validate every field before hitting the network.
+                    val phoneValidation = ValidationUtils.validatePhone(phone, required = true)
+                    val locationValidation = ValidationUtils.validateLocation(location, required = true)
+                    val skillsValidation = ValidationUtils.validateSkills(skills)
+                    val portfolioValidation = ValidationUtils.validatePortfolioUrl(portfolioUrl)
+                    val bioValidation = ValidationUtils.validateBio(bio)
+
+                    phoneError = phoneValidation
+                    locationError = locationValidation
+                    skillsError = skillsValidation
+                    portfolioUrlError = portfolioValidation
+                    bioError = bioValidation
+
+                    if (phoneValidation != null || locationValidation != null ||
+                        skillsValidation != null || portfolioValidation != null || bioValidation != null
+                    ) {
+                        errorMessage = "Please fix the highlighted fields before continuing."
+                        return@Button
+                    }
+
                     isLoading = true
                     errorMessage = ""
 
                     scope.launch {
                         try {
-                            // 1. Sign up the user into Supabase Auth
-                            SupabaseClient.client.auth.signUpWith(Email) {
-                                email = user.email
-                                password = user.password
+                            // 1. Sign up the user into Supabase Auth. If this email was
+                            //    already registered in Auth from a previous attempt that
+                            //    crashed/errored before the profile row got saved, fall
+                            //    back to signing in instead of hard-failing here.
+                            try {
+                                SupabaseClient.client.auth.signUpWith(Email) {
+                                    email = user.email
+                                    password = user.password
+                                }
+                            } catch (signUpError: Exception) {
+                                val message = signUpError.message ?: ""
+                                val alreadyRegistered = message.contains("already registered", ignoreCase = true) ||
+                                    message.contains("already exists", ignoreCase = true)
+
+                                if (alreadyRegistered) {
+                                    SupabaseClient.client.auth.signInWith(Email) {
+                                        email = user.email
+                                        password = user.password
+                                    }
+                                } else {
+                                    throw signUpError
+                                }
                             }
 
                             // 2. Fetch authenticated Supabase user ID or fall back to user email
@@ -205,7 +305,11 @@ fun CompleteProfileScreen(
                                 id = finalUserId,
                                 phone = phone.trim(),
                                 location = location.trim(),
-                                bio = compiledBio
+                                bio = compiledBio,
+                                // The "created_at" column is timestamptz -- an empty
+                                // string (the User model's default) would fail to
+                                // insert, so stamp it with the real current time here.
+                                createdAt = Clock.System.now().toString()
                             )
 
                             // 4. Persist user data in PostgreSQL database table
@@ -215,7 +319,7 @@ fun CompleteProfileScreen(
                             if (isSaved) {
                                 onComplete(newUser)
                             } else {
-                                errorMessage = "Failed to save profile details. Please try again."
+                                errorMessage = "Failed to save profile details. This is often caused by a Row Level Security (RLS) policy on the \"users\" table blocking the write — check Supabase Logs for the exact error, or ask a teammate with dashboard access."
                             }
                         } catch (e: Exception) {
                             isLoading = false

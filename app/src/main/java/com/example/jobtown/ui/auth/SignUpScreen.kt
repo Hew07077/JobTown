@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import com.example.jobtown.R
 import com.example.jobtown.data.UserRole
 import com.example.jobtown.ui.theme.*
+import com.example.jobtown.utils.ValidationUtils
 
 @Composable
 fun SignUpScreen(
@@ -44,7 +46,14 @@ fun SignUpScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var selectedRole by remember { mutableStateOf(UserRole.JOB_SEEKER) }
+    val isEmployer = selectedRole == UserRole.EMPLOYER
     var errorMessage by remember { mutableStateOf("") }
+
+    // Field-level validation errors, shown inline right under each input.
+    var nameError by remember { mutableStateOf<String?>(null) }
+    var emailError by remember { mutableStateOf<String?>(null) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var confirmPasswordError by remember { mutableStateOf<String?>(null) }
 
     val scrollState = rememberScrollState()
 
@@ -105,13 +114,29 @@ fun SignUpScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    // Full Name Input
+                    // Full Name (Job Seeker) / Company Name (Employer) -- label,
+                    // icon, keystroke filter and validation rule all switch
+                    // based on the role picked below.
                     OutlinedTextField(
                         value = name,
-                        onValueChange = { name = it; errorMessage = "" },
-                        label = { Text("Full Name") },
-                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = SageGreenDark) },
+                        onValueChange = {
+                            name = if (isEmployer) it.take(ValidationUtils.NAME_MAX_LENGTH) else ValidationUtils.filterNameInput(it)
+                            nameError = null
+                            errorMessage = ""
+                        },
+                        label = { Text(if (isEmployer) "Company Name" else "Full Name") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (isEmployer) Icons.Default.Business else Icons.Default.Person,
+                                contentDescription = null,
+                                tint = SageGreenDark
+                            )
+                        },
                         singleLine = true,
+                        isError = nameError != null,
+                        supportingText = {
+                            nameError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
                     )
@@ -121,10 +146,18 @@ fun SignUpScreen(
                     // Email Input
                     OutlinedTextField(
                         value = email,
-                        onValueChange = { email = it; errorMessage = "" },
+                        onValueChange = {
+                            email = it.take(ValidationUtils.EMAIL_MAX_LENGTH)
+                            emailError = null
+                            errorMessage = ""
+                        },
                         label = { Text("Email Address") },
                         leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = SageGreenDark) },
                         singleLine = true,
+                        isError = emailError != null,
+                        supportingText = {
+                            emailError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) }
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
@@ -135,7 +168,15 @@ fun SignUpScreen(
                     // Password Input
                     OutlinedTextField(
                         value = password,
-                        onValueChange = { password = it; errorMessage = "" },
+                        onValueChange = {
+                            password = it.take(ValidationUtils.PASSWORD_MAX_LENGTH)
+                            passwordError = null
+                            // Re-check the confirm field live so a stale "match" error clears too.
+                            if (confirmPassword.isNotEmpty()) {
+                                confirmPasswordError = ValidationUtils.validateConfirmPassword(password, confirmPassword)
+                            }
+                            errorMessage = ""
+                        },
                         label = { Text("Password") },
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = SageGreenDark) },
                         trailingIcon = {
@@ -145,6 +186,14 @@ fun SignUpScreen(
                             }
                         },
                         singleLine = true,
+                        isError = passwordError != null,
+                        supportingText = {
+                            Text(
+                                text = passwordError ?: "At least ${ValidationUtils.PASSWORD_MIN_LENGTH} characters, with a letter and a number.",
+                                color = if (passwordError != null) Color.Red else TextDark.copy(alpha = 0.5f),
+                                fontSize = 12.sp
+                            )
+                        },
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
@@ -155,7 +204,11 @@ fun SignUpScreen(
                     // Confirm Password Input
                     OutlinedTextField(
                         value = confirmPassword,
-                        onValueChange = { confirmPassword = it; errorMessage = "" },
+                        onValueChange = {
+                            confirmPassword = it.take(ValidationUtils.PASSWORD_MAX_LENGTH)
+                            confirmPasswordError = null
+                            errorMessage = ""
+                        },
                         label = { Text("Confirm Password") },
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = SageGreenDark) },
                         trailingIcon = {
@@ -165,6 +218,10 @@ fun SignUpScreen(
                             }
                         },
                         singleLine = true,
+                        isError = confirmPasswordError != null,
+                        supportingText = {
+                            confirmPasswordError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) }
+                        },
                         visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
@@ -186,12 +243,12 @@ fun SignUpScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { selectedRole = UserRole.JOB_SEEKER }
+                                .clickable { selectedRole = UserRole.JOB_SEEKER; nameError = null }
                                 .padding(4.dp)
                         ) {
                             RadioButton(
                                 selected = selectedRole == UserRole.JOB_SEEKER,
-                                onClick = { selectedRole = UserRole.JOB_SEEKER },
+                                onClick = { selectedRole = UserRole.JOB_SEEKER; nameError = null },
                                 colors = RadioButtonDefaults.colors(selectedColor = DeepGreenDark)
                             )
                             Spacer(modifier = Modifier.width(2.dp))
@@ -202,12 +259,12 @@ fun SignUpScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { selectedRole = UserRole.EMPLOYER }
+                                .clickable { selectedRole = UserRole.EMPLOYER; nameError = null }
                                 .padding(4.dp)
                         ) {
                             RadioButton(
                                 selected = selectedRole == UserRole.EMPLOYER,
-                                onClick = { selectedRole = UserRole.EMPLOYER },
+                                onClick = { selectedRole = UserRole.EMPLOYER; nameError = null },
                                 colors = RadioButtonDefaults.colors(selectedColor = DeepGreenDark)
                             )
                             Spacer(modifier = Modifier.width(2.dp))
@@ -227,17 +284,30 @@ fun SignUpScreen(
                             val cleanName = name.trim()
                             val cleanEmail = email.trim().lowercase()
 
-                            when {
-                                cleanName.isBlank() -> errorMessage = "Please enter your full name."
-                                cleanEmail.isBlank() || !cleanEmail.contains("@") -> errorMessage = "Please enter a valid email address."
-                                password.isBlank() -> errorMessage = "Please enter a password."
-                                password.length < 6 -> errorMessage = "Password must be at least 6 characters long."
-                                password != confirmPassword -> errorMessage = "Passwords do not match."
-                                else -> {
-                                    errorMessage = ""
-                                    onNextClick(cleanName, cleanEmail, password, selectedRole)
-                                }
+                            // Validate every field before advancing to the next step.
+                            val nameValidation = if (isEmployer) {
+                                ValidationUtils.validateCompanyName(cleanName)
+                            } else {
+                                ValidationUtils.validateFullName(cleanName)
                             }
+                            val emailValidation = ValidationUtils.validateEmail(cleanEmail)
+                            val passwordValidation = ValidationUtils.validateNewPassword(password)
+                            val confirmValidation = ValidationUtils.validateConfirmPassword(password, confirmPassword)
+
+                            nameError = nameValidation
+                            emailError = emailValidation
+                            passwordError = passwordValidation
+                            confirmPasswordError = confirmValidation
+
+                            if (nameValidation != null || emailValidation != null ||
+                                passwordValidation != null || confirmValidation != null
+                            ) {
+                                errorMessage = "Please fix the highlighted fields before continuing."
+                                return@Button
+                            }
+
+                            errorMessage = ""
+                            onNextClick(cleanName, cleanEmail, password, selectedRole)
                         },
                         modifier = Modifier
                             .fillMaxWidth()

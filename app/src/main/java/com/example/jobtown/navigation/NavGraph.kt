@@ -7,8 +7,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -21,12 +23,14 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.jobtown.Screen
 import com.example.jobtown.data.User
+import com.example.jobtown.data.UserRole
 import com.example.jobtown.data.repository.ApplicationRepository
 import com.example.jobtown.data.repository.JobRepository
 import com.example.jobtown.data.repository.MessageRepository
 import com.example.jobtown.ui.applied.AppliedViewModel
 import com.example.jobtown.ui.applied.AppliedViewModelFactory
 import com.example.jobtown.ui.applied.MyAppliedScreen
+import com.example.jobtown.ui.auth.CompleteProfileScreen
 import com.example.jobtown.ui.auth.LoginScreen
 import com.example.jobtown.ui.auth.SignUpScreen
 import com.example.jobtown.ui.auth.StartupScreen
@@ -56,6 +60,13 @@ fun AppNavGraph(
     val currentRoute = navBackStackEntry?.destination?.route
     val coroutineScope = rememberCoroutineScope()
 
+    // Single source of truth for "who is logged in right now" inside this graph.
+    // Seeded from the `currentUser` parameter (e.g. a restored session) but
+    // updated in-place whenever login / signup / profile edits succeed, so
+    // every screen below always sees the freshest user without requiring
+    // the caller (MainActivity) to manage this state itself.
+    var loggedInUser by remember { mutableStateOf(currentUser) }
+
     // Repositories
     val jobRepository = remember(supabaseClient) { JobRepository(supabaseClient) }
     val applicationRepository = remember(supabaseClient) { ApplicationRepository(supabaseClient) }
@@ -66,8 +77,8 @@ fun AppNavGraph(
     val appliedViewModel: AppliedViewModel = viewModel(factory = AppliedViewModelFactory(applicationRepository))
     val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModelFactory(messageRepository))
 
-    LaunchedEffect(currentUser?.id) {
-        currentUser?.id?.let { userId ->
+    LaunchedEffect(loggedInUser?.id) {
+        loggedInUser?.id?.let { userId ->
             appliedViewModel.loadApplications(userId)
             chatViewModel.loadUserChatRooms(userId)
         }
@@ -86,7 +97,7 @@ fun AppNavGraph(
             if (currentRoute in bottomBarRoutes) {
                 JobTownBottomNavigationBar(
                     navController = navController,
-                    currentUser = currentUser,
+                    currentUser = loggedInUser,
                     unreadChatCount = 0
                 )
             }
@@ -111,7 +122,9 @@ fun AppNavGraph(
             // --- LOGIN ---
             composable("login") {
                 LoginScreen(
-                    onLoginSuccess = { _ ->
+                    onLoginSuccess = { user ->
+                        // Persist the authenticated user so every other screen can read it.
+                        loggedInUser = user
                         navController.navigate(Screen.Home.route) {
                             popUpTo("login") { inclusive = true }
                         }
@@ -123,8 +136,21 @@ fun AppNavGraph(
             // --- SIGNUP ---
             composable("signup") {
                 SignUpScreen(
-                    onNextClick = { _, _, _, _ ->
-                        navController.navigate("profile") {
+                    onNextClick = { name, email, password, role ->
+                        // Build a draft user from the signup form and carry it into
+                        // CompleteProfileScreen instead of discarding it. The single
+                        // "name" field on SignUpScreen means different things
+                        // depending on role: a person's full name for job seekers,
+                        // or the company's name for employers -- route it into the
+                        // matching User field accordingly.
+                        loggedInUser = User(
+                            name = if (role == UserRole.EMPLOYER) "" else name,
+                            companyName = if (role == UserRole.EMPLOYER) name else "",
+                            email = email,
+                            password = password,
+                            role = role
+                        )
+                        navController.navigate("complete_profile") {
                             popUpTo("signup") { inclusive = true }
                         }
                     },
@@ -132,11 +158,24 @@ fun AppNavGraph(
                 )
             }
 
+            // --- COMPLETE PROFILE (post-signup) ---
+            composable("complete_profile") {
+                CompleteProfileScreen(
+                    user = loggedInUser,
+                    onComplete = { completedUser ->
+                        loggedInUser = completedUser
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo("complete_profile") { inclusive = true }
+                        }
+                    }
+                )
+            }
+
             // --- HOME ---
             composable(Screen.Home.route) {
                 HomeScreen(
                     navController = navController,
-                    currentUser = currentUser,
+                    currentUser = loggedInUser,
                     jobsList = homeViewModel.jobsList,
                     isLoading = homeViewModel.isLoading,
                     onJobClick = { selectedJob ->
@@ -156,7 +195,7 @@ fun AppNavGraph(
                     ApplyJobScreen(
                         navController = navController,
                         job = selectedJob,
-                        currentUser = currentUser,
+                        currentUser = loggedInUser,
                         onApplySubmit = { application ->
                             appliedViewModel.submitNewApplication(application) {
                                 navController.navigate(Screen.Applied.route) {
@@ -176,8 +215,12 @@ fun AppNavGraph(
             composable("profile") {
                 ProfileScreen(
                     navController = navController,
-                    currentUser = currentUser,
+                    currentUser = loggedInUser,
+                    onProfileUpdated = { updatedUser ->
+                        loggedInUser = updatedUser
+                    },
                     onLogout = {
+                        loggedInUser = null
                         onLogout()
                         navController.navigate("startup") {
                             popUpTo(0) { inclusive = true }
@@ -189,24 +232,24 @@ fun AppNavGraph(
             // --- APPLIED ---
             composable(Screen.Applied.route) {
                 LaunchedEffect(Unit) {
-                    currentUser?.id?.let { userId ->
+                    loggedInUser?.id?.let { userId ->
                         appliedViewModel.loadApplications(userId, forceRefresh = true)
                     }
                 }
 
                 MyAppliedScreen(
                     navController = navController,
-                    user = currentUser,
+                    user = loggedInUser,
                     applications = appliedViewModel.applicationsList,
                     isLoading = appliedViewModel.isLoading,
                     onRefresh = {
-                        currentUser?.id?.let { userId ->
+                        loggedInUser?.id?.let { userId ->
                             appliedViewModel.loadApplications(userId, forceRefresh = true)
                         }
                     },
                     onChatWithCompany = { application ->
-                        val userId = currentUser?.id ?: return@MyAppliedScreen
-                        val userName = currentUser.name.ifBlank { currentUser.email }
+                        val userId = loggedInUser?.id ?: return@MyAppliedScreen
+                        val userName = loggedInUser?.name?.ifBlank { loggedInUser?.email ?: "" } ?: ""
 
                         coroutineScope.launch {
                             val roomId = messageRepository.getOrCreateChatRoom(
@@ -241,7 +284,7 @@ fun AppNavGraph(
             composable(Screen.Schedule.route) {
                 ScheduleScreen(
                     navController = navController,
-                    user = currentUser,
+                    user = loggedInUser,
                     schedules = emptyList()
                 )
             }
@@ -254,13 +297,13 @@ fun AppNavGraph(
                 // Chat List screen
                 composable("chat_list") {
                     LaunchedEffect(Unit) {
-                        currentUser?.id?.let { userId ->
+                        loggedInUser?.id?.let { userId ->
                             chatViewModel.loadUserChatRooms(userId)
                         }
                     }
 
                     ChatListScreen(
-                        currentUser = currentUser,
+                        currentUser = loggedInUser,
                         chatRooms = chatViewModel.chatRooms.value,
                         isLoading = chatViewModel.isLoadingRooms,
                         onChatRoomClick = { chatRoomId, companyName ->
@@ -291,7 +334,7 @@ fun AppNavGraph(
                         companyName = company,
                         chatTitle = title,
                         initialQuestion = if (initialQuestion == "none") "" else initialQuestion,
-                        currentUserId = currentUser?.id ?: "1",
+                        currentUserId = loggedInUser?.id ?: "1",
                         chatViewModel = chatViewModel,
                         onNavigateToSchedule = {
                             navController.navigate(Screen.Schedule.route)
