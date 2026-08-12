@@ -5,6 +5,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,18 +31,11 @@ import kotlinx.datetime.Clock
 @Composable
 fun CompleteProfileScreen(
     user: User?,
+    draft: SignUpFields,
+    onDraftChange: (SignUpFields) -> Unit,
+    onBack: () -> Unit,
     onComplete: (User) -> Unit
 ) {
-    var phone by remember { mutableStateOf(user?.phone ?: "") }
-    var location by remember { mutableStateOf(user?.location ?: "") }
-    var skills by remember { mutableStateOf("") }
-    var experienceLevel by remember { mutableStateOf("Junior (1-2 yrs)") }
-    var portfolioUrl by remember { mutableStateOf("") }
-    var bio by remember { mutableStateOf(user?.bio ?: "") }
-
-    val isEmployer = user?.role == UserRole.EMPLOYER
-    val displayName = (if (isEmployer) user?.companyName else user?.name)?.ifBlank { null } ?: "User"
-
     var expandedExperience by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
@@ -52,6 +47,9 @@ fun CompleteProfileScreen(
     var portfolioUrlError by remember { mutableStateOf<String?>(null) }
     var bioError by remember { mutableStateOf<String?>(null) }
 
+    val isEmployer = user?.role == UserRole.EMPLOYER
+    val displayName = (if (isEmployer) user?.companyName else user?.name)?.ifBlank { null } ?: "User"
+
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
 
@@ -59,6 +57,18 @@ fun CompleteProfileScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Complete Your Profile", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    // Goes back to SignUpScreen. The shared draft isn't touched,
+                    // so anything already typed on this screen is still there
+                    // if the user comes forward again.
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = DeepGreenDark
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = SageGreenMain,
                     titleContentColor = DeepGreenDark
@@ -93,9 +103,9 @@ fun CompleteProfileScreen(
 
             // Phone Input -- digits only (optional leading +), 7-15 digits
             OutlinedTextField(
-                value = phone,
+                value = draft.phone,
                 onValueChange = {
-                    phone = ValidationUtils.filterPhoneInput(it)
+                    onDraftChange(draft.copy(phone = ValidationUtils.filterPhoneInput(it)))
                     phoneError = null
                     errorMessage = ""
                 },
@@ -112,9 +122,9 @@ fun CompleteProfileScreen(
 
             // Location Input
             OutlinedTextField(
-                value = location,
+                value = draft.location,
                 onValueChange = {
-                    location = it.take(ValidationUtils.LOCATION_MAX_LENGTH)
+                    onDraftChange(draft.copy(location = it.take(ValidationUtils.LOCATION_MAX_LENGTH)))
                     locationError = null
                     errorMessage = ""
                 },
@@ -130,9 +140,9 @@ fun CompleteProfileScreen(
 
             // Skills Input
             OutlinedTextField(
-                value = skills,
+                value = draft.skills,
                 onValueChange = {
-                    skills = it.take(ValidationUtils.SKILLS_MAX_LENGTH)
+                    onDraftChange(draft.copy(skills = it.take(ValidationUtils.SKILLS_MAX_LENGTH)))
                     skillsError = null
                     errorMessage = ""
                 },
@@ -140,7 +150,7 @@ fun CompleteProfileScreen(
                 isError = skillsError != null,
                 supportingText = {
                     Text(
-                        text = skillsError ?: "${skills.length}/${ValidationUtils.SKILLS_MAX_LENGTH}",
+                        text = skillsError ?: "${draft.skills.length}/${ValidationUtils.SKILLS_MAX_LENGTH}",
                         color = if (skillsError != null) Color.Red else TextDark.copy(alpha = 0.5f),
                         fontSize = 12.sp
                     )
@@ -157,10 +167,10 @@ fun CompleteProfileScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 OutlinedTextField(
-                    value = experienceLevel,
+                    value = draft.experienceLevel,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text(if (isEmployer) "Experience Level Required" else "Experience Level") },
+                    label = { Text(if (isEmployer) "Minimum Experience Level" else "Experience Level") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedExperience) },
                     modifier = Modifier
                         .menuAnchor()
@@ -176,7 +186,7 @@ fun CompleteProfileScreen(
                         DropdownMenuItem(
                             text = { Text(level) },
                             onClick = {
-                                experienceLevel = level
+                                onDraftChange(draft.copy(experienceLevel = level))
                                 expandedExperience = false
                             }
                         )
@@ -186,9 +196,9 @@ fun CompleteProfileScreen(
 
             // Portfolio URL Input -- optional, but must be a valid URL if provided
             OutlinedTextField(
-                value = portfolioUrl,
+                value = draft.portfolioUrl,
                 onValueChange = {
-                    portfolioUrl = it.take(ValidationUtils.URL_MAX_LENGTH)
+                    onDraftChange(draft.copy(portfolioUrl = it.take(ValidationUtils.URL_MAX_LENGTH)))
                     portfolioUrlError = null
                     errorMessage = ""
                 },
@@ -205,9 +215,9 @@ fun CompleteProfileScreen(
 
             // Bio Summary Input
             OutlinedTextField(
-                value = bio,
+                value = draft.bio,
                 onValueChange = {
-                    bio = it.take(ValidationUtils.BIO_MAX_LENGTH)
+                    onDraftChange(draft.copy(bio = it.take(ValidationUtils.BIO_MAX_LENGTH)))
                     bioError = null
                     errorMessage = ""
                 },
@@ -215,7 +225,7 @@ fun CompleteProfileScreen(
                 isError = bioError != null,
                 supportingText = {
                     Text(
-                        text = bioError ?: "${bio.length}/${ValidationUtils.BIO_MAX_LENGTH}",
+                        text = bioError ?: "${draft.bio.length}/${ValidationUtils.BIO_MAX_LENGTH}",
                         color = if (bioError != null) Color.Red else TextDark.copy(alpha = 0.5f),
                         fontSize = 12.sp
                     )
@@ -241,11 +251,11 @@ fun CompleteProfileScreen(
                     }
 
                     // Validate every field before hitting the network.
-                    val phoneValidation = ValidationUtils.validatePhone(phone, required = true)
-                    val locationValidation = ValidationUtils.validateLocation(location, required = true)
-                    val skillsValidation = ValidationUtils.validateSkills(skills)
-                    val portfolioValidation = ValidationUtils.validatePortfolioUrl(portfolioUrl)
-                    val bioValidation = ValidationUtils.validateBio(bio)
+                    val phoneValidation = ValidationUtils.validatePhone(draft.phone, required = true)
+                    val locationValidation = ValidationUtils.validateLocation(draft.location, required = true)
+                    val skillsValidation = ValidationUtils.validateSkills(draft.skills)
+                    val portfolioValidation = ValidationUtils.validatePortfolioUrl(draft.portfolioUrl)
+                    val bioValidation = ValidationUtils.validateBio(draft.bio)
 
                     phoneError = phoneValidation
                     locationError = locationValidation
@@ -277,7 +287,7 @@ fun CompleteProfileScreen(
                             } catch (signUpError: Exception) {
                                 val message = signUpError.message ?: ""
                                 val alreadyRegistered = message.contains("already registered", ignoreCase = true) ||
-                                    message.contains("already exists", ignoreCase = true)
+                                        message.contains("already exists", ignoreCase = true)
 
                                 if (alreadyRegistered) {
                                     SupabaseClient.client.auth.signInWith(Email) {
@@ -295,16 +305,16 @@ fun CompleteProfileScreen(
 
                             // 3. Construct formatted user object
                             val compiledBio = buildString {
-                                if (skills.isNotBlank()) append("Skills: ${skills.trim()}\n")
-                                if (experienceLevel.isNotBlank()) append("Exp: $experienceLevel\n")
-                                if (portfolioUrl.isNotBlank()) append("Portfolio: ${portfolioUrl.trim()}\n")
-                                if (bio.isNotBlank()) append("\n${bio.trim()}")
+                                if (draft.skills.isNotBlank()) append("Skills: ${draft.skills.trim()}\n")
+                                if (draft.experienceLevel.isNotBlank()) append("Exp: ${draft.experienceLevel}\n")
+                                if (draft.portfolioUrl.isNotBlank()) append("Portfolio: ${draft.portfolioUrl.trim()}\n")
+                                if (draft.bio.isNotBlank()) append("\n${draft.bio.trim()}")
                             }.trim()
 
                             val newUser = user.copy(
                                 id = finalUserId,
-                                phone = phone.trim(),
-                                location = location.trim(),
+                                phone = draft.phone.trim(),
+                                location = draft.location.trim(),
                                 bio = compiledBio,
                                 // The "created_at" column is timestamptz -- an empty
                                 // string (the User model's default) would fail to

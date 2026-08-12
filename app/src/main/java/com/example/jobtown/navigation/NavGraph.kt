@@ -33,6 +33,7 @@ import com.example.jobtown.ui.applied.MyAppliedScreen
 import com.example.jobtown.ui.auth.CompleteProfileScreen
 import com.example.jobtown.ui.auth.LoginScreen
 import com.example.jobtown.ui.auth.SignUpScreen
+import com.example.jobtown.ui.auth.SignUpFields
 import com.example.jobtown.ui.auth.StartupScreen
 import com.example.jobtown.ui.chat.ChatDetailScreen
 import com.example.jobtown.ui.chat.ChatListScreen
@@ -66,6 +67,12 @@ fun AppNavGraph(
     // every screen below always sees the freshest user without requiring
     // the caller (MainActivity) to manage this state itself.
     var loggedInUser by remember { mutableStateOf(currentUser) }
+
+    // Shared draft for the two-step signup flow (SignUpScreen -> CompleteProfileScreen).
+    // Owned here (not by either screen) so navigating back and forth between the
+    // two steps never loses what was typed. Nothing here touches Supabase --
+    // only the final "Save & Continue" on CompleteProfileScreen does that.
+    var signupDraft by remember { mutableStateOf(SignUpFields()) }
 
     // Repositories
     val jobRepository = remember(supabaseClient) { JobRepository(supabaseClient) }
@@ -133,39 +140,53 @@ fun AppNavGraph(
                 )
             }
 
-            // --- SIGNUP ---
+            // --- SIGNUP (step 1: personal / company details) ---
             composable("signup") {
                 SignUpScreen(
-                    onNextClick = { name, email, password, role ->
-                        // Build a draft user from the signup form and carry it into
-                        // CompleteProfileScreen instead of discarding it. The single
-                        // "name" field on SignUpScreen means different things
-                        // depending on role: a person's full name for job seekers,
-                        // or the company's name for employers -- route it into the
-                        // matching User field accordingly.
-                        loggedInUser = User(
-                            name = if (role == UserRole.EMPLOYER) "" else name,
-                            companyName = if (role == UserRole.EMPLOYER) name else "",
-                            email = email,
-                            password = password,
-                            role = role
-                        )
-                        navController.navigate("complete_profile") {
-                            popUpTo("signup") { inclusive = true }
-                        }
+                    draft = signupDraft,
+                    onDraftChange = { signupDraft = it },
+                    onNextClick = {
+                        // Deliberately NOT popping "signup" off the back stack here --
+                        // that's what used to make the Back button on the next screen
+                        // impossible to wire up. All the typed data already lives in
+                        // signupDraft, so nothing is lost either way.
+                        navController.navigate("complete_profile")
                     },
-                    onLoginClick = { navController.popBackStack() }
+                    onLoginClick = {
+                        // Leaving the signup flow entirely -- clear the cached draft.
+                        signupDraft = SignUpFields()
+                        navController.popBackStack()
+                    }
                 )
             }
 
-            // --- COMPLETE PROFILE (post-signup) ---
+            // --- COMPLETE PROFILE (step 2: professional details, post-signup) ---
             composable("complete_profile") {
+                // Built fresh from the shared draft every recomposition -- this is
+                // what gets passed to Supabase Auth once the user hits Save.
+                val draftUser = User(
+                    name = if (signupDraft.role == UserRole.EMPLOYER) "" else signupDraft.name,
+                    companyName = if (signupDraft.role == UserRole.EMPLOYER) signupDraft.name else "",
+                    email = signupDraft.email,
+                    password = signupDraft.password,
+                    role = signupDraft.role
+                )
+
                 CompleteProfileScreen(
-                    user = loggedInUser,
+                    user = draftUser,
+                    draft = signupDraft,
+                    onDraftChange = { signupDraft = it },
+                    onBack = {
+                        // Just pop back to SignUpScreen -- the draft is untouched,
+                        // so whatever was typed on this screen is still there if
+                        // the user comes forward again.
+                        navController.popBackStack()
+                    },
                     onComplete = { completedUser ->
                         loggedInUser = completedUser
+                        signupDraft = SignUpFields() // Flow finished -- clear the cache.
                         navController.navigate(Screen.Home.route) {
-                            popUpTo("complete_profile") { inclusive = true }
+                            popUpTo("signup") { inclusive = true }
                         }
                     }
                 )

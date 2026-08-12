@@ -34,19 +34,37 @@ import com.example.jobtown.data.UserRole
 import com.example.jobtown.ui.theme.*
 import com.example.jobtown.utils.ValidationUtils
 
+/**
+ * Minimal shape SignUpScreen needs from the shared signup draft that lives
+ * in AppNavGraph. Declared here (rather than importing the private class
+ * from NavGraph.kt) via a public interface-like data holder would add
+ * complexity, so instead this screen takes the individual current values +
+ * a single onDraftChange callback that receives a full copy -- see the
+ * SignupFields type below for the exact shape expected.
+ */
+data class SignUpFields(
+    val name: String = "",
+    val email: String = "",
+    val password: String = "",
+    val confirmPassword: String = "",
+    val role: UserRole = UserRole.JOB_SEEKER,
+    val phone: String = "",
+    val location: String = "",
+    val skills: String = "",
+    val experienceLevel: String = "Junior (1-2 yrs)",
+    val portfolioUrl: String = "",
+    val bio: String = ""
+)
+
 @Composable
 fun SignUpScreen(
-    onNextClick: (String, String, String, UserRole) -> Unit,
+    draft: SignUpFields,
+    onDraftChange: (SignUpFields) -> Unit,
+    onNextClick: () -> Unit,
     onLoginClick: () -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
-    var selectedRole by remember { mutableStateOf(UserRole.JOB_SEEKER) }
-    val isEmployer = selectedRole == UserRole.EMPLOYER
     var errorMessage by remember { mutableStateOf("") }
 
     // Field-level validation errors, shown inline right under each input.
@@ -54,6 +72,8 @@ fun SignUpScreen(
     var emailError by remember { mutableStateOf<String?>(null) }
     var passwordError by remember { mutableStateOf<String?>(null) }
     var confirmPasswordError by remember { mutableStateOf<String?>(null) }
+
+    val isEmployer = draft.role == UserRole.EMPLOYER
 
     val scrollState = rememberScrollState()
 
@@ -118,9 +138,10 @@ fun SignUpScreen(
                     // icon, keystroke filter and validation rule all switch
                     // based on the role picked below.
                     OutlinedTextField(
-                        value = name,
+                        value = draft.name,
                         onValueChange = {
-                            name = if (isEmployer) it.take(ValidationUtils.NAME_MAX_LENGTH) else ValidationUtils.filterNameInput(it)
+                            val filtered = if (isEmployer) it.take(ValidationUtils.NAME_MAX_LENGTH) else ValidationUtils.filterNameInput(it)
+                            onDraftChange(draft.copy(name = filtered))
                             nameError = null
                             errorMessage = ""
                         },
@@ -145,9 +166,9 @@ fun SignUpScreen(
 
                     // Email Input
                     OutlinedTextField(
-                        value = email,
+                        value = draft.email,
                         onValueChange = {
-                            email = it.take(ValidationUtils.EMAIL_MAX_LENGTH)
+                            onDraftChange(draft.copy(email = it.take(ValidationUtils.EMAIL_MAX_LENGTH)))
                             emailError = null
                             errorMessage = ""
                         },
@@ -167,13 +188,14 @@ fun SignUpScreen(
 
                     // Password Input
                     OutlinedTextField(
-                        value = password,
+                        value = draft.password,
                         onValueChange = {
-                            password = it.take(ValidationUtils.PASSWORD_MAX_LENGTH)
+                            val newPassword = it.take(ValidationUtils.PASSWORD_MAX_LENGTH)
+                            onDraftChange(draft.copy(password = newPassword))
                             passwordError = null
                             // Re-check the confirm field live so a stale "match" error clears too.
-                            if (confirmPassword.isNotEmpty()) {
-                                confirmPasswordError = ValidationUtils.validateConfirmPassword(password, confirmPassword)
+                            if (draft.confirmPassword.isNotEmpty()) {
+                                confirmPasswordError = ValidationUtils.validateConfirmPassword(newPassword, draft.confirmPassword)
                             }
                             errorMessage = ""
                         },
@@ -203,9 +225,9 @@ fun SignUpScreen(
 
                     // Confirm Password Input
                     OutlinedTextField(
-                        value = confirmPassword,
+                        value = draft.confirmPassword,
                         onValueChange = {
-                            confirmPassword = it.take(ValidationUtils.PASSWORD_MAX_LENGTH)
+                            onDraftChange(draft.copy(confirmPassword = it.take(ValidationUtils.PASSWORD_MAX_LENGTH)))
                             confirmPasswordError = null
                             errorMessage = ""
                         },
@@ -243,12 +265,12 @@ fun SignUpScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { selectedRole = UserRole.JOB_SEEKER; nameError = null }
+                                .clickable { onDraftChange(draft.copy(role = UserRole.JOB_SEEKER)); nameError = null }
                                 .padding(4.dp)
                         ) {
                             RadioButton(
-                                selected = selectedRole == UserRole.JOB_SEEKER,
-                                onClick = { selectedRole = UserRole.JOB_SEEKER; nameError = null },
+                                selected = draft.role == UserRole.JOB_SEEKER,
+                                onClick = { onDraftChange(draft.copy(role = UserRole.JOB_SEEKER)); nameError = null },
                                 colors = RadioButtonDefaults.colors(selectedColor = DeepGreenDark)
                             )
                             Spacer(modifier = Modifier.width(2.dp))
@@ -259,12 +281,12 @@ fun SignUpScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { selectedRole = UserRole.EMPLOYER; nameError = null }
+                                .clickable { onDraftChange(draft.copy(role = UserRole.EMPLOYER)); nameError = null }
                                 .padding(4.dp)
                         ) {
                             RadioButton(
-                                selected = selectedRole == UserRole.EMPLOYER,
-                                onClick = { selectedRole = UserRole.EMPLOYER; nameError = null },
+                                selected = draft.role == UserRole.EMPLOYER,
+                                onClick = { onDraftChange(draft.copy(role = UserRole.EMPLOYER)); nameError = null },
                                 colors = RadioButtonDefaults.colors(selectedColor = DeepGreenDark)
                             )
                             Spacer(modifier = Modifier.width(2.dp))
@@ -281,8 +303,8 @@ fun SignUpScreen(
 
                     Button(
                         onClick = {
-                            val cleanName = name.trim()
-                            val cleanEmail = email.trim().lowercase()
+                            val cleanName = draft.name.trim()
+                            val cleanEmail = draft.email.trim().lowercase()
 
                             // Validate every field before advancing to the next step.
                             val nameValidation = if (isEmployer) {
@@ -291,8 +313,8 @@ fun SignUpScreen(
                                 ValidationUtils.validateFullName(cleanName)
                             }
                             val emailValidation = ValidationUtils.validateEmail(cleanEmail)
-                            val passwordValidation = ValidationUtils.validateNewPassword(password)
-                            val confirmValidation = ValidationUtils.validateConfirmPassword(password, confirmPassword)
+                            val passwordValidation = ValidationUtils.validateNewPassword(draft.password)
+                            val confirmValidation = ValidationUtils.validateConfirmPassword(draft.password, draft.confirmPassword)
 
                             nameError = nameValidation
                             emailError = emailValidation
@@ -307,7 +329,8 @@ fun SignUpScreen(
                             }
 
                             errorMessage = ""
-                            onNextClick(cleanName, cleanEmail, password, selectedRole)
+                            onDraftChange(draft.copy(name = cleanName, email = cleanEmail))
+                            onNextClick()
                         },
                         modifier = Modifier
                             .fillMaxWidth()
