@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.jobtown.data.ChatMessage
 import com.example.jobtown.data.ChatRoom
+import com.example.jobtown.data.MessageType
 import com.example.jobtown.data.repository.MessageRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -30,9 +31,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
     var isSendingMessage by mutableStateOf(false)
         private set
 
-    // Tracks which room the current realtime subscription belongs to, so a stray
-    // late event from a room the user has since left doesn't get applied to the
-    // wrong screen.
     private var activeRoomId: String? = null
     private var realtimeJob: Job? = null
 
@@ -50,10 +48,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         }
     }
 
-    // currentUserId is optional so existing call sites keep compiling, but passing
-    // it lets us mark the other person's messages as read as soon as this room is
-    // opened, and is required for the live-message subscription to know which
-    // room it's listening for.
     fun loadMessages(roomId: String, currentUserId: String = "") {
         if (roomId.isBlank()) return
 
@@ -87,20 +81,25 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
 
     private fun mergeIncomingMessage(incoming: ChatMessage) {
         val current = messagesList.value
-        if (current.any { it.id == incoming.id }) return
+        val index = current.indexOfFirst { it.id == incoming.id }
 
-        // Drop the optimistic "temp_" placeholder this message was standing in
-        // for (added by sendMessage below) so it isn't shown twice.
-        val withoutTemp = current.filterNot {
-            it.id.startsWith("temp_") && it.senderId == incoming.senderId && it.text == incoming.text
+        if (index != -1) {
+            val updatedList = current.toMutableList()
+            updatedList[index] = incoming
+            messagesList.value = updatedList.sortedBy { it.timestamp }
+        } else {
+            val withoutTemp = current.filterNot {
+                it.id.startsWith("temp_") && it.senderId == incoming.senderId && it.text == incoming.text
+            }
+            messagesList.value = (withoutTemp + incoming).sortedBy { it.timestamp }
         }
-        messagesList.value = (withoutTemp + incoming).sortedBy { it.timestamp }
     }
 
     fun sendMessage(
         roomId: String,
         senderId: String,
         content: String,
+        type: MessageType = MessageType.TEXT,
         onResult: (Boolean) -> Unit = {}
     ) {
         val trimmed = content.trim()
@@ -119,28 +118,67 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 senderId = senderId,
                 text = trimmed,
                 timestamp = now,
-                isRead = false
+                isRead = false,
+                messageType = type
             )
 
             messagesList.value = messagesList.value + tempMessage
 
-            val success = messageRepository.sendMessage(roomId, senderId, trimmed)
+            val success = messageRepository.sendMessage(roomId, senderId, trimmed, type)
 
             if (success) {
-                // Belt-and-braces refresh in addition to the realtime subscription:
-                // if Realtime replication isn't enabled for chat_messages yet, this
-                // still guarantees the sender sees their own confirmed message.
                 messagesList.value = messageRepository.getMessagesForRoom(roomId)
                 loadUserChatRooms(senderId)
             } else {
-                // Remove the optimistic bubble so a failed send doesn't leave a
-                // message on screen that was never actually delivered.
                 messagesList.value = messagesList.value.filterNot { it.id == tempMessage.id }
                 Log.e("ChatViewModel", "Failed to send message to repository.")
             }
 
             isSendingMessage = false
             onResult(success)
+        }
+    }
+
+    fun editMessage(roomId: String, messageId: String, newText: String) {
+        val trimmed = newText.trim()
+        if (roomId.isBlank() || messageId.isBlank() || trimmed.isBlank()) return
+
+        viewModelScope.launch {
+            // Optimistic update locally
+            messagesList.value = messagesList.value.map {
+                if (it.id == messageId) it.copy(text = trimmed, isEdited = true) else it
+            }
+
+            try {
+                val success = messageRepository.editMessage(roomId, messageId, trimmed)
+                if (success) {
+                    messagesList.value = messageRepository.getMessagesForRoom(roomId)
+                }
+            } catch (e: Exception) {
+                Log.e("ChatViewModel", "Error editing message", e)
+                messagesList.value = messageRepository.getMessagesForRoom(roomId)
+            }
+        }
+    }
+
+    fun deleteMessage(roomId: String, messageId: String) {
+        if (roomId.isBlank() || messageId.isBlank()) return
+
+        viewModelScope.launch {
+            // Optimistic update locally
+            messagesList.value = messagesList.value.map {
+                if (it.id == messageId) it.copy(text = "This message was deleted", isDeleted = true) else it
+            }
+
+            try {
+                val success = messageRepository.deleteMessage(roomId, messageId)
+                if (success) {
+                    messagesList.value = messageRepository.getMessagesForRoom(roomId)
+                }
+            } catch (e: Exception) {
+                Log.e("ChatViewModel", "Error deleting message", e)
+                messagesList.value = messageRepository.getMessagesForRoom(roomId)
+            }
         }
     }
 

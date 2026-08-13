@@ -49,13 +49,12 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.7.6")
 
-    // Supabase Modules
     implementation("io.github.jan-tennert.supabase:postgrest-kt:2.0.0")
     implementation("io.github.jan-tennert.supabase:realtime-kt:2.0.0")
-    implementation("io.github.jan-tennert.supabase:gotrue-kt:2.0.0")   // Added for Auth / Login
-    implementation("io.github.jan-tennert.supabase:storage-kt:2.0.0")  // Added for Resume PDF & Image uploads
+    implementation("io.github.jan-tennert.supabase:gotrue-kt:2.0.0")
+    implementation("io.github.jan-tennert.supabase:storage-kt:2.0.0")
+    implementation("io.coil-kt:coil-compose:2.6.0")
 
-    // Ktor Engine & Serialization
     implementation("io.ktor:ktor-client-android:2.3.11")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 

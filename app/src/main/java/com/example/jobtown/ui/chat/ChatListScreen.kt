@@ -8,9 +8,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,8 +35,25 @@ fun ChatListScreen(
     currentUser: User?,
     chatRooms: List<ChatRoom>,
     isLoading: Boolean,
-    onChatRoomClick: (String, String) -> Unit
+    onChatRoomClick: (roomId: String, otherName: String, position: String) -> Unit
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredRooms = remember(chatRooms, searchQuery) {
+        if (searchQuery.isBlank()) {
+            chatRooms
+        } else {
+            chatRooms.filter { room ->
+                val isSeeker = room.seekerId == currentUser?.id
+                val otherName = if (isSeeker) room.companyName else room.seekerName
+                val positionName = room.jobTitle
+                otherName.contains(searchQuery, ignoreCase = true) ||
+                        positionName.contains(searchQuery, ignoreCase = true) ||
+                        room.lastMessage.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
     Scaffold(
         containerColor = BackgroundWhite,
         topBar = {
@@ -52,135 +70,197 @@ fun ChatListScreen(
             )
         }
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
         ) {
-            when {
-                isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = DeepGreenDark)
-                    }
-                }
+            if (chatRooms.isNotEmpty()) {
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search messages, companies, or positions...", fontSize = 13.sp) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = TextDark.copy(alpha = 0.5f)
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    singleLine = true
+                )
+            }
 
-                chatRooms.isEmpty() -> {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+            ) {
+                when {
+                    isLoading -> {
                         Box(
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(SageGreenLight),
+                            modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Chat,
-                                contentDescription = null,
-                                tint = DeepGreenDark,
-                                modifier = Modifier.size(36.dp)
+                            CircularProgressIndicator(color = DeepGreenDark)
+                        }
+                    }
+
+                    chatRooms.isEmpty() -> {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(SageGreenLight),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Chat,
+                                    contentDescription = null,
+                                    tint = DeepGreenDark,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "No Conversations Yet",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextDark
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "When you contact an employer or applicant, your chats will appear here.",
+                                fontSize = 13.sp,
+                                color = TextDark.copy(alpha = 0.6f),
+                                textAlign = TextAlign.Center
                             )
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "No Conversations Yet",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextDark
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "When you contact an employer or applicant, your chats will appear here.",
-                            fontSize = 13.sp,
-                            color = TextDark.copy(alpha = 0.6f),
-                            textAlign = TextAlign.Center
-                        )
                     }
-                }
 
-                else -> {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(chatRooms) { room ->
-                            val isSeeker = room.seekerId == currentUser?.id
-                            val otherName = if (isSeeker) room.companyName else room.seekerName
+                    filteredRooms.isEmpty() -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No results found",
+                                color = TextDark.copy(alpha = 0.5f),
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
 
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onChatRoomClick(room.id, otherName) },
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                            ) {
-                                Row(
+                    else -> {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(vertical = 8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(
+                                items = filteredRooms,
+                                key = { it.id }
+                            ) { room ->
+                                val isSeeker = room.seekerId == currentUser?.id
+                                val otherName = if (isSeeker) room.companyName else room.seekerName
+                                val positionName = room.jobTitle.ifBlank { "Position" }
+
+                                Card(
                                     modifier = Modifier
-                                        .padding(16.dp)
-                                        .fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .fillMaxWidth()
+                                        .clickable { onChatRoomClick(room.id, otherName, positionName) },
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                                 ) {
-                                    Surface(
+                                    Row(
                                         modifier = Modifier
-                                            .size(48.dp)
-                                            .clip(CircleShape),
-                                        color = SageGreenLight
+                                            .padding(14.dp)
+                                            .fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = otherName.take(1).uppercase(),
-                                                fontSize = 20.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = DeepGreenDark
-                                            )
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.width(14.dp))
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = otherName,
-                                                fontSize = 16.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = TextDark,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-
-                                            if (room.lastMessageTime > 0L) {
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(
-                                                    text = formatRelativeTime(room.lastMessageTime),
-                                                    fontSize = 11.sp,
-                                                    color = TextDark.copy(alpha = 0.5f)
-                                                )
+                                        Box {
+                                            Surface(
+                                                modifier = Modifier
+                                                    .size(50.dp)
+                                                    .clip(CircleShape),
+                                                color = SageGreenLight
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Text(
+                                                        text = otherName.take(1).uppercase(),
+                                                        fontSize = 20.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = DeepGreenDark
+                                                    )
+                                                }
                                             }
                                         }
 
-                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Spacer(modifier = Modifier.width(14.dp))
 
-                                        Text(
-                                            text = if (room.lastMessage.isNotBlank()) room.lastMessage else "Tap to start chatting...",
-                                            fontSize = 13.sp,
-                                            color = if (room.lastMessage.isNotBlank()) TextDark.copy(alpha = 0.7f) else SageGreenDark,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = otherName,
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TextDark,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                )
+
+                                                if (room.lastMessageTime > 0L) {
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = formatRelativeTime(room.lastMessageTime),
+                                                        fontSize = 11.sp,
+                                                        color = TextDark.copy(alpha = 0.5f)
+                                                    )
+                                                }
+                                            }
+
+                                            if (positionName.isNotBlank() && positionName != "Position") {
+                                                Text(
+                                                    text = positionName,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = DeepGreenDark,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.height(2.dp))
+
+                                            Text(
+                                                text = if (room.lastMessage.isNotBlank()) room.lastMessage else "Tap to start chatting...",
+                                                fontSize = 13.sp,
+                                                color = if (room.lastMessage.isNotBlank()) TextDark.copy(alpha = 0.7f) else SageGreenDark,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
                                 }
                             }

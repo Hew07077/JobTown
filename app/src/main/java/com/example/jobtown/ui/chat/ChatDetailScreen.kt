@@ -1,5 +1,7 @@
 package com.example.jobtown.ui.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,7 +12,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.jobtown.data.ChatMessage
+import com.example.jobtown.data.MessageType
 import com.example.jobtown.ui.theme.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -41,23 +46,49 @@ fun ChatDetailScreen(
     onNavigateToSchedule: () -> Unit = {}
 ) {
     var messageText by remember { mutableStateOf("") }
+    var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
+
+    var showAttachmentSheet by remember { mutableStateOf(false) }
+    var showInterviewDialog by remember { mutableStateOf(false) }
+
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val messages: List<ChatMessage> = chatViewModel.messagesList.value
 
-    // Safely unwrap messages list from state
-    val messages = chatViewModel.messagesList.value
+    val displayCompanyName = companyName.ifBlank { "Company Name" }
+    val displayPosition = chatTitle.ifBlank { "Position" }
 
-    // Load message history on room launch
-    LaunchedEffect(roomId) {
-        if (roomId.isNotBlank()) {
-            chatViewModel.loadMessages(roomId)
-            if (initialQuestion.isNotBlank()) {
-                chatViewModel.sendMessage(roomId, currentUserId, initialQuestion)
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            chatViewModel.sendMessage(roomId, currentUserId, it.toString(), MessageType.IMAGE) {
+                chatViewModel.loadUserChatRooms(currentUserId)
             }
         }
     }
 
-    // Auto-scroll to bottom when new messages arrive
+    val documentPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            chatViewModel.sendMessage(roomId, currentUserId, it.toString(), MessageType.FILE) {
+                chatViewModel.loadUserChatRooms(currentUserId)
+            }
+        }
+    }
+
+    LaunchedEffect(roomId) {
+        if (roomId.isNotBlank()) {
+            chatViewModel.loadMessages(roomId, currentUserId)
+            if (initialQuestion.isNotBlank()) {
+                chatViewModel.sendMessage(roomId, currentUserId, initialQuestion) {
+                    chatViewModel.loadUserChatRooms(currentUserId)
+                }
+            }
+        }
+    }
+
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -70,18 +101,16 @@ fun ChatDetailScreen(
                 title = {
                     Column {
                         Text(
-                            text = companyName,
+                            text = displayCompanyName,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextDark
                         )
-                        if (chatTitle.isNotBlank()) {
-                            Text(
-                                text = chatTitle,
-                                fontSize = 12.sp,
-                                color = TextDark.copy(alpha = 0.6f)
-                            )
-                        }
+                        Text(
+                            text = displayPosition,
+                            fontSize = 12.sp,
+                            color = TextDark.copy(alpha = 0.6f)
+                        )
                     }
                 },
                 navigationIcon = {
@@ -94,10 +123,10 @@ fun ChatDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onNavigateToSchedule) {
+                    IconButton(onClick = { showInterviewDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.CalendarToday,
-                            contentDescription = "Schedule",
+                            contentDescription = "View Interview Details",
                             tint = DeepGreenDark
                         )
                     }
@@ -110,58 +139,119 @@ fun ChatDetailScreen(
                 shadowElevation = 8.dp,
                 color = Color.White
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextField(
-                        value = messageText,
-                        onValueChange = { messageText = it },
-                        placeholder = { Text("Type a message...") },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = BackgroundWhite,
-                            unfocusedContainerColor = BackgroundWhite,
-                            disabledContainerColor = BackgroundWhite,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        maxLines = 4
-                    )
+                Column {
+                    editingMessage?.let { editMsg: ChatMessage ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(SageGreenMain.copy(alpha = 0.2f))
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Editing Message",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = DeepGreenDark
+                                )
+                                Text(
+                                    text = editMsg.text,
+                                    fontSize = 12.sp,
+                                    color = TextDark.copy(alpha = 0.7f),
+                                    maxLines = 1
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    editingMessage = null
+                                    messageText = ""
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Cancel Edit",
+                                    tint = TextDark
+                                )
+                            }
+                        }
+                    }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { showAttachmentSheet = true },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Attach File",
+                                tint = TextDark.copy(alpha = 0.7f)
+                            )
+                        }
 
-                    IconButton(
-                        onClick = {
-                            if (messageText.isNotBlank()) {
-                                val textToSend = messageText
-                                messageText = ""
+                        TextField(
+                            value = messageText,
+                            onValueChange = { messageText = it },
+                            placeholder = { Text("Type a message...") },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = BackgroundWhite,
+                                unfocusedContainerColor = BackgroundWhite,
+                                disabledContainerColor = BackgroundWhite,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            maxLines = 4
+                        )
 
-                                chatViewModel.sendMessage(roomId, currentUserId, textToSend) { success: Boolean ->
-                                    if (success) {
-                                        coroutineScope.launch {
-                                            val currentMessages = chatViewModel.messagesList.value
-                                            if (currentMessages.isNotEmpty()) {
-                                                listState.animateScrollToItem(currentMessages.size - 1)
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconButton(
+                            onClick = {
+                                if (messageText.isNotBlank()) {
+                                    val textToSend = messageText
+                                    val currentEdit = editingMessage
+
+                                    if (currentEdit != null) {
+                                        chatViewModel.editMessage(roomId, currentEdit.id, textToSend)
+                                        editingMessage = null
+                                        messageText = ""
+                                        chatViewModel.loadUserChatRooms(currentUserId)
+                                    } else {
+                                        messageText = ""
+                                        chatViewModel.sendMessage(roomId, currentUserId, textToSend) { success ->
+                                            if (success) {
+                                                chatViewModel.loadUserChatRooms(currentUserId)
+                                                coroutineScope.launch {
+                                                    val currentMessages = chatViewModel.messagesList.value
+                                                    if (currentMessages.isNotEmpty()) {
+                                                        listState.animateScrollToItem(currentMessages.size - 1)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
-                            }
-                        },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(SageGreenMain)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
-                            tint = DeepGreenDark
-                        )
+                            },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(SageGreenMain)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = DeepGreenDark
+                            )
+                        }
                     }
                 }
             }
@@ -189,68 +279,68 @@ fun ChatDetailScreen(
                     )
                 }
                 else -> {
+                    val groupedMessages = remember(messages) { groupMessagesByDate(messages) }
+
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(
-                            items = messages,
-                            key = { msg: ChatMessage -> msg.id.ifBlank { msg.timestamp.toString() + msg.text } }
-                        ) { msg ->
-                            MessageBubble(
-                                message = msg,
-                                isMe = msg.senderId == currentUserId
-                            )
+                        groupedMessages.forEach { (dateHeader: String, messageList: List<ChatMessage>) ->
+                            item(key = "header_$dateHeader") {
+                                DateHeader(dateString = dateHeader)
+                            }
+                            items(
+                                items = messageList,
+                                key = { msg: ChatMessage -> msg.id.ifBlank { "${msg.timestamp}_${msg.text.hashCode()}" } }
+                            ) { msg: ChatMessage ->
+                                MessageBubble(
+                                    message = msg,
+                                    isMe = msg.senderId == currentUserId,
+                                    onEdit = { selectedMsg: ChatMessage ->
+                                        editingMessage = selectedMsg
+                                        messageText = selectedMsg.text
+                                    },
+                                    onDelete = { selectedMsg: ChatMessage ->
+                                        chatViewModel.deleteMessage(roomId, selectedMsg.id)
+                                        // Refreshes the chat rooms list outside after deletion
+                                        chatViewModel.loadUserChatRooms(currentUserId)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
+
+    if (showAttachmentSheet) {
+        AttachmentBottomSheet(
+            onDismiss = { showAttachmentSheet = false },
+            onOptionSelected = { option ->
+                when (option) {
+                    "PHOTO" -> imagePickerLauncher.launch("image/*")
+                    "DOCUMENT" -> documentPickerLauncher.launch("application/*")
+                }
+            }
+        )
+    }
+
+    if (showInterviewDialog) {
+        InterviewDetailDialog(
+            companyName = displayCompanyName,
+            chatTitle = displayPosition,
+            onDismiss = { showInterviewDialog = false },
+            onNavigateToSchedule = onNavigateToSchedule
+        )
+    }
 }
 
-@Composable
-fun MessageBubble(
-    message: ChatMessage,
-    isMe: Boolean
-) {
-    val alignment = if (isMe) Alignment.End else Alignment.Start
-    val bubbleColor = if (isMe) SageGreenMain else Color.White
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = alignment
-    ) {
-        Surface(
-            shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
-                bottomStart = if (isMe) 16.dp else 0.dp,
-                bottomEnd = if (isMe) 0.dp else 16.dp
-            ),
-            color = bubbleColor,
-            shadowElevation = 1.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    text = message.text,
-                    fontSize = 14.sp,
-                    color = TextDark
-                )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(message.timestamp)),
-                    fontSize = 10.sp,
-                    color = TextDark.copy(alpha = 0.5f),
-                    modifier = Modifier.align(Alignment.End)
-                )
-            }
-        }
+private fun groupMessagesByDate(messages: List<ChatMessage>): Map<String, List<ChatMessage>> {
+    val formatter = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+    return messages.groupBy { msg ->
+        formatter.format(Date(msg.timestamp))
     }
 }
