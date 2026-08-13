@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.jobtown.data.Job
 import com.example.jobtown.data.User
+import com.example.jobtown.data.UserRole
 import com.example.jobtown.ui.components.JobCard
 import com.example.jobtown.ui.theme.*
 
@@ -45,11 +46,27 @@ fun HomeScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("All") }
 
+    // Employers only ever manage their own postings here -- they don't apply
+    // to jobs, so they shouldn't see (or be able to tap into) the wider
+    // marketplace of everyone else's listings.
+    val isEmployer = currentUser?.role == UserRole.EMPLOYER
+
+    val roleScopedJobs = remember(jobsList, currentUser?.id, isEmployer) {
+        if (isEmployer) {
+            jobsList.filter { job ->
+                val ownerId = job.employerId?.ifBlank { null } ?: job.postedByUserId
+                !ownerId.isNullOrBlank() && ownerId == currentUser?.id
+            }
+        } else {
+            jobsList
+        }
+    }
+
     val categories = listOf("All", "Full-Time", "Part-Time", "Remote")
 
     // Filter Logic with flexible matching
-    val filteredJobs = remember(jobsList, searchQuery, selectedFilter) {
-        jobsList.filter { job ->
+    val filteredJobs = remember(roleScopedJobs, searchQuery, selectedFilter) {
+        roleScopedJobs.filter { job ->
             val matchesFilter = when (selectedFilter.lowercase()) {
                 "all" -> true
                 else -> job.type.replace("-", " ")
@@ -192,13 +209,13 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Recommended Jobs",
+                text = if (isEmployer) "Your Posted Jobs" else "Recommended Jobs",
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextDark
             )
             Text(
-                text = "${filteredJobs.size} Available",
+                text = "${filteredJobs.size} ${if (isEmployer) "Posted" else "Available"}",
                 fontSize = 13.sp,
                 color = TextDark.copy(alpha = 0.5f)
             )
@@ -234,14 +251,18 @@ fun HomeScreen(
                         Text("🔍", fontSize = 36.sp)
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "No Jobs Found",
+                            text = if (isEmployer) "No Jobs Posted Yet" else "No Jobs Found",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextDark
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Try clearing your search query or switching filters.",
+                            text = if (isEmployer) {
+                                "Jobs you post will show up here."
+                            } else {
+                                "Try clearing your search query or switching filters."
+                            },
                             fontSize = 13.sp,
                             color = TextDark.copy(alpha = 0.6f)
                         )
@@ -258,7 +279,14 @@ fun HomeScreen(
                     ) { job ->
                         JobCard(
                             job = job,
-                            onClick = { onJobClick(job) }
+                            onClick = {
+                                // Employers manage/view their own postings here -- they
+                                // don't have an "apply" action, so tapping a card is a
+                                // no-op for them instead of launching ApplyJobScreen.
+                                if (!isEmployer) {
+                                    onJobClick(job)
+                                }
+                            }
                         )
                     }
                 }

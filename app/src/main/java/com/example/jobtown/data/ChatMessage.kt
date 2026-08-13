@@ -12,7 +12,26 @@ enum class ActionType {
     INTERVIEW_REQUEST,
 
     @SerialName("RESUME_REQUEST")
-    RESUME_REQUEST
+    RESUME_REQUEST,
+
+    @SerialName("OFFER_LETTER")
+    OFFER_LETTER
+}
+
+// Matches the "message_type" enum column on chat_messages in Supabase.
+@Serializable
+enum class MessageType {
+    @SerialName("TEXT")
+    TEXT,
+
+    @SerialName("IMAGE")
+    IMAGE,
+
+    @SerialName("FILE")
+    FILE,
+
+    @SerialName("SYSTEM")
+    SYSTEM
 }
 
 @Serializable
@@ -34,6 +53,9 @@ data class ChatMessage(
 
     @SerialName("is_read")
     val isRead: Boolean = false,
+
+    @SerialName("message_type")
+    val messageType: MessageType = MessageType.TEXT,
 
     @SerialName("action_type")
     val actionType: ActionType = ActionType.NONE

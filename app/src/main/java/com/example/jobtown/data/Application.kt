@@ -20,6 +20,9 @@ data class JobApplication(
     @SerialName("company_name")
     val companyName: String = "",
 
+    @SerialName("employer_id")
+    val employerId: String = "",
+
     @SerialName("applicant_name")
     val applicantName: String = "",
 

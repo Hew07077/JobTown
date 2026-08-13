@@ -40,6 +40,9 @@ class ApplicationRepository(private val supabase: SupabaseClient) {
                     put("user_id", application.userId)
                     put("job_title", application.jobTitle)
                     put("company_name", application.companyName)
+                    if (application.employerId.isNotBlank()) {
+                        put("employer_id", application.employerId)
+                    }
                     put("applicant_name", application.applicantName)
                     put("applicant_email", application.applicantEmail)
                     put("cover_letter", application.coverLetter)

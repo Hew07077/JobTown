@@ -256,6 +256,7 @@ fun ApplyJobScreen(
                             userId = currentUser?.id ?: "",
                             jobTitle = displayTitle,
                             companyName = displayCompany,
+                            employerId = job.employerId ?: job.postedByUserId ?: "",
                             applicantName = currentUser?.name ?: "Unknown Applicant",
                             applicantEmail = currentUser?.email ?: "",
                             resumeUrl = resumeUrl.trim(),

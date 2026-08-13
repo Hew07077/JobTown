@@ -20,8 +20,8 @@ data class ChatRoom(
     @SerialName("seeker_name")
     val seekerName: String = "",
 
-    @SerialName("company_id")
-    val companyId: String = "",
+    @SerialName("employer_id")
+    val employerId: String = "",
 
     @SerialName("company_name")
     val companyName: String = "",

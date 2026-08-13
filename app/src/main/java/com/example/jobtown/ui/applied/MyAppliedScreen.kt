@@ -33,6 +33,7 @@ fun MyAppliedScreen(
     applications: List<JobApplication>,
     isLoading: Boolean,
     onRefresh: () -> Unit,
+    chatLoadingApplicationId: String? = null,
     onChatWithCompany: (JobApplication) -> Unit
 ) {
     Scaffold(
@@ -79,6 +80,7 @@ fun MyAppliedScreen(
                         items(applications, key = { it.id.ifBlank { it.jobTitle + it.companyName } }) { application ->
                             ApplicationCard(
                                 application = application,
+                                isChatLoading = chatLoadingApplicationId == application.id,
                                 onChatWithCompany = { onChatWithCompany(application) }
                             )
                         }
@@ -92,6 +94,7 @@ fun MyAppliedScreen(
 @Composable
 fun ApplicationCard(
     application: JobApplication,
+    isChatLoading: Boolean = false,
     onChatWithCompany: () -> Unit
 ) {
     Card(
@@ -180,25 +183,44 @@ fun ApplicationCard(
             // Action Button: Direct Trigger
             Button(
                 onClick = onChatWithCompany,
+                enabled = !isChatLoading,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(44.dp),
                 shape = RoundedCornerShape(22.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = DeepGreenDark,
+                    disabledContainerColor = DeepGreenDark.copy(alpha = 0.6f)
+                )
             ) {
-                Icon(
-                    imageVector = Icons.Default.Chat,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Chat with Employer",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
+                if (isChatLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Opening chat...",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Chat,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Chat with Employer",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
             }
         }
     }

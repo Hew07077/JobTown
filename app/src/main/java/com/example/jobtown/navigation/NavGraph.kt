@@ -4,6 +4,9 @@ import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,6 +77,23 @@ fun AppNavGraph(
     // only the final "Save & Continue" on CompleteProfileScreen does that.
     var signupDraft by remember { mutableStateOf(SignUpFields()) }
 
+    // Tracks which application is currently spinning up a chat room, so the
+    // "Chat with Employer" button can show a spinner and can't be double-tapped
+    // into creating duplicate rooms. null == nothing in flight.
+    var chatCreationInProgressId by remember { mutableStateOf<String?>(null) }
+
+    // Surfaced via a Snackbar when chat-room creation fails (e.g. no network),
+    // instead of silently logging and leaving the user stuck on a dead button.
+    var chatErrorMessage by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(chatErrorMessage) {
+        chatErrorMessage?.let {
+            snackbarHostState.showSnackbar(message = it, duration = SnackbarDuration.Long)
+            chatErrorMessage = null
+        }
+    }
+
     // Repositories
     val jobRepository = remember(supabaseClient) { JobRepository(supabaseClient) }
     val applicationRepository = remember(supabaseClient) { ApplicationRepository(supabaseClient) }
@@ -100,6 +120,7 @@ fun AppNavGraph(
     )
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (currentRoute in bottomBarRoutes) {
                 JobTownBottomNavigationBar(
@@ -212,7 +233,11 @@ fun AppNavGraph(
             // --- APPLY JOB ---
             composable("apply_job") {
                 val selectedJob = homeViewModel.selectedJob
-                if (selectedJob != null) {
+                // Belt-and-suspenders: employers have no apply action, so even if this
+                // route were reached some other way (deep link, restored back stack)
+                // it still won't let an employer submit an application.
+                val isEmployer = loggedInUser?.role == UserRole.EMPLOYER
+                if (selectedJob != null && !isEmployer) {
                     ApplyJobScreen(
                         navController = navController,
                         job = selectedJob,
@@ -268,19 +293,59 @@ fun AppNavGraph(
                             appliedViewModel.loadApplications(userId, forceRefresh = true)
                         }
                     },
+                    chatLoadingApplicationId = chatCreationInProgressId,
                     onChatWithCompany = { application ->
-                        val userId = loggedInUser?.id ?: return@MyAppliedScreen
+                        Log.d("AppNavGraph", "Chat with Employer tapped for application=${application.id}")
+
+                        // Previously this was `val userId = loggedInUser?.id ?: return@MyAppliedScreen`,
+                        // which silently did nothing if loggedInUser was null -- the button would
+                        // appear to not respond at all. Now every dead end shows a Snackbar.
+                        val userId = loggedInUser?.id
+                        if (userId.isNullOrBlank()) {
+                            Log.e("AppNavGraph", "Chat tapped but no logged-in user id available.")
+                            chatErrorMessage = "You need to be logged in to start a chat."
+                            return@MyAppliedScreen
+                        }
+
+                        // Ignore taps while a room is already being created (for this
+                        // or any other application) to avoid firing duplicate inserts.
+                        if (chatCreationInProgressId != null) {
+                            Log.d("AppNavGraph", "Chat creation already in progress, ignoring tap.")
+                            return@MyAppliedScreen
+                        }
+
                         val userName = loggedInUser?.name?.ifBlank { loggedInUser?.email ?: "" } ?: ""
+                        chatCreationInProgressId = application.id
 
                         coroutineScope.launch {
-                            val roomId = messageRepository.getOrCreateChatRoom(
-                                seekerId = userId,
-                                seekerName = userName,
-                                employerId = application.id.ifBlank { "employer_default" },
-                                companyName = application.companyName
-                            )
+                            var caughtErrorText: String? = null
+
+                            val roomId = try {
+                                messageRepository.getOrCreateChatRoom(
+                                    seekerId = userId,
+                                    seekerName = userName,
+                                    // Real employer user id, carried over from the Job when the
+                                    // application was submitted -- NOT the application's own id.
+                                    // Falls back to a shared placeholder only for older
+                                    // applications that predate this field.
+                                    employerId = application.employerId.ifBlank { "employer_default" },
+                                    companyName = application.companyName
+                                )
+                            } catch (e: Exception) {
+                                Log.e("AppNavGraph", "Error creating chat room", e)
+                                // Surface the actual Postgrest/Supabase error text on-screen
+                                // (see the Snackbar below) instead of requiring Logcat/adb to
+                                // see what went wrong.
+                                caughtErrorText = e.message ?: e.toString()
+                                ""
+                            }
+
+                            Log.d("AppNavGraph", "getOrCreateChatRoom returned roomId='$roomId'")
+                            chatCreationInProgressId = null
 
                             if (roomId.isNotBlank()) {
+                                // Auto-create/refresh the entry in the Messages tab so the
+                                // conversation is there the moment the user lands on it.
                                 chatViewModel.loadUserChatRooms(userId)
 
                                 val encodedCompany = Uri.encode(application.companyName.ifBlank { "Company" })
@@ -294,7 +359,17 @@ fun AppNavGraph(
 
                                 navController.navigate("chat_detail/$roomId/$encodedCompany/$encodedTitle/none")
                             } else {
+                                // roomId comes back blank both when getOrCreateChatRoom throws
+                                // (see catch above -- usually a missing/misconfigured Supabase
+                                // "chat_rooms" table or an RLS policy blocking the insert/select)
+                                // and when seekerId was blank. Either way, surface it instead of
+                                // leaving the user staring at a button that "did nothing".
                                 Log.e("AppNavGraph", "Could not create or retrieve chat room.")
+                                chatErrorMessage = if (caughtErrorText != null) {
+                                    "Chat error: $caughtErrorText"
+                                } else {
+                                    "Couldn't start the chat. Please check your connection and try again."
+                                }
                             }
                         }
                     }
