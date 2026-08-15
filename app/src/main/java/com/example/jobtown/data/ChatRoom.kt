@@ -30,5 +30,8 @@ data class ChatRoom(
     val lastMessage: String = "",
 
     @SerialName("last_message_time")
-    val lastMessageTime: Long = System.currentTimeMillis()
+    val lastMessageTime: Long = System.currentTimeMillis(),
+
+    @SerialName("unread_count")
+    val unreadCount: Int = 0
 )

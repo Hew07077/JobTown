@@ -25,6 +25,9 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
     var isLoading by mutableStateOf(false)
         private set
 
+    var isPostingJob by mutableStateOf(false)
+        private set
+
     init {
         loadJobs()
     }
@@ -84,6 +87,21 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
                 e.printStackTrace()
                 // If backend save fails, reload to reconcile state
                 loadJobs(newJob.postedByUserId ?: newJob.employerId)
+            }
+        }
+    }
+
+    fun postJob(job: Job, onResult: (success: Boolean, message: String?) -> Unit) {
+        if (isPostingJob) return
+        viewModelScope.launch {
+            isPostingJob = true
+            val inserted = repository.insertJob(job)
+            isPostingJob = false
+            if (inserted != null) {
+                jobsList = listOf(inserted) + jobsList
+                onResult(true, null)
+            } else {
+                onResult(false, "Couldn't post the job. Please check your connection and try again.")
             }
         }
     }

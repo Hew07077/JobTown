@@ -1,13 +1,23 @@
 package com.example.jobtown.ui.chat
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.ReplyAll
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,12 +34,17 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.jobtown.data.ChatMessage
 import com.example.jobtown.data.MessageType
+import com.example.jobtown.data.ReactionGroup
 import com.example.jobtown.ui.theme.DeepGreenDark
+import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.SageGreenMain
 import com.example.jobtown.ui.theme.TextDark
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** Emoji offered in the quick-reaction picker, in display order. */
+val QUICK_REACTION_EMOJIS = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")
 
 @Composable
 fun DateHeader(dateString: String) {
@@ -59,10 +74,16 @@ fun DateHeader(dateString: String) {
 fun MessageBubble(
     message: ChatMessage,
     isMe: Boolean,
+    replySourceMessage: ChatMessage?,
+    reactionGroups: List<ReactionGroup>,
     onEdit: (ChatMessage) -> Unit,
-    onDelete: (ChatMessage) -> Unit
+    onDelete: (ChatMessage) -> Unit,
+    onReply: (ChatMessage) -> Unit,
+    onToggleReaction: (emoji: String) -> Unit,
+    onReplyPreviewClick: (messageId: String) -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var showReactionPicker by remember { mutableStateOf(false) }
     val alignment = if (isMe) Alignment.End else Alignment.Start
     val bubbleColor = if (isMe) SageGreenMain else Color.White
 
@@ -83,15 +104,22 @@ fun MessageBubble(
                 modifier = Modifier.combinedClickable(
                     onClick = { },
                     onLongClick = {
-                        if (isMe && !message.isDeleted) {
-                            showMenu = true
-                        }
+                        if (!message.isDeleted) showReactionPicker = true
                     }
                 )
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
+                    if (!message.isDeleted && !message.replyToId.isNullOrBlank()) {
+                        ReplyPreviewChip(
+                            sourceMessage = replySourceMessage,
+                            isMe = isMe,
+                            onClick = { onReplyPreviewClick(message.replyToId!!) }
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+
                     when {
                         message.isDeleted -> {
                             Text(
@@ -127,7 +155,7 @@ fun MessageBubble(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = message.text.substringAfterLast("/"),
+                                    text = displayFileName(message.text),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = TextDark,
@@ -180,25 +208,183 @@ fun MessageBubble(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
             ) {
-                DropdownMenuItem(
-                    text = { Text("Edit") },
-                    onClick = {
-                        showMenu = false
-                        onEdit(message)
-                    },
-                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = "Edit") }
+                if (!message.isDeleted) {
+                    DropdownMenuItem(
+                        text = { Text("Reply") },
+                        onClick = {
+                            showMenu = false
+                            onReply(message)
+                        },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.ReplyAll, contentDescription = "Reply") }
+                    )
+                }
+                if (isMe && !message.isDeleted) {
+                    DropdownMenuItem(
+                        text = { Text("Edit") },
+                        onClick = {
+                            showMenu = false
+                            onEdit(message)
+                        },
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = "Edit") }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = Color.Red) },
+                        onClick = {
+                            showMenu = false
+                            onDelete(message)
+                        },
+                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red) }
+                    )
+                }
+            }
+
+            ReactionPickerPopup(
+                expanded = showReactionPicker,
+                onDismiss = { showReactionPicker = false },
+                onEmojiSelected = { emoji ->
+                    showReactionPicker = false
+                    onToggleReaction(emoji)
+                },
+                onMoreOptions = {
+                    showReactionPicker = false
+                    showMenu = true
+                }
+            )
+        }
+
+        if (reactionGroups.isNotEmpty() && !message.isDeleted) {
+            ReactionChipsRow(
+                groups = reactionGroups,
+                onChipClick = onToggleReaction
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReplyPreviewChip(
+    sourceMessage: ChatMessage?,
+    isMe: Boolean,
+    onClick: () -> Unit
+) {
+    val barColor = if (isMe) DeepGreenDark else SageGreenMain
+    val backgroundColor = (if (isMe) Color.White else SageGreenLight).copy(alpha = 0.6f)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(backgroundColor)
+            .clickable { onClick() }
+            .padding(vertical = 4.dp, horizontal = 6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .heightIn(min = 28.dp)
+                .background(barColor, RoundedCornerShape(2.dp))
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Column {
+            Text(
+                text = when {
+                    sourceMessage == null -> "Original message"
+                    sourceMessage.isDeleted -> "Deleted message"
+                    else -> "Replying to"
+                },
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = barColor
+            )
+            Text(
+                text = when {
+                    sourceMessage == null -> "Message unavailable"
+                    sourceMessage.isDeleted -> "This message was deleted"
+                    sourceMessage.messageType == MessageType.IMAGE -> "📷 Photo"
+                    sourceMessage.messageType == MessageType.FILE -> "📄 ${displayFileName(sourceMessage.text)}"
+                    else -> sourceMessage.text
+                },
+                fontSize = 11.sp,
+                color = TextDark.copy(alpha = 0.7f),
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReactionChipsRow(
+    groups: List<ReactionGroup>,
+    onChipClick: (emoji: String) -> Unit
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.padding(top = 2.dp)
+    ) {
+        items(groups, key = { it.emoji }) { group ->
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (group.reactedByMe) SageGreenMain.copy(alpha = 0.35f) else Color.LightGray.copy(alpha = 0.25f),
+                modifier = Modifier.clickable { onChipClick(group.emoji) }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                ) {
+                    Text(text = group.emoji, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = group.count.toString(),
+                        fontSize = 11.sp,
+                        fontWeight = if (group.reactedByMe) FontWeight.Bold else FontWeight.Normal,
+                        color = TextDark.copy(alpha = 0.8f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReactionPickerPopup(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onEmojiSelected: (String) -> Unit,
+    onMoreOptions: () -> Unit
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            QUICK_REACTION_EMOJIS.forEach { emoji ->
+                Text(
+                    text = emoji,
+                    fontSize = 20.sp,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable { onEmojiSelected(emoji) }
+                        .padding(6.dp)
                 )
-                DropdownMenuItem(
-                    text = { Text("Delete", color = Color.Red) },
-                    onClick = {
-                        showMenu = false
-                        onDelete(message)
-                    },
-                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red) }
+            }
+            IconButton(onClick = onMoreOptions, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    imageVector = Icons.Default.MoreHoriz,
+                    contentDescription = "More options",
+                    tint = TextDark.copy(alpha = 0.6f)
                 )
             }
         }
     }
+}
+
+private fun displayFileName(url: String): String {
+    val rawName = url.substringAfterLast("/")
+    val uuidPrefixPattern = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}_")
+    return rawName.replaceFirst(uuidPrefixPattern, "").ifBlank { rawName }
 }
 
 @Composable
@@ -226,6 +412,120 @@ fun MessageStatusTicks(isRead: Boolean, isPending: Boolean) {
                 contentDescription = "Delivered",
                 modifier = Modifier.size(14.dp),
                 tint = TextDark.copy(alpha = 0.5f)
+            )
+        }
+    }
+}
+
+@Composable
+fun OnlineStatusDot(isOnline: Boolean, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(10.dp)
+            .clip(CircleShape)
+            .background(if (isOnline) Color(0xFF4CAF50) else Color.LightGray)
+    )
+}
+
+@Composable
+fun TypingIndicatorBubble(label: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 2.dp, bottomEnd = 16.dp),
+            color = Color.White,
+            shadowElevation = 1.dp
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                TypingDots()
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontStyle = FontStyle.Italic,
+            color = TextDark.copy(alpha = 0.6f)
+        )
+    }
+}
+
+@Composable
+private fun TypingDots() {
+    val transition = rememberInfiniteTransition(label = "typing")
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        repeat(3) { index ->
+            val delayMillis = index * 150
+            val alpha by transition.animateFloat(
+                initialValue = 0.3f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 600, delayMillis = delayMillis, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "dot_$index"
+            )
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(TextDark.copy(alpha = alpha))
+            )
+        }
+    }
+}
+
+@Composable
+fun ReplyComposerBanner(
+    replyTarget: ChatMessage,
+    onCancel: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SageGreenMain.copy(alpha = 0.2f))
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(modifier = Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .heightIn(min = 28.dp)
+                    .background(DeepGreenDark, RoundedCornerShape(2.dp))
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = "Replying to message",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = DeepGreenDark
+                )
+                Text(
+                    text = when {
+                        replyTarget.messageType == MessageType.IMAGE -> "📷 Photo"
+                        replyTarget.messageType == MessageType.FILE -> "📄 ${displayFileName(replyTarget.text)}"
+                        else -> replyTarget.text
+                    },
+                    fontSize = 12.sp,
+                    color = TextDark.copy(alpha = 0.7f),
+                    maxLines = 1
+                )
+            }
+        }
+        IconButton(onClick = onCancel, modifier = Modifier.size(24.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Cancel reply",
+                tint = TextDark
             )
         }
     }

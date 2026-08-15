@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.example.jobtown.data.SupabaseClient
-import com.example.jobtown.ui.navigation.AppNavGraph
+import com.example.jobtown.navigation.AppNavGraph
 import com.example.jobtown.ui.theme.JobTownTheme
 
 class MainActivity : ComponentActivity() {

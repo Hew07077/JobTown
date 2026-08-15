@@ -1,7 +1,11 @@
 package com.example.jobtown.ui.chat
 
+import android.webkit.MimeTypeMap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,18 +19,21 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.jobtown.data.ChatMessage
 import com.example.jobtown.data.MessageType
+import com.example.jobtown.data.toReactionGroups
 import com.example.jobtown.ui.theme.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -47,52 +54,109 @@ fun ChatDetailScreen(
 ) {
     var messageText by remember { mutableStateOf("") }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var replyingToMessage by remember { mutableStateOf<ChatMessage?>(null) }
 
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var showInterviewDialog by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    val messages: List<ChatMessage> = chatViewModel.messagesList.value
+    val context = LocalContext.current
+
+    val messages by chatViewModel.messagesList.collectAsState(initial = emptyList())
+    val rawReactions by chatViewModel.reactionsList.collectAsState(initial = emptyList())
+    val roomPresence by chatViewModel.roomPresence.collectAsState()
+
+    val isMessagesLoading by chatViewModel.isLoadingMessages.collectAsState(initial = false)
+    val isSendingMessage by chatViewModel.isSendingMessage.collectAsState(initial = false)
+    val isUploadingAttachment by chatViewModel.isUploadingAttachment.collectAsState(initial = false)
+    val isLoadingOlderMessages by chatViewModel.isLoadingOlderMessages.collectAsState(initial = false)
 
     val displayCompanyName = companyName.ifBlank { "Company Name" }
     val displayPosition = chatTitle.ifBlank { "Position" }
 
+    val isNearBottom by remember {
+        derivedStateOf {
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val totalItems = listState.layoutInfo.totalItemsCount
+            totalItems == 0 || lastVisible >= totalItems - 2
+        }
+    }
+
+    // Typing status observer helper
+    LaunchedEffect(messageText) {
+        if (roomId.isNotBlank() && currentUserId.isNotBlank()) {
+            chatViewModel.sendTypingStatus(roomId, currentUserId, messageText.isNotBlank())
+        }
+    }
+
+    fun readBytesAndSend(uri: android.net.Uri, type: MessageType) {
+        coroutineScope.launch {
+            try {
+                val resolver = context.contentResolver
+                val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes == null) {
+                    android.util.Log.e("ChatDetailScreen", "Could not read attachment bytes for $uri")
+                    return@launch
+                }
+                val mimeType = resolver.getType(uri)
+                    ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString())
+                        ?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
+                    ?: "application/octet-stream"
+                val fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "attachment"
+
+                chatViewModel.sendAttachment(
+                    roomId = roomId,
+                    senderId = currentUserId,
+                    bytes = bytes,
+                    fileName = fileName,
+                    mimeType = mimeType,
+                    type = type,
+                    replyToId = replyingToMessage?.id
+                ) { success ->
+                    if (success) {
+                        replyingToMessage = null
+                        chatViewModel.loadUserChatRooms(currentUserId)
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ChatDetailScreen", "Error reading attachment", e)
+            }
+        }
+    }
+
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let {
-            chatViewModel.sendMessage(roomId, currentUserId, it.toString(), MessageType.IMAGE) {
-                chatViewModel.loadUserChatRooms(currentUserId)
-            }
-        }
+        uri?.let { readBytesAndSend(it, MessageType.IMAGE) }
     }
 
     val documentPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let {
-            chatViewModel.sendMessage(roomId, currentUserId, it.toString(), MessageType.FILE) {
-                chatViewModel.loadUserChatRooms(currentUserId)
-            }
-        }
+        uri?.let { readBytesAndSend(it, MessageType.FILE) }
     }
 
     LaunchedEffect(roomId) {
         if (roomId.isNotBlank()) {
             chatViewModel.loadMessages(roomId, currentUserId)
-            if (initialQuestion.isNotBlank()) {
-                chatViewModel.sendMessage(roomId, currentUserId, initialQuestion) {
-                    chatViewModel.loadUserChatRooms(currentUserId)
-                }
-            }
+            chatViewModel.sendInitialQuestionOnce(roomId, currentUserId, initialQuestion)
         }
     }
 
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
+        if (messages.isNotEmpty() && isNearBottom) {
             listState.animateScrollToItem(messages.size - 1)
         }
+    }
+
+    LaunchedEffect(listState, roomId) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .collect { firstVisible ->
+                if (firstVisible <= 2 && chatViewModel.messagesList.value.isNotEmpty()) {
+                    chatViewModel.loadOlderMessages(roomId)
+                }
+            }
     }
 
     Scaffold(
@@ -106,11 +170,21 @@ fun ChatDetailScreen(
                             fontWeight = FontWeight.Bold,
                             color = TextDark
                         )
-                        Text(
-                            text = displayPosition,
-                            fontSize = 12.sp,
-                            color = TextDark.copy(alpha = 0.6f)
-                        )
+                        val otherTyping = roomPresence.typingUserIds.isNotEmpty()
+                        if (otherTyping) {
+                            Text(
+                                text = "typing...",
+                                fontSize = 12.sp,
+                                color = DeepGreenDark,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        } else {
+                            Text(
+                                text = displayPosition,
+                                fontSize = 12.sp,
+                                color = TextDark.copy(alpha = 0.6f)
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
@@ -140,7 +214,7 @@ fun ChatDetailScreen(
                 color = Color.White
             ) {
                 Column {
-                    editingMessage?.let { editMsg: ChatMessage ->
+                    editingMessage?.let { editMsg ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -179,6 +253,13 @@ fun ChatDetailScreen(
                         }
                     }
 
+                    replyingToMessage?.let { replyMsg ->
+                        ReplyComposerBanner(
+                            replyTarget = replyMsg,
+                            onCancel = { replyingToMessage = null }
+                        )
+                    }
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -187,13 +268,22 @@ fun ChatDetailScreen(
                     ) {
                         IconButton(
                             onClick = { showAttachmentSheet = true },
+                            enabled = !isUploadingAttachment,
                             modifier = Modifier.size(40.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Attach File",
-                                tint = TextDark.copy(alpha = 0.7f)
-                            )
+                            if (isUploadingAttachment) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = DeepGreenDark
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Attach File",
+                                    tint = TextDark.copy(alpha = 0.7f)
+                                )
+                            }
                         }
 
                         TextField(
@@ -214,22 +304,30 @@ fun ChatDetailScreen(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
+                        val canSend = messageText.isNotBlank() && !isSendingMessage
+
                         IconButton(
                             onClick = {
-                                if (messageText.isNotBlank()) {
+                                if (canSend) {
                                     val textToSend = messageText
                                     val currentEdit = editingMessage
+                                    val currentReplyId = replyingToMessage?.id
+                                    messageText = ""
 
                                     if (currentEdit != null) {
                                         chatViewModel.editMessage(roomId, currentEdit.id, textToSend)
                                         editingMessage = null
-                                        messageText = ""
                                         chatViewModel.loadUserChatRooms(currentUserId)
                                     } else {
-                                        messageText = ""
-                                        chatViewModel.sendMessage(roomId, currentUserId, textToSend) { success ->
+                                        chatViewModel.sendMessage(
+                                            roomId = roomId,
+                                            senderId = currentUserId,
+                                            content = textToSend,
+                                            replyToId = currentReplyId
+                                        ) { success ->
                                             if (success) {
                                                 chatViewModel.loadUserChatRooms(currentUserId)
+                                                replyingToMessage = null
                                                 coroutineScope.launch {
                                                     val currentMessages = chatViewModel.messagesList.value
                                                     if (currentMessages.isNotEmpty()) {
@@ -241,16 +339,25 @@ fun ChatDetailScreen(
                                     }
                                 }
                             },
+                            enabled = canSend,
                             modifier = Modifier
                                 .size(44.dp)
                                 .clip(CircleShape)
-                                .background(SageGreenMain)
+                                .background(if (canSend) SageGreenMain else SageGreenMain.copy(alpha = 0.4f))
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send",
-                                tint = DeepGreenDark
-                            )
+                            if (isSendingMessage && editingMessage == null) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = DeepGreenDark
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Send",
+                                    tint = DeepGreenDark
+                                )
+                            }
                         }
                     }
                 }
@@ -264,7 +371,7 @@ fun ChatDetailScreen(
                 .padding(innerPadding)
         ) {
             when {
-                chatViewModel.isLoadingMessages && messages.isEmpty() -> {
+                isMessagesLoading && messages.isEmpty() -> {
                     CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center),
                         color = DeepGreenDark
@@ -287,6 +394,22 @@ fun ChatDetailScreen(
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        if (isLoadingOlderMessages) {
+                            item(key = "loading_older") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = DeepGreenDark
+                                    )
+                                }
+                            }
+                        }
                         groupedMessages.forEach { (dateHeader: String, messageList: List<ChatMessage>) ->
                             item(key = "header_$dateHeader") {
                                 DateHeader(dateString = dateHeader)
@@ -295,20 +418,68 @@ fun ChatDetailScreen(
                                 items = messageList,
                                 key = { msg: ChatMessage -> msg.id.ifBlank { "${msg.timestamp}_${msg.text.hashCode()}" } }
                             ) { msg: ChatMessage ->
+                                val replySource = msg.replyToId?.let { replyId ->
+                                    messages.firstOrNull { it.id == replyId }
+                                }
+                                val messageReactions = rawReactions
+                                    .filter { it.messageId == msg.id }
+                                    .toReactionGroups(currentUserId)
+
                                 MessageBubble(
                                     message = msg,
                                     isMe = msg.senderId == currentUserId,
-                                    onEdit = { selectedMsg: ChatMessage ->
+                                    replySourceMessage = replySource,
+                                    reactionGroups = messageReactions,
+                                    onReply = { selectedMsg ->
+                                        replyingToMessage = selectedMsg
+                                    },
+                                    onToggleReaction = { emoji ->
+                                        chatViewModel.toggleReaction(roomId, msg.id, currentUserId, emoji)
+                                    },
+                                    onEdit = { selectedMsg ->
                                         editingMessage = selectedMsg
                                         messageText = selectedMsg.text
                                     },
-                                    onDelete = { selectedMsg: ChatMessage ->
+                                    onDelete = { selectedMsg ->
                                         chatViewModel.deleteMessage(roomId, selectedMsg.id)
-                                        // Refreshes the chat rooms list outside after deletion
                                         chatViewModel.loadUserChatRooms(currentUserId)
+                                    },
+                                    onReplyPreviewClick = { targetId ->
+                                        val index = messages.indexOfFirst { it.id == targetId }
+                                        if (index != -1) {
+                                            coroutineScope.launch {
+                                                listState.animateScrollToItem(index)
+                                            }
+                                        }
                                     }
                                 )
                             }
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = !isNearBottom,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp)
+                    ) {
+                        SmallFloatingActionButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    if (messages.isNotEmpty()) {
+                                        listState.animateScrollToItem(messages.size - 1)
+                                    }
+                                }
+                            },
+                            containerColor = SageGreenMain,
+                            contentColor = DeepGreenDark
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Scroll to latest message"
+                            )
                         }
                     }
                 }
