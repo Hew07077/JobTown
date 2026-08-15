@@ -9,6 +9,11 @@ sealed class Screen(val route: String) {
     object Schedule : Screen("schedule")
     object Chat : Screen("chat")
 
+    // Add this single object inside sealed class Screen(val route: String)
+    object ApplicationDetail : Screen("application_detail/{applicationId}") {
+        fun createRoute(applicationId: String) = "application_detail/$applicationId"
+    }
+
     object ChatDetail : Screen("chat_detail/{chatRoomId}?company={company}&title={title}&initialQuestion={initialQuestion}") {
         fun createRoute(
             chatRoomId: String,

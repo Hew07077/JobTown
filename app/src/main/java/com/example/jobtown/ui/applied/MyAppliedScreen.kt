@@ -1,13 +1,14 @@
 package com.example.jobtown.ui.applied
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Chat
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -33,6 +34,7 @@ fun MyAppliedScreen(
     applications: List<JobApplication>,
     isLoading: Boolean,
     onRefresh: () -> Unit,
+    onApplicationClick: (String) -> Unit = {}, // <-- Added detail click listener parameter
     chatLoadingApplicationId: String? = null,
     onChatWithCompany: (JobApplication) -> Unit
 ) {
@@ -81,6 +83,7 @@ fun MyAppliedScreen(
                             ApplicationCard(
                                 application = application,
                                 isChatLoading = chatLoadingApplicationId == application.id,
+                                onCardClick = { onApplicationClick(application.id) }, // <-- Added callback
                                 onChatWithCompany = { onChatWithCompany(application) }
                             )
                         }
@@ -95,10 +98,13 @@ fun MyAppliedScreen(
 fun ApplicationCard(
     application: JobApplication,
     isChatLoading: Boolean = false,
+    onCardClick: () -> Unit = {}, // <-- Added card click parameter
     onChatWithCompany: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCardClick() }, // <-- Added click action to card
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)

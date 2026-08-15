@@ -22,4 +22,33 @@ class JobRepository(private val supabaseClient: SupabaseClient) {
             emptyList()
         }
     }
+
+    // Fetch only jobs posted by the current logged-in user
+    suspend fun getJobsByUserId(userId: String): List<Job> = withContext(Dispatchers.IO) {
+        try {
+            val result = supabaseClient.postgrest["jobs"]
+                .select {
+                    filter {
+                        eq("posted_by_user_id", userId)
+                    }
+                }
+                .decodeList<Job>()
+
+            Log.d("JobRepository", "SUCCESS: Loaded ${result.size} user posted jobs!")
+            result
+        } catch (e: Exception) {
+            Log.e("JobRepository", "ERROR FETCHING USER JOBS: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    suspend fun addJob(job: Job) = withContext(Dispatchers.IO) {
+        try {
+            supabaseClient.postgrest["jobs"].insert(job)
+            Log.d("JobRepository", "SUCCESS: Added job '${job.title}' to Supabase!")
+        } catch (e: Exception) {
+            Log.e("JobRepository", "ERROR ADDING JOB: ${e.message}", e)
+            throw e
+        }
+    }
 }

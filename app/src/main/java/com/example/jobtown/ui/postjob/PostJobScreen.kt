@@ -24,15 +24,36 @@ import com.example.jobtown.ui.theme.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PostJobScreen(
-    navController: NavController,
-    currentUser: User?,
-    onJobPosted: (Job) -> Unit
+    navController: NavController? = null,
+    currentUser: User? = null,
+    onJobPosted: (Job) -> Unit = {},
+    onBackClick: () -> Unit = { navController?.popBackStack() }
 ) {
     var title by remember { mutableStateOf("") }
-    var company by remember { mutableStateOf(currentUser?.name ?: "") }
+    var company by remember {
+        mutableStateOf(
+            currentUser?.companyName?.ifBlank { currentUser.name }
+                ?: currentUser?.name
+                ?: ""
+        )
+    }
     var location by remember { mutableStateOf("") }
-    var salary by remember { mutableStateOf("") }
+
+    // Min and Max Salary States
+    var minSalary by remember { mutableStateOf("") }
+    var maxSalary by remember { mutableStateOf("") }
+    var minSalaryExpanded by remember { mutableStateOf(false) }
+    var maxSalaryExpanded by remember { mutableStateOf(false) }
+
+    // Dropdown options in increments of $1,000
+    val minSalaryOptions = remember { (1000..20000 step 1000).map { "%,d".format(it) } }
+    val maxSalaryOptions = remember { (2000..30000 step 1000).map { "%,d".format(it) } + listOf("30,000+") }
+
+    // Job Type State & Dropdown
     var type by remember { mutableStateOf("Full-time") }
+    var jobTypeExpanded by remember { mutableStateOf(false) }
+    val jobTypeOptions = listOf("Full-time", "Part-time", "Contract", "Internship", "Freelance")
+
     var description by remember { mutableStateOf("") }
     var requirements by remember { mutableStateOf("") }
     var skills by remember { mutableStateOf("") }
@@ -51,7 +72,7 @@ fun PostJobScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = onBackClick) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
@@ -99,24 +120,120 @@ fun PostJobScreen(
                 shape = RoundedCornerShape(12.dp)
             )
 
-            OutlinedTextField(
-                value = salary,
-                onValueChange = { salary = it },
-                label = { Text("Salary Range (e.g. $80k - $100k)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                shape = RoundedCornerShape(12.dp)
+            // SALARY RANGE: MIN & MAX DROPDOWNS
+            Text(
+                text = "Salary Range ($ / month)",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextDark
             )
 
-            OutlinedTextField(
-                value = type,
-                onValueChange = { type = it },
-                label = { Text("Job Type (Full-time, Part-time, Contract)") },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
-            )
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Min Salary Dropdown
+                ExposedDropdownMenuBox(
+                    expanded = minSalaryExpanded,
+                    onExpandedChange = { minSalaryExpanded = !minSalaryExpanded },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        value = minSalary,
+                        onValueChange = { minSalary = it },
+                        label = { Text("Min ($)") },
+                        placeholder = { Text("e.g. 2,000") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = minSalaryExpanded) },
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                        modifier = Modifier.menuAnchor(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    ExposedDropdownMenu(
+                        expanded = minSalaryExpanded,
+                        onDismissRequest = { minSalaryExpanded = false }
+                    ) {
+                        minSalaryOptions.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(text = "$$option") },
+                                onClick = {
+                                    minSalary = option
+                                    minSalaryExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Max Salary Dropdown
+                ExposedDropdownMenuBox(
+                    expanded = maxSalaryExpanded,
+                    onExpandedChange = { maxSalaryExpanded = !maxSalaryExpanded },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        value = maxSalary,
+                        onValueChange = { maxSalary = it },
+                        label = { Text("Max ($)") },
+                        placeholder = { Text("e.g. 5,000") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = maxSalaryExpanded) },
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                        modifier = Modifier.menuAnchor(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    ExposedDropdownMenu(
+                        expanded = maxSalaryExpanded,
+                        onDismissRequest = { maxSalaryExpanded = false }
+                    ) {
+                        maxSalaryOptions.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(text = "$$option") },
+                                onClick = {
+                                    maxSalary = option
+                                    maxSalaryExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // JOB TYPE DROPDOWN
+            ExposedDropdownMenuBox(
+                expanded = jobTypeExpanded,
+                onExpandedChange = { jobTypeExpanded = !jobTypeExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = type,
+                    onValueChange = { type = it },
+                    label = { Text("Job Type") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = jobTypeExpanded) },
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                ExposedDropdownMenu(
+                    expanded = jobTypeExpanded,
+                    onDismissRequest = { jobTypeExpanded = false }
+                ) {
+                    jobTypeOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(text = option) },
+                            onClick = {
+                                type = option
+                                jobTypeExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
 
             OutlinedTextField(
                 value = description,
@@ -166,16 +283,23 @@ fun PostJobScreen(
                     if (title.isBlank() || company.isBlank() || location.isBlank() || description.isBlank()) {
                         showError = true
                     } else {
-                        val userId = currentUser?.id ?: ""
+                        // Crucial: Use current user ID for ownership check
+                        val userId = currentUser?.id.orEmpty()
 
-                        // ✅ Instantiated strictly with parameters matching Job.kt
+                        val formattedSalary = when {
+                            minSalary.isNotBlank() && maxSalary.isNotBlank() -> "$$minSalary - $$maxSalary / month"
+                            minSalary.isNotBlank() -> "From $$minSalary / month"
+                            maxSalary.isNotBlank() -> "Up to $$maxSalary / month"
+                            else -> "Negotiable"
+                        }
+
                         val newJob = Job(
                             id = "job_${System.currentTimeMillis()}",
                             title = title,
                             company = company,
                             location = location,
-                            salary = salary,
-                            salaryRange = salary,
+                            salary = formattedSalary,
+                            salaryRange = formattedSalary,
                             type = type,
                             description = description,
                             requirements = requirements.split(",").map { it.trim() }.filter { it.isNotEmpty() },

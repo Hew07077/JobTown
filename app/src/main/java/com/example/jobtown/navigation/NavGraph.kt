@@ -30,6 +30,7 @@ import com.example.jobtown.data.UserRole
 import com.example.jobtown.data.repository.ApplicationRepository
 import com.example.jobtown.data.repository.JobRepository
 import com.example.jobtown.data.repository.MessageRepository
+import com.example.jobtown.ui.applied.ApplicationDetailScreen
 import com.example.jobtown.ui.applied.AppliedViewModel
 import com.example.jobtown.ui.applied.AppliedViewModelFactory
 import com.example.jobtown.ui.applied.MyAppliedScreen
@@ -47,6 +48,7 @@ import com.example.jobtown.ui.home.HomeScreen
 import com.example.jobtown.ui.home.HomeViewModel
 import com.example.jobtown.ui.home.HomeViewModelFactory
 import com.example.jobtown.ui.job.ApplyJobScreen
+import com.example.jobtown.ui.postjob.PostJobScreen
 import com.example.jobtown.ui.profile.ProfileScreen
 import com.example.jobtown.ui.schedule.ScheduleScreen
 import io.github.jan.supabase.SupabaseClient
@@ -86,8 +88,10 @@ fun AppNavGraph(
     val appliedViewModel: AppliedViewModel = viewModel(factory = AppliedViewModelFactory(applicationRepository))
     val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModelFactory(messageRepository))
 
+    // Ensure jobs and chat/application data reload whenever user changes
     LaunchedEffect(loggedInUser?.id) {
         loggedInUser?.id?.let { userId ->
+            homeViewModel.loadJobs(userId)
             appliedViewModel.loadApplications(userId)
             chatViewModel.loadUserChatRooms(userId)
         }
@@ -132,6 +136,7 @@ fun AppNavGraph(
                 LoginScreen(
                     onLoginSuccess = { user ->
                         loggedInUser = user
+                        homeViewModel.loadJobs(user.id)
                         navController.navigate(Screen.Home.route) {
                             popUpTo("login") { inclusive = true }
                         }
@@ -171,6 +176,7 @@ fun AppNavGraph(
                     onComplete = { completedUser ->
                         loggedInUser = completedUser
                         signupDraft = SignUpFields()
+                        homeViewModel.loadJobs(completedUser.id)
                         navController.navigate(Screen.Home.route) {
                             popUpTo("signup") { inclusive = true }
                         }
@@ -188,9 +194,25 @@ fun AppNavGraph(
                         homeViewModel.selectJob(selectedJob)
                         navController.navigate("apply_job")
                     },
-                    onPostJobClick = { },
+                    onPostJobClick = {
+                        navController.navigate("post_job")
+                    },
                     onProfileClick = { navController.navigate("profile") },
-                    onRefresh = { homeViewModel.loadJobs() }
+                    onRefresh = { homeViewModel.loadJobs(loggedInUser?.id) }
+                )
+            }
+
+            // POST JOB ROUTE
+            composable("post_job") {
+                PostJobScreen(
+                    navController = navController,
+                    currentUser = loggedInUser,
+                    onJobPosted = { createdJob ->
+                        // Adds job to repository & UI state, then pops back stack
+                        homeViewModel.addJob(createdJob)
+                        navController.popBackStack()
+                    },
+                    onBackClick = { navController.popBackStack() }
                 )
             }
 
@@ -249,6 +271,9 @@ fun AppNavGraph(
                             appliedViewModel.loadApplications(userId, forceRefresh = true)
                         }
                     },
+                    onApplicationClick = { applicationId ->
+                        navController.navigate("application_detail/$applicationId")
+                    },
                     chatLoadingApplicationId = chatCreationInProgressId,
                     onChatWithCompany = { application ->
                         val userId = loggedInUser?.id
@@ -303,6 +328,20 @@ fun AppNavGraph(
                             }
                         }
                     }
+                )
+            }
+
+            composable(
+                route = "application_detail/{applicationId}",
+                arguments = listOf(
+                    navArgument("applicationId") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val applicationId = backStackEntry.arguments?.getString("applicationId") ?: ""
+                ApplicationDetailScreen(
+                    applicationId = applicationId,
+                    viewModel = appliedViewModel,
+                    onBackClick = { navController.popBackStack() }
                 )
             }
 
