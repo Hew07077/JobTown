@@ -30,10 +30,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.example.jobtown.data.ChatMessage
 import com.example.jobtown.data.MessageType
-import com.example.jobtown.data.toReactionGroups
 import com.example.jobtown.ui.theme.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -63,14 +63,13 @@ fun ChatDetailScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    val messages by chatViewModel.messagesList.collectAsState(initial = emptyList())
-    val rawReactions by chatViewModel.reactionsList.collectAsState(initial = emptyList())
-    val roomPresence by chatViewModel.roomPresence.collectAsState()
+    val messages by chatViewModel.messagesList.collectAsStateWithLifecycle()
+    val roomPresence by chatViewModel.roomPresence.collectAsStateWithLifecycle()
 
-    val isMessagesLoading by chatViewModel.isLoadingMessages.collectAsState(initial = false)
-    val isSendingMessage by chatViewModel.isSendingMessage.collectAsState(initial = false)
-    val isUploadingAttachment by chatViewModel.isUploadingAttachment.collectAsState(initial = false)
-    val isLoadingOlderMessages by chatViewModel.isLoadingOlderMessages.collectAsState(initial = false)
+    val isMessagesLoading by chatViewModel.isLoadingMessages.collectAsStateWithLifecycle()
+    val isSendingMessage by chatViewModel.isSendingMessage.collectAsStateWithLifecycle()
+    val isUploadingAttachment by chatViewModel.isUploadingAttachment.collectAsStateWithLifecycle()
+    val isLoadingOlderMessages by chatViewModel.isLoadingOlderMessages.collectAsStateWithLifecycle()
 
     val displayCompanyName = companyName.ifBlank { "Company Name" }
     val displayPosition = chatTitle.ifBlank { "Position" }
@@ -81,6 +80,21 @@ fun ChatDetailScreen(
             val totalItems = listState.layoutInfo.totalItemsCount
             totalItems == 0 || lastVisible >= totalItems - 2
         }
+    }
+
+    // Map messages to exact LazyColumn index accounting for Date Headers
+    val groupedMessages = remember(messages) { groupMessagesByDate(messages) }
+    val (messageIndexMap, totalLazyItems) = remember(groupedMessages) {
+        val map = mutableMapOf<String, Int>()
+        var currentIndex = 0
+        groupedMessages.forEach { (_, list) ->
+            currentIndex++ // Account for DateHeader item
+            list.forEach { msg ->
+                map[msg.id] = currentIndex
+                currentIndex++
+            }
+        }
+        Pair(map, currentIndex)
     }
 
     // Typing status observer helper
@@ -145,8 +159,8 @@ fun ChatDetailScreen(
     }
 
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty() && isNearBottom) {
-            listState.animateScrollToItem(messages.size - 1)
+        if (messages.isNotEmpty() && isNearBottom && totalLazyItems > 0) {
+            listState.animateScrollToItem(totalLazyItems - 1)
         }
     }
 
@@ -315,9 +329,8 @@ fun ChatDetailScreen(
                                     messageText = ""
 
                                     if (currentEdit != null) {
-                                        chatViewModel.editMessage(roomId, currentEdit.id, textToSend)
+                                        chatViewModel.editMessage(roomId, currentEdit.id, textToSend, currentUserId)
                                         editingMessage = null
-                                        chatViewModel.loadUserChatRooms(currentUserId)
                                     } else {
                                         chatViewModel.sendMessage(
                                             roomId = roomId,
@@ -329,9 +342,8 @@ fun ChatDetailScreen(
                                                 chatViewModel.loadUserChatRooms(currentUserId)
                                                 replyingToMessage = null
                                                 coroutineScope.launch {
-                                                    val currentMessages = chatViewModel.messagesList.value
-                                                    if (currentMessages.isNotEmpty()) {
-                                                        listState.animateScrollToItem(currentMessages.size - 1)
+                                                    if (totalLazyItems > 0) {
+                                                        listState.animateScrollToItem(totalLazyItems - 1)
                                                     }
                                                 }
                                             }
@@ -386,8 +398,6 @@ fun ChatDetailScreen(
                     )
                 }
                 else -> {
-                    val groupedMessages = remember(messages) { groupMessagesByDate(messages) }
-
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
@@ -421,34 +431,25 @@ fun ChatDetailScreen(
                                 val replySource = msg.replyToId?.let { replyId ->
                                     messages.firstOrNull { it.id == replyId }
                                 }
-                                val messageReactions = rawReactions
-                                    .filter { it.messageId == msg.id }
-                                    .toReactionGroups(currentUserId)
 
                                 MessageBubble(
                                     message = msg,
                                     isMe = msg.senderId == currentUserId,
                                     replySourceMessage = replySource,
-                                    reactionGroups = messageReactions,
                                     onReply = { selectedMsg ->
                                         replyingToMessage = selectedMsg
-                                    },
-                                    onToggleReaction = { emoji ->
-                                        chatViewModel.toggleReaction(roomId, msg.id, currentUserId, emoji)
                                     },
                                     onEdit = { selectedMsg ->
                                         editingMessage = selectedMsg
                                         messageText = selectedMsg.text
                                     },
                                     onDelete = { selectedMsg ->
-                                        chatViewModel.deleteMessage(roomId, selectedMsg.id)
-                                        chatViewModel.loadUserChatRooms(currentUserId)
+                                        chatViewModel.deleteMessage(roomId, selectedMsg.id, currentUserId)
                                     },
                                     onReplyPreviewClick = { targetId ->
-                                        val index = messages.indexOfFirst { it.id == targetId }
-                                        if (index != -1) {
+                                        messageIndexMap[targetId]?.let { targetIndex ->
                                             coroutineScope.launch {
-                                                listState.animateScrollToItem(index)
+                                                listState.animateScrollToItem(targetIndex)
                                             }
                                         }
                                     }
@@ -468,8 +469,8 @@ fun ChatDetailScreen(
                         SmallFloatingActionButton(
                             onClick = {
                                 coroutineScope.launch {
-                                    if (messages.isNotEmpty()) {
-                                        listState.animateScrollToItem(messages.size - 1)
+                                    if (totalLazyItems > 0) {
+                                        listState.animateScrollToItem(totalLazyItems - 1)
                                     }
                                 }
                             },

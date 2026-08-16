@@ -76,7 +76,8 @@ private data class EditMessagePayload(
 @Serializable
 private data class DeleteMessagePayload(
     val text: String,
-    val is_deleted: Boolean
+    val is_deleted: Boolean,
+    val is_edited: Boolean = false
 )
 
 @Serializable
@@ -307,13 +308,16 @@ class MessageRepository(private val supabase: SupabaseClient) {
     }
 
     suspend fun editMessage(roomId: String, messageId: String, newText: String): Boolean = withContext(Dispatchers.IO) {
-        if (messageId.isBlank() || newText.isBlank()) return@withContext false
+        if (messageId.isBlank() || roomId.isBlank() || newText.isBlank()) return@withContext false
 
         try {
             supabase.postgrest["chat_messages"].update(
                 EditMessagePayload(text = newText, is_edited = true)
             ) {
-                filter { eq("id", messageId) }
+                filter {
+                    eq("id", messageId)
+                    eq("chat_room_id", roomId)
+                }
             }
 
             val latest = getLatestMessage(roomId)
@@ -333,14 +337,17 @@ class MessageRepository(private val supabase: SupabaseClient) {
     }
 
     suspend fun deleteMessage(roomId: String, messageId: String): Boolean = withContext(Dispatchers.IO) {
-        if (messageId.isBlank()) return@withContext false
+        if (messageId.isBlank() || roomId.isBlank()) return@withContext false
 
         try {
             val deletedText = "This message was deleted"
             supabase.postgrest["chat_messages"].update(
-                DeleteMessagePayload(text = deletedText, is_deleted = true)
+                DeleteMessagePayload(text = deletedText, is_deleted = true, is_edited = false)
             ) {
-                filter { eq("id", messageId) }
+                filter {
+                    eq("id", messageId)
+                    eq("chat_room_id", roomId)
+                }
             }
 
             val latest = getLatestMessage(roomId)
@@ -354,7 +361,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
 
             true
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error deleting message $messageId", e)
+            Log.e("MessageRepository", "Error deleting message $messageId: ${e.message}", e)
             false
         }
     }
@@ -483,17 +490,16 @@ class MessageRepository(private val supabase: SupabaseClient) {
         val onlineUsers = mutableSetOf<String>()
         val typingUsers = mutableSetOf<String>()
 
-        fun emit() {
+        fun emitPresence() {
             trySend(RoomPresence(onlineUserIds = onlineUsers.toSet(), typingUserIds = typingUsers.toSet()))
         }
 
         val presenceJob = launch {
             try {
                 channel.presenceChangeFlow().collect { change ->
-                    // Safely extract joined/left state maps natively provided by PresenceChange
                     change.joins.keys.forEach { onlineUsers.add(it) }
                     change.leaves.keys.forEach { onlineUsers.remove(it) }
-                    emit()
+                    emitPresence()
                 }
             } catch (e: Exception) {
                 Log.e("MessageRepository", "Error in presence flow", e)
@@ -506,7 +512,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
                     if (payload.user_id == selfUserId) return@collect
                     if (payload.is_typing) typingUsers.add(payload.user_id)
                     else typingUsers.remove(payload.user_id)
-                    emit()
+                    emitPresence()
                 }
             } catch (e: Exception) {
                 Log.e("MessageRepository", "Error in typing broadcast flow", e)
@@ -537,8 +543,9 @@ class MessageRepository(private val supabase: SupabaseClient) {
     suspend fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean) = withContext(Dispatchers.IO) {
         if (roomId.isBlank() || userId.isBlank()) return@withContext
         try {
-            val channel = supabase.realtime.subscriptions.values.firstOrNull { it.topic == "realtime:presence_room_$roomId" }
-                ?: return@withContext
+            val channel = supabase.realtime.subscriptions.values.firstOrNull {
+                it.topic == "realtime:presence_room_$roomId"
+            } ?: return@withContext
             channel.broadcast(event = "typing", TypingBroadcast(user_id = userId, is_typing = isTyping))
         } catch (e: Exception) {
             Log.e("MessageRepository", "Error sending typing status", e)
@@ -561,7 +568,9 @@ class MessageRepository(private val supabase: SupabaseClient) {
                     is PostgresAction.Insert, is PostgresAction.Update -> {
                         try {
                             val message = action.decodeRecord<ChatMessage>()
-                            if (message.chatRoomId == roomId) trySend(message)
+                            if (message.chatRoomId == roomId) {
+                                trySend(message)
+                            }
                         } catch (e: Exception) {
                             Log.e("MessageRepository", "Error decoding realtime message", e)
                         }

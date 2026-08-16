@@ -41,7 +41,7 @@ data class JobApplication(
     @SerialName("applied_at")
     val appliedAt: String = ""
 ) {
-    // Custom getters so UI code can reference .location and .appliedDate seamlessly
+
     val location: String
         get() = "Remote" // Fallback or retrieve from parent Job model if available
 

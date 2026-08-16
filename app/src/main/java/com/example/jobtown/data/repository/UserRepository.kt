@@ -5,6 +5,7 @@ import com.example.jobtown.data.Job
 import com.example.jobtown.data.JobApplication
 import com.example.jobtown.data.SupabaseClient
 import com.example.jobtown.data.User
+import com.example.jobtown.data.UserProfile
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -67,6 +68,22 @@ object UserRepository {
         } catch (e: Exception) {
             e.printStackTrace()
             false
+        }
+    }
+
+    // Fetches the skills/location/experience fields job matching relies on.
+    // These live as extra columns on the same "users" row (see ProfileViewModel.saveProfile).
+    suspend fun fetchUserProfile(userId: String): UserProfile? = withContext(Dispatchers.IO) {
+        if (userId.isBlank()) return@withContext null
+        try {
+            SupabaseClient.client.from("users")
+                .select {
+                    filter { eq("id", userId) }
+                }
+                .decodeSingleOrNull<UserProfile>()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
     }
 

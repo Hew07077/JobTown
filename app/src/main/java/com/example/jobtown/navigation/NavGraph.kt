@@ -89,7 +89,6 @@ fun AppNavGraph(
     val appliedViewModel: AppliedViewModel = viewModel(factory = AppliedViewModelFactory(applicationRepository))
     val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModelFactory(messageRepository))
 
-    // Ensure jobs and chat/application data reload whenever user changes
     LaunchedEffect(loggedInUser?.id) {
         loggedInUser?.id?.let { userId ->
             homeViewModel.loadJobs(userId)
@@ -199,11 +198,19 @@ fun AppNavGraph(
                         navController.navigate("post_job")
                     },
                     onProfileClick = { navController.navigate("profile") },
-                    onRefresh = { homeViewModel.loadJobs(loggedInUser?.id) }
+                    onRefresh = { homeViewModel.loadJobs(loggedInUser?.id) },
+                    matchScores = homeViewModel.matchScores,
+                    sortMode = homeViewModel.sortMode,
+                    onSortModeChange = { homeViewModel.updateSortMode(it) }, // Fixed reference here
+                    hasMatchProfile = homeViewModel.seekerProfile != null,
+                    isLive = homeViewModel.isLive,
+                    newListingsAvailable = homeViewModel.newListingsAvailable,
+                    onShowNewListings = { homeViewModel.showPendingListings() },
+                    onStartRealtime = { homeViewModel.startRealtimeUpdates() },
+                    onStopRealtime = { homeViewModel.stopRealtimeUpdates() }
                 )
             }
 
-            // POST JOB ROUTE
             composable("post_job") {
                 PostJobScreen(
                     navController = navController,
@@ -275,6 +282,11 @@ fun AppNavGraph(
                         navController.navigate(Screen.ApplicationDetail.createRoute(applicationId))
                     },
                     chatLoadingApplicationId = chatCreationInProgressId,
+                    isTrackingLive = appliedViewModel.isTrackingLive,
+                    recentlyUpdatedApplicationId = appliedViewModel.recentlyUpdatedApplicationId,
+                    onStartTracking = { userId: String -> appliedViewModel.startTracking(userId) },
+                    onStopTracking = { appliedViewModel.stopTracking() },
+                    onConsumeRecentUpdate = { appliedViewModel.consumeRecentUpdate() },
                     onChatWithCompany = { application ->
                         val userId = loggedInUser?.id
                         if (userId.isNullOrBlank()) {

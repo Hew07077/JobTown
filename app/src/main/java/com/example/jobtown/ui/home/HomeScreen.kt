@@ -10,6 +10,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -18,6 +20,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,11 +43,25 @@ fun HomeScreen(
     onJobClick: (Job) -> Unit,
     onPostJobClick: () -> Unit,
     onProfileClick: () -> Unit,
-    onRefresh: () -> Unit = {}
+    onRefresh: () -> Unit = {},
+    matchScores: Map<String, Int> = emptyMap(),
+    sortMode: JobSortMode = JobSortMode.NEWEST,
+    onSortModeChange: (JobSortMode) -> Unit = {},
+    hasMatchProfile: Boolean = false,
+    isLive: Boolean = false,
+    newListingsAvailable: Int = 0,
+    onShowNewListings: () -> Unit = {},
+    onStartRealtime: () -> Unit = {},
+    onStopRealtime: () -> Unit = {}
 ) {
-    // Re-fetch data on screen load to keep UI synced
+    // Re-fetch data on screen load to keep UI synced, and keep the real-time
+    // job-listings subscription alive only while this screen is visible.
     LaunchedEffect(Unit) {
         onRefresh()
+    }
+    DisposableEffect(Unit) {
+        onStartRealtime()
+        onDispose { onStopRealtime() }
     }
 
     var searchQuery by remember { mutableStateOf("") }
@@ -100,6 +120,16 @@ fun HomeScreen(
         }
     }
 
+    // Best job matching: when the seeker has a profile, "Recommended Jobs" is sorted so the
+    // strongest matches surface first; a toggle lets them switch to a strict newest-first view.
+    val displayedJobs = remember(filteredJobs, sortMode, matchScores) {
+        if (!isEmployer && sortMode == JobSortMode.BEST_MATCH && matchScores.isNotEmpty()) {
+            filteredJobs.sortedByDescending { matchScores[it.id] ?: 0 }
+        } else {
+            filteredJobs.sortedByDescending { it.createdAt.orEmpty() }
+        }
+    }
+
     Scaffold(
         containerColor = BackgroundWhite,
         floatingActionButton = {
@@ -113,7 +143,7 @@ fun HomeScreen(
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Add,
-                            contentDescription = "Add Job"
+                            contentDescription = null
                         )
                     },
                     text = {
@@ -122,7 +152,8 @@ fun HomeScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
-                    }
+                    },
+                    modifier = Modifier.semantics { contentDescription = "Post a new job" }
                 )
             }
         },
@@ -151,11 +182,36 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text(
-                                text = "Welcome back 👋",
-                                fontSize = 13.sp,
-                                color = DeepGreenDark.copy(alpha = 0.8f)
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Welcome back \uD83D\uDC4B",
+                                    fontSize = 13.sp,
+                                    color = DeepGreenDark.copy(alpha = 0.8f)
+                                )
+                                if (isLive) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.semantics {
+                                            contentDescription = "Live updates connected"
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.FiberManualRecord,
+                                            contentDescription = null,
+                                            tint = Color(0xFF1B7A3D),
+                                            modifier = Modifier.size(8.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "Live",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF1B7A3D)
+                                        )
+                                    }
+                                }
+                            }
                             Text(
                                 text = currentUser?.name.orEmpty().ifBlank { "Job Finder" },
                                 fontSize = 20.sp,
@@ -167,13 +223,13 @@ fun HomeScreen(
                         IconButton(
                             onClick = onProfileClick,
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
                                 .background(SageGreenLight)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Person,
-                                contentDescription = "Profile",
+                                contentDescription = "Open your profile",
                                 tint = DeepGreenDark
                             )
                         }
@@ -190,8 +246,11 @@ fun HomeScreen(
                         },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear Search", tint = SageGreenDark)
+                                IconButton(
+                                    onClick = { searchQuery = "" },
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = SageGreenDark)
                                 }
                             }
                         },
@@ -203,7 +262,9 @@ fun HomeScreen(
                             focusedBorderColor = DeepGreenDark,
                             unfocusedBorderColor = Color.Transparent
                         ),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentDescription = "Search jobs, companies, or locations" }
                     )
                 }
             }
@@ -239,8 +300,44 @@ fun HomeScreen(
                             selected = isSelected,
                             borderColor = SageGreenDark.copy(alpha = 0.3f),
                             selectedBorderColor = DeepGreenDark
-                        )
+                        ),
+                        modifier = Modifier.semantics {
+                            contentDescription = "Filter by $category" + if (isSelected) ", selected" else ""
+                        }
                     )
+                }
+            }
+
+            // --- SORT TOGGLE (job seekers only, once a profile exists to match against) ---
+            if (!isEmployer && hasMatchProfile) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        JobSortMode.BEST_MATCH to "Best Match",
+                        JobSortMode.NEWEST to "Newest"
+                    ).forEach { (mode, label) ->
+                        val isSelected = sortMode == mode
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { onSortModeChange(mode) },
+                            label = { Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium) },
+                            shape = RoundedCornerShape(20.dp),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = SageGreenDark,
+                                selectedLabelColor = Color.White,
+                                containerColor = SageGreenLight,
+                                labelColor = DeepGreenDark
+                            ),
+                            modifier = Modifier.semantics {
+                                contentDescription = "Sort by $label" + if (isSelected) ", selected" else ""
+                            }
+                        )
+                    }
                 }
             }
 
@@ -261,9 +358,13 @@ fun HomeScreen(
                     color = TextDark
                 )
                 Text(
-                    text = "${filteredJobs.size} ${if (isEmployer) "Posted" else "Available"}",
+                    text = "${displayedJobs.size} ${if (isEmployer) "Posted" else "Available"}",
                     fontSize = 13.sp,
-                    color = TextDark.copy(alpha = 0.5f)
+                    color = TextDark.copy(alpha = 0.5f),
+                    modifier = Modifier.semantics {
+                        liveRegion = LiveRegionMode.Polite
+                        contentDescription = "${displayedJobs.size} jobs ${if (isEmployer) "posted" else "available"}"
+                    }
                 )
             }
 
@@ -277,10 +378,12 @@ fun HomeScreen(
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .semantics { contentDescription = "Loading jobs" },
                         color = DeepGreenDark
                     )
-                } else if (filteredJobs.isEmpty()) {
+                } else if (displayedJobs.isEmpty()) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -294,7 +397,7 @@ fun HomeScreen(
                                 .padding(32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("🔍", fontSize = 36.sp)
+                            Text("\uD83D\uDD0D", fontSize = 36.sp)
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = if (isEmployer) "No Jobs Posted Yet" else "No Jobs Found",
@@ -315,25 +418,66 @@ fun HomeScreen(
                         }
                     }
                 } else {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(bottom = 80.dp)
-                    ) {
-                        items(
-                            items = filteredJobs,
-                            key = { job ->
-                                val jobId = job.id.orEmpty()
-                                if (jobId.isNotEmpty()) jobId else (job.title.orEmpty() + job.company.orEmpty())
-                            }
-                        ) { job ->
-                            JobCard(
-                                job = job,
-                                onClick = {
-                                    if (!isEmployer) {
-                                        onJobClick(job)
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Updated job listings: new postings arriving in real time are staged
+                        // here instead of jumping the list around, so the seeker chooses when
+                        // to bring them into view.
+                        if (!isEmployer && newListingsAvailable > 0) {
+                            Surface(
+                                onClick = onShowNewListings,
+                                shape = RoundedCornerShape(14.dp),
+                                color = DeepGreenDark,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 10.dp)
+                                    .semantics {
+                                        contentDescription = "$newListingsAvailable new job listing" +
+                                                (if (newListingsAvailable > 1) "s" else "") + " available. Double tap to show."
                                     }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowUp,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "$newListingsAvailable new job" + (if (newListingsAvailable > 1) "s" else "") + " posted",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
                                 }
-                            )
+                            }
+                        }
+
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(bottom = 80.dp)
+                        ) {
+                            items(
+                                items = displayedJobs,
+                                key = { job ->
+                                    val jobId = job.id.orEmpty()
+                                    if (jobId.isNotEmpty()) jobId else (job.title.orEmpty() + job.company.orEmpty())
+                                }
+                            ) { job ->
+                                JobCard(
+                                    job = job,
+                                    matchScore = if (!isEmployer) matchScores[job.id] else null,
+                                    onClick = {
+                                        if (!isEmployer) {
+                                            onJobClick(job)
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }

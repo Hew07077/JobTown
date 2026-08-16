@@ -11,13 +11,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.automirrored.filled.ReplyAll
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,7 +32,6 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.jobtown.data.ChatMessage
 import com.example.jobtown.data.MessageType
-import com.example.jobtown.data.ReactionGroup
 import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.SageGreenMain
@@ -42,9 +39,6 @@ import com.example.jobtown.ui.theme.TextDark
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-/** Emoji offered in the quick-reaction picker, in display order. */
-val QUICK_REACTION_EMOJIS = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")
 
 @Composable
 fun DateHeader(dateString: String) {
@@ -75,15 +69,12 @@ fun MessageBubble(
     message: ChatMessage,
     isMe: Boolean,
     replySourceMessage: ChatMessage?,
-    reactionGroups: List<ReactionGroup>,
+    onReply: (ChatMessage) -> Unit,
     onEdit: (ChatMessage) -> Unit,
     onDelete: (ChatMessage) -> Unit,
-    onReply: (ChatMessage) -> Unit,
-    onToggleReaction: (emoji: String) -> Unit,
     onReplyPreviewClick: (messageId: String) -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    var showReactionPicker by remember { mutableStateOf(false) }
     val alignment = if (isMe) Alignment.End else Alignment.Start
     val bubbleColor = if (isMe) SageGreenMain else Color.White
 
@@ -104,22 +95,28 @@ fun MessageBubble(
                 modifier = Modifier.combinedClickable(
                     onClick = { },
                     onLongClick = {
-                        if (!message.isDeleted) showReactionPicker = true
+                        if (!message.isDeleted) {
+                            showMenu = true
+                        }
                     }
                 )
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
+                    // Reply Preview - Show if this message is a reply
                     if (!message.isDeleted && !message.replyToId.isNullOrBlank()) {
                         ReplyPreviewChip(
                             sourceMessage = replySourceMessage,
                             isMe = isMe,
-                            onClick = { onReplyPreviewClick(message.replyToId!!) }
+                            onClick = {
+                                message.replyToId?.let { onReplyPreviewClick(it) }
+                            }
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                     }
 
+                    // Message Content
                     when {
                         message.isDeleted -> {
                             Text(
@@ -174,6 +171,7 @@ fun MessageBubble(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
+                    // Timestamp and Status
                     Row(
                         modifier = Modifier.align(Alignment.End),
                         verticalAlignment = Alignment.CenterVertically,
@@ -204,10 +202,12 @@ fun MessageBubble(
                 }
             }
 
+            // Dropdown Menu - Reply, Edit, Delete
             DropdownMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
             ) {
+                // Reply option for all non-deleted messages
                 if (!message.isDeleted) {
                     DropdownMenuItem(
                         text = { Text("Reply") },
@@ -215,9 +215,16 @@ fun MessageBubble(
                             showMenu = false
                             onReply(message)
                         },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.ReplyAll, contentDescription = "Reply") }
+                        leadingIcon = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Reply,
+                                contentDescription = "Reply"
+                            )
+                        }
                     )
                 }
+
+                // Edit and Delete options only for user's own messages
                 if (isMe && !message.isDeleted) {
                     DropdownMenuItem(
                         text = { Text("Edit") },
@@ -225,7 +232,12 @@ fun MessageBubble(
                             showMenu = false
                             onEdit(message)
                         },
-                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = "Edit") }
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Edit"
+                            )
+                        }
                     )
                     DropdownMenuItem(
                         text = { Text("Delete", color = Color.Red) },
@@ -233,30 +245,16 @@ fun MessageBubble(
                             showMenu = false
                             onDelete(message)
                         },
-                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red) }
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = Color.Red
+                            )
+                        }
                     )
                 }
             }
-
-            ReactionPickerPopup(
-                expanded = showReactionPicker,
-                onDismiss = { showReactionPicker = false },
-                onEmojiSelected = { emoji ->
-                    showReactionPicker = false
-                    onToggleReaction(emoji)
-                },
-                onMoreOptions = {
-                    showReactionPicker = false
-                    showMenu = true
-                }
-            )
-        }
-
-        if (reactionGroups.isNotEmpty() && !message.isDeleted) {
-            ReactionChipsRow(
-                groups = reactionGroups,
-                onChipClick = onToggleReaction
-            )
         }
     }
 }
@@ -308,75 +306,6 @@ private fun ReplyPreviewChip(
                 color = TextDark.copy(alpha = 0.7f),
                 maxLines = 1
             )
-        }
-    }
-}
-
-@Composable
-private fun ReactionChipsRow(
-    groups: List<ReactionGroup>,
-    onChipClick: (emoji: String) -> Unit
-) {
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.padding(top = 2.dp)
-    ) {
-        items(groups, key = { it.emoji }) { group ->
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = if (group.reactedByMe) SageGreenMain.copy(alpha = 0.35f) else Color.LightGray.copy(alpha = 0.25f),
-                modifier = Modifier.clickable { onChipClick(group.emoji) }
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                ) {
-                    Text(text = group.emoji, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Text(
-                        text = group.count.toString(),
-                        fontSize = 11.sp,
-                        fontWeight = if (group.reactedByMe) FontWeight.Bold else FontWeight.Normal,
-                        color = TextDark.copy(alpha = 0.8f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReactionPickerPopup(
-    expanded: Boolean,
-    onDismiss: () -> Unit,
-    onEmojiSelected: (String) -> Unit,
-    onMoreOptions: () -> Unit
-) {
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
-            QUICK_REACTION_EMOJIS.forEach { emoji ->
-                Text(
-                    text = emoji,
-                    fontSize = 20.sp,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .clickable { onEmojiSelected(emoji) }
-                        .padding(6.dp)
-                )
-            }
-            IconButton(onClick = onMoreOptions, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    imageVector = Icons.Default.MoreHoriz,
-                    contentDescription = "More options",
-                    tint = TextDark.copy(alpha = 0.6f)
-                )
-            }
         }
     }
 }

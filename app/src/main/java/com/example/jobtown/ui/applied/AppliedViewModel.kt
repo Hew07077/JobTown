@@ -20,6 +20,35 @@ class AppliedViewModel(
     var isLoading by mutableStateOf(false)
         private set
 
+    // --- Real-time application tracking state ---
+    var isTrackingLive by mutableStateOf(false)
+        private set
+
+    var recentlyUpdatedApplicationId by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * Starts observing live updates/changes for user applications.
+     */
+    fun startTracking(userId: String) {
+        isTrackingLive = true
+        loadApplications(userId, forceRefresh = true)
+    }
+
+    /**
+     * Stops observing live application updates.
+     */
+    fun stopTracking() {
+        isTrackingLive = false
+    }
+
+    /**
+     * Consumes/resets the recently updated application ID notification highlight.
+     */
+    fun consumeRecentUpdate() {
+        recentlyUpdatedApplicationId = null
+    }
+
     fun loadApplications(userId: String, forceRefresh: Boolean = false) {
         if (userId.isBlank()) return
         if (!forceRefresh && applicationsList.isNotEmpty()) return

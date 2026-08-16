@@ -67,6 +67,8 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
 
     private val initialQuestionSentForRooms = mutableSetOf<String>()
 
+    // ==================== Room Management ====================
+
     fun loadUserChatRooms(userId: String) {
         if (userId.isBlank()) return
         viewModelScope.launch {
@@ -81,6 +83,24 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
             }
         }
     }
+
+    suspend fun getOrCreateChatRoom(
+        seekerId: String,
+        seekerName: String,
+        employerId: String,
+        companyName: String,
+        jobTitle: String
+    ): String {
+        return messageRepository.getOrCreateChatRoom(
+            seekerId = seekerId,
+            seekerName = seekerName,
+            employerId = employerId,
+            companyName = companyName,
+            jobTitle = jobTitle
+        )
+    }
+
+    // ==================== Message Loading ====================
 
     fun loadMessages(roomId: String, currentUserId: String = "") {
         if (roomId.isBlank()) return
@@ -108,7 +128,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 _isLoadingMessages.value = false
             }
 
-            // Observe real-time messages
             messageRepository.observeNewMessages(roomId)
                 .catch { e -> Log.e(TAG, "Error in realtime message stream", e) }
                 .collect { incoming ->
@@ -120,7 +139,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 }
         }
 
-        // Observe real-time reactions
         reactionListenerJob = viewModelScope.launch {
             messageRepository.observeReactions(roomId)
                 .catch { e -> Log.e(TAG, "Error in reactions stream", e) }
@@ -131,7 +149,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 }
         }
 
-        // Observe real-time presence & typing status
         if (currentUserId.isNotBlank()) {
             presenceListenerJob = viewModelScope.launch {
                 messageRepository.observeRoomPresence(roomId, currentUserId)
@@ -168,35 +185,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         }
     }
 
-    fun sendInitialQuestionOnce(roomId: String, senderId: String, question: String) {
-        if (roomId.isBlank() || question.isBlank()) return
-        if (!initialQuestionSentForRooms.add(roomId)) return
-
-        sendMessage(roomId, senderId, question) {
-            loadUserChatRooms(senderId)
-        }
-    }
-
-    private fun mergeIncomingMessage(incoming: ChatMessage) {
-        _messagesList.update { current ->
-            val index = current.indexOfFirst { it.id == incoming.id }
-            if (index != -1) {
-                current.toMutableList().apply { set(index, incoming) }
-            } else {
-                val filtered = current.filterNot {
-                    it.id.startsWith("temp_") &&
-                            it.senderId == incoming.senderId &&
-                            it.text == incoming.text
-                }
-                val insertIndex = filtered.indexOfFirst { it.timestamp > incoming.timestamp }
-                if (insertIndex == -1) {
-                    filtered + incoming
-                } else {
-                    filtered.toMutableList().apply { add(insertIndex, incoming) }
-                }
-            }
-        }
-    }
+    // ==================== Sending Messages ====================
 
     fun sendMessage(
         roomId: String,
@@ -215,7 +204,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         viewModelScope.launch {
             _isSendingMessage.value = true
             val now = System.currentTimeMillis()
-
             val tempMessage = ChatMessage(
                 id = "temp_$now",
                 chatRoomId = roomId,
@@ -235,7 +223,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                     loadUserChatRooms(senderId)
                 } else {
                     _messagesList.update { list -> list.filterNot { it.id == tempMessage.id } }
-                    _eventFlow.emit(ChatUiEvent.ShowToast("Failed to send message."))
                 }
                 onResult(success)
             } catch (e: Exception) {
@@ -249,6 +236,45 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         }
     }
 
+    fun sendInitialQuestionOnce(roomId: String, userId: String, initialQuestion: String) {
+        if (roomId.isBlank() || userId.isBlank() || initialQuestion.isBlank()) return
+        val key = "$roomId:$userId"
+        if (initialQuestionSentForRooms.contains(key)) return
+
+        viewModelScope.launch {
+            try {
+                // Check if there are already messages in the room
+                val existingMessages = messageRepository.getMessagesForRoom(roomId, limit = 1)
+                if (existingMessages.isNotEmpty()) {
+                    initialQuestionSentForRooms.add(key)
+                    return@launch
+                }
+
+                val success = messageRepository.sendMessage(
+                    roomId = roomId,
+                    senderId = userId,
+                    content = initialQuestion,
+                    type = MessageType.TEXT
+                )
+                if (success) {
+                    initialQuestionSentForRooms.add(key)
+                    loadUserChatRooms(userId)
+                    // Reload messages to show the sent question
+                    loadMessages(roomId, userId)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending initial question", e)
+            }
+        }
+    }
+
+    fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean) {
+        if (roomId.isBlank() || userId.isBlank()) return
+        viewModelScope.launch {
+            messageRepository.sendTypingStatus(roomId, userId, isTyping)
+        }
+    }
+
     fun sendAttachment(
         roomId: String,
         senderId: String,
@@ -257,34 +283,98 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         mimeType: String,
         type: MessageType,
         replyToId: String? = null,
-        onResult: (Boolean) -> Unit = {}
+        onComplete: (Boolean) -> Unit = {}
     ) {
-        if (roomId.isBlank() || bytes.isEmpty()) {
-            onResult(false)
+        if (roomId.isBlank() || senderId.isBlank() || bytes.isEmpty()) {
+            onComplete(false)
             return
         }
 
         viewModelScope.launch {
             _isUploadingAttachment.value = true
             try {
-                val url = messageRepository.uploadChatAttachment(roomId, fileName, bytes, mimeType)
+                // Upload the file to storage
+                val url = messageRepository.uploadChatAttachment(
+                    roomId = roomId,
+                    fileName = fileName,
+                    bytes = bytes,
+                    mimeType = mimeType
+                )
+
                 if (url == null) {
                     _eventFlow.emit(ChatUiEvent.ShowToast("Failed to upload attachment."))
-                    onResult(false)
+                    onComplete(false)
                     return@launch
                 }
 
-                _isUploadingAttachment.value = false
-                sendMessage(roomId, senderId, url, type, replyToId) { success ->
-                    if (success) loadUserChatRooms(senderId)
-                    onResult(success)
+                // Send the attachment as a message with the URL as the text
+                val success = messageRepository.sendMessage(
+                    roomId = roomId,
+                    senderId = senderId,
+                    content = url,
+                    type = type,
+                    replyToId = replyToId
+                )
+
+                if (success) {
+                    loadUserChatRooms(senderId)
+                    // Reload messages to show the attachment
+                    loadMessages(roomId, senderId)
+                } else {
+                    _eventFlow.emit(ChatUiEvent.ShowToast("Failed to send attachment."))
                 }
+                onComplete(success)
             } catch (e: Exception) {
-                Log.e(TAG, "Exception while uploading attachment", e)
-                _eventFlow.emit(ChatUiEvent.ShowToast("Error uploading attachment."))
-                onResult(false)
+                Log.e(TAG, "Error sending attachment", e)
+                _eventFlow.emit(ChatUiEvent.ShowToast("Error sending attachment."))
+                onComplete(false)
             } finally {
                 _isUploadingAttachment.value = false
+            }
+        }
+    }
+
+    // ==================== Message Management ====================
+
+    fun editMessage(roomId: String, messageId: String, newText: String, currentUserId: String = "") {
+        val trimmed = newText.trim()
+        if (roomId.isBlank() || messageId.isBlank() || trimmed.isBlank()) return
+
+        viewModelScope.launch {
+            _messagesList.update { current ->
+                current.map { if (it.id == messageId) it.copy(text = trimmed, isEdited = true) else it }
+            }
+
+            try {
+                messageRepository.editMessage(roomId, messageId, trimmed)
+                if (currentUserId.isNotBlank()) loadUserChatRooms(currentUserId)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error editing message", e)
+                loadMessages(roomId, currentUserId)
+                _eventFlow.emit(ChatUiEvent.ShowToast("Error updating message."))
+            }
+        }
+    }
+
+    fun deleteMessage(roomId: String, messageId: String, currentUserId: String = "") {
+        if (roomId.isBlank() || messageId.isBlank()) return
+
+        viewModelScope.launch {
+            _messagesList.update { current ->
+                current.map {
+                    if (it.id == messageId) {
+                        it.copy(text = "This message was deleted", isDeleted = true, isEdited = false)
+                    } else it
+                }
+            }
+
+            try {
+                messageRepository.deleteMessage(roomId, messageId)
+                if (currentUserId.isNotBlank()) loadUserChatRooms(currentUserId)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error deleting message", e)
+                loadMessages(roomId, currentUserId)
+                _eventFlow.emit(ChatUiEvent.ShowToast("Error deleting message."))
             }
         }
     }
@@ -296,67 +386,28 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         }
     }
 
-    fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean) {
-        if (roomId.isBlank() || userId.isBlank()) return
-        viewModelScope.launch {
-            messageRepository.sendTypingStatus(roomId, userId, isTyping)
-        }
-    }
+    // ==================== Private Helpers ====================
 
-    fun editMessage(roomId: String, messageId: String, newText: String, currentUserId: String = "") {
-        val trimmed = newText.trim()
-        if (roomId.isBlank() || messageId.isBlank() || trimmed.isBlank()) return
-
-        viewModelScope.launch {
-            val originalList = _messagesList.value
-            _messagesList.update { current ->
-                current.map { if (it.id == messageId) it.copy(text = trimmed, isEdited = true) else it }
-            }
-
-            try {
-                val success = messageRepository.editMessage(roomId, messageId, trimmed)
-                if (success) {
-                    if (currentUserId.isNotBlank()) {
-                        loadUserChatRooms(currentUserId)
-                    }
-                } else {
-                    _messagesList.value = originalList
-                    _eventFlow.emit(ChatUiEvent.ShowToast("Failed to edit message."))
+    private fun mergeIncomingMessage(incoming: ChatMessage) {
+        _messagesList.update { current ->
+            val index = current.indexOfFirst { it.id == incoming.id }
+            if (index != -1) {
+                current.toMutableList().apply { set(index, incoming) }
+            } else {
+                val filtered = current.filterNot {
+                    it.id.startsWith("temp_") && it.senderId == incoming.senderId && it.text == incoming.text
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error editing message", e)
-                _messagesList.value = originalList
-                _eventFlow.emit(ChatUiEvent.ShowToast("Error updating message."))
-            }
-        }
-    }
-
-    fun deleteMessage(roomId: String, messageId: String, currentUserId: String = "") {
-        if (roomId.isBlank() || messageId.isBlank()) return
-
-        viewModelScope.launch {
-            val originalList = _messagesList.value
-            _messagesList.update { current ->
-                current.map { if (it.id == messageId) it.copy(text = "This message was deleted", isDeleted = true) else it }
-            }
-
-            try {
-                val success = messageRepository.deleteMessage(roomId, messageId)
-                if (success) {
-                    if (currentUserId.isNotBlank()) {
-                        loadUserChatRooms(currentUserId)
-                    }
+                val insertIndex = filtered.indexOfFirst { it.timestamp > incoming.timestamp }
+                if (insertIndex == -1) {
+                    filtered + incoming
                 } else {
-                    _messagesList.value = originalList
-                    _eventFlow.emit(ChatUiEvent.ShowToast("Failed to delete message."))
+                    filtered.toMutableList().apply { add(insertIndex, incoming) }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error deleting message", e)
-                _messagesList.value = originalList
-                _eventFlow.emit(ChatUiEvent.ShowToast("Error deleting message."))
             }
         }
     }
+
+    // ==================== Cleanup ====================
 
     override fun onCleared() {
         super.onCleared()

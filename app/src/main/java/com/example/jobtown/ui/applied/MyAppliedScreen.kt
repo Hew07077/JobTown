@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,10 +35,24 @@ fun MyAppliedScreen(
     applications: List<JobApplication>,
     isLoading: Boolean,
     onRefresh: () -> Unit,
-    onApplicationClick: (String) -> Unit = {}, // <-- Added detail click listener parameter
+    onApplicationClick: (String) -> Unit = {},
     chatLoadingApplicationId: String? = null,
+    isTrackingLive: Boolean = false,
+    recentlyUpdatedApplicationId: String? = null,
+    onStartTracking: (String) -> Unit = {},
+    onStopTracking: () -> Unit = {},
+    onConsumeRecentUpdate: () -> Unit = {},
     onChatWithCompany: (JobApplication) -> Unit
 ) {
+    // Automatically start tracking live application updates when the screen is active and user is available
+    LaunchedEffect(user?.id) {
+        user?.id?.let { userId ->
+            if (!isTrackingLive) {
+                onStartTracking(userId)
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -80,10 +95,13 @@ fun MyAppliedScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(applications, key = { it.id.ifBlank { it.jobTitle + it.companyName } }) { application ->
+                            val isRecentlyUpdated = recentlyUpdatedApplicationId == application.id
+
                             ApplicationCard(
                                 application = application,
                                 isChatLoading = chatLoadingApplicationId == application.id,
-                                onCardClick = { onApplicationClick(application.id) }, // <-- Added callback
+                                isHighlighted = isRecentlyUpdated,
+                                onCardClick = { onApplicationClick(application.id) },
                                 onChatWithCompany = { onChatWithCompany(application) }
                             )
                         }
@@ -98,15 +116,18 @@ fun MyAppliedScreen(
 fun ApplicationCard(
     application: JobApplication,
     isChatLoading: Boolean = false,
-    onCardClick: () -> Unit = {}, // <-- Added card click parameter
+    isHighlighted: Boolean = false,
+    onCardClick: () -> Unit = {},
     onChatWithCompany: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCardClick() }, // <-- Added click action to card
+            .clickable { onCardClick() },
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isHighlighted) SageGreenMain.copy(alpha = 0.2f) else Color.White
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(

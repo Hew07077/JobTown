@@ -24,11 +24,6 @@ data class User(
     @SerialName("email")
     val email: String = "",
 
-    // NOT sent to / read from the "users" table -- there is no "password"
-    // column there (and there shouldn't be one: Supabase Auth already
-    // stores passwords securely). This field only exists so the in-memory
-    // User object can be passed straight into signUpWith(Email) / signInWith(Email),
-    // which read it directly as a Kotlin property, not via serialization.
     @Transient
     val password: String = "",
 
