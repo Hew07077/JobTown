@@ -1,5 +1,7 @@
 package com.example.jobtown.ui.postjob
 
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -7,6 +9,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +40,7 @@ fun PostJobScreen(
                 ?: ""
         )
     }
+    var companyImageUrl by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
 
     // Min and Max Salary States
@@ -58,6 +62,7 @@ fun PostJobScreen(
     var requirements by remember { mutableStateOf("") }
     var skills by remember { mutableStateOf("") }
 
+    var isFeatured by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -93,34 +98,88 @@ fun PostJobScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Column {
+                Text(
+                    text = "Job Details",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextDark
+                )
+                Text(
+                    text = "Fill in the details below to create your job listing.",
+                    fontSize = 13.sp,
+                    color = TextDark.copy(alpha = 0.6f)
+                )
+            }
+
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
-                label = { Text("Job Title") },
+                label = { Text("Job Title *") },
+                placeholder = { Text("e.g. Senior Mobile Developer") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Work,
+                        contentDescription = null,
+                        tint = DeepGreenDark.copy(alpha = 0.6f)
+                    )
+                }
             )
 
             OutlinedTextField(
                 value = company,
                 onValueChange = { company = it },
-                label = { Text("Company Name") },
+                label = { Text("Company Name *") },
+                placeholder = { Text("e.g. TechCorp Inc.") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Business,
+                        contentDescription = null,
+                        tint = DeepGreenDark.copy(alpha = 0.6f)
+                    )
+                }
+            )
+
+            OutlinedTextField(
+                value = companyImageUrl,
+                onValueChange = { companyImageUrl = it },
+                label = { Text("Company Logo URL (Optional)") },
+                placeholder = { Text("https://example.com/logo.png") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Image,
+                        contentDescription = null,
+                        tint = DeepGreenDark.copy(alpha = 0.6f)
+                    )
+                }
             )
 
             OutlinedTextField(
                 value = location,
                 onValueChange = { location = it },
-                label = { Text("Location (e.g. Remote, New York)") },
+                label = { Text("Location *") },
+                placeholder = { Text("e.g. Remote, New York, NY") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.LocationOn,
+                        contentDescription = null,
+                        tint = DeepGreenDark.copy(alpha = 0.6f)
+                    )
+                }
             )
 
-            // SALARY RANGE: MIN & MAX DROPDOWNS
             Text(
                 text = "Salary Range ($ / month)",
                 fontSize = 14.sp,
@@ -142,11 +201,12 @@ fun PostJobScreen(
                         value = minSalary,
                         onValueChange = { minSalary = it },
                         label = { Text("Min ($)") },
-                        placeholder = { Text("e.g. 2,000") },
+                        placeholder = { Text("2,000") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = minSalaryExpanded) },
                         colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                         modifier = Modifier.menuAnchor(),
+                        readOnly = true,
                         shape = RoundedCornerShape(12.dp)
                     )
 
@@ -176,11 +236,12 @@ fun PostJobScreen(
                         value = maxSalary,
                         onValueChange = { maxSalary = it },
                         label = { Text("Max ($)") },
-                        placeholder = { Text("e.g. 5,000") },
+                        placeholder = { Text("5,000") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = maxSalaryExpanded) },
                         colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                         modifier = Modifier.menuAnchor(),
+                        readOnly = true,
                         shape = RoundedCornerShape(12.dp)
                     )
 
@@ -209,8 +270,9 @@ fun PostJobScreen(
             ) {
                 OutlinedTextField(
                     value = type,
-                    onValueChange = { type = it },
-                    label = { Text("Job Type") },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Job Type *") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = jobTypeExpanded) },
                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                     modifier = Modifier
@@ -238,11 +300,12 @@ fun PostJobScreen(
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
-                label = { Text("Job Description") },
+                label = { Text("Job Description *") },
+                placeholder = { Text("Describe the role responsibilities and daily tasks...") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp),
-                maxLines = 5,
+                    .height(130.dp),
+                maxLines = 6,
                 shape = RoundedCornerShape(12.dp)
             )
 
@@ -250,6 +313,7 @@ fun PostJobScreen(
                 value = requirements,
                 onValueChange = { requirements = it },
                 label = { Text("Requirements (comma separated)") },
+                placeholder = { Text("3+ years Android experience, Kotlin, Jetpack Compose") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(90.dp),
@@ -261,6 +325,7 @@ fun PostJobScreen(
                 value = skills,
                 onValueChange = { skills = it },
                 label = { Text("Skills Required (comma separated)") },
+                placeholder = { Text("Kotlin, Compose, Coroutines, MVVM") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(90.dp),
@@ -268,22 +333,68 @@ fun PostJobScreen(
                 shape = RoundedCornerShape(12.dp)
             )
 
-            if (showError) {
-                Text(
-                    text = "Please fill in all required fields.",
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 13.sp
-                )
+            // Featured Job Toggle
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = SageGreenLight.copy(alpha = 0.4f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenMain),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Mark as Featured Job",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            color = TextDark
+                        )
+                        Text(
+                            text = "Featured listings receive up to 3x higher visibility",
+                            fontSize = 11.sp,
+                            color = TextDark.copy(alpha = 0.6f)
+                        )
+                    }
+                    Switch(
+                        checked = isFeatured,
+                        onCheckedChange = { isFeatured = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = DeepGreenDark
+                        )
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            if (showError) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Please fill in all required fields marked with *",
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
 
             Button(
                 onClick = {
                     if (title.isBlank() || company.isBlank() || location.isBlank() || description.isBlank()) {
                         showError = true
                     } else {
-                        // Crucial: Use current user ID for ownership check
+                        showError = false
                         val userId = currentUser?.id.orEmpty()
 
                         val formattedSalary = when {
@@ -297,6 +408,7 @@ fun PostJobScreen(
                             id = "job_${System.currentTimeMillis()}",
                             title = title,
                             company = company,
+                            companyImageUrl = companyImageUrl.ifBlank { null },
                             location = location,
                             salary = formattedSalary,
                             salaryRange = formattedSalary,
@@ -304,7 +416,7 @@ fun PostJobScreen(
                             description = description,
                             requirements = requirements.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                             skills = skills.split(",").map { it.trim() }.filter { it.isNotEmpty() },
-                            isFeatured = false,
+                            isFeatured = isFeatured,
                             employerId = userId,
                             postedByUserId = userId,
                             createdAt = System.currentTimeMillis().toString()

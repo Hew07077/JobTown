@@ -15,6 +15,9 @@ data class Job(
     @SerialName("company")
     val company: String = "",
 
+    @SerialName("company_image_url")
+    val companyImageUrl: String? = null,
+
     @SerialName("location")
     val location: String = "",
 

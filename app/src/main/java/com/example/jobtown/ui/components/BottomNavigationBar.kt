@@ -32,17 +32,12 @@ import com.example.jobtown.data.User
 import com.example.jobtown.data.UserRole
 import com.example.jobtown.ui.theme.*
 
-open class BottomNavItem(
+data class BottomNavItem(
     val route: String,
     val title: String,
     val icon: ImageVector,
     val badgeCount: Int = 0
-) {
-    object Home : BottomNavItem(Screen.Home.route, "Home", Icons.Default.Home)
-    object Applied : BottomNavItem(Screen.Applied.route, "Applied", Icons.Default.AssignmentTurnedIn)
-    object Schedule : BottomNavItem(Screen.Schedule.route, "Schedule", Icons.Default.Event)
-    object Chat : BottomNavItem(Screen.Chat.route, "Messages", Icons.Default.Chat)
-}
+)
 
 @Composable
 fun JobTownBottomNavigationBar(
@@ -53,13 +48,21 @@ fun JobTownBottomNavigationBar(
     val isEmployer = currentUser?.role == UserRole.EMPLOYER
 
     val items = listOf(
-        BottomNavItem.Home,
+        BottomNavItem(
+            route = Screen.Home.route,
+            title = "Home",
+            icon = Icons.Default.Home
+        ),
         BottomNavItem(
             route = Screen.Applied.route,
             title = if (isEmployer) "Manage Jobs" else "Applied",
             icon = Icons.Default.AssignmentTurnedIn
         ),
-        BottomNavItem.Schedule,
+        BottomNavItem(
+            route = Screen.Schedule.route,
+            title = "Schedule",
+            icon = Icons.Default.Event
+        ),
         BottomNavItem(
             route = Screen.Chat.route,
             title = "Messages",
@@ -153,7 +156,6 @@ fun JobTownBottomNavigationBar(
                     onClick = {
                         if (currentRoute != item.route) {
                             navController.navigate(item.route) {
-                                // Pop up to start destination of graph to prevent stack build-up and navigation locking
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true
                                 }

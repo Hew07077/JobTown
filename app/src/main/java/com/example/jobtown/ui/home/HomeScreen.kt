@@ -470,7 +470,6 @@ fun HomeScreen(
                             ) { job ->
                                 JobCard(
                                     job = job,
-                                    matchScore = if (!isEmployer) matchScores[job.id] else null,
                                     onClick = {
                                         if (!isEmployer) {
                                             onJobClick(job)
