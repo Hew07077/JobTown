@@ -27,6 +27,29 @@ import io.github.jan.supabase.gotrue.providers.builtin.Email
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 
+private val INDUSTRY_OPTIONS = listOf(
+    "Technology / IT",
+    "Finance / Banking",
+    "Healthcare",
+    "Retail / E-commerce",
+    "Manufacturing",
+    "Education",
+    "Hospitality / F&B",
+    "Construction / Real Estate",
+    "Logistics / Transportation",
+    "Media / Marketing",
+    "Other"
+)
+
+private val COMPANY_SIZE_OPTIONS = listOf(
+    "1-10 employees",
+    "11-50 employees",
+    "51-200 employees",
+    "201-500 employees",
+    "501-1000 employees",
+    "1000+ employees"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CompleteProfileScreen(
@@ -37,6 +60,8 @@ fun CompleteProfileScreen(
     onComplete: (User) -> Unit
 ) {
     var expandedExperience by remember { mutableStateOf(false) }
+    var expandedCompanySize by remember { mutableStateOf(false) }
+    var expandedIndustry by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
@@ -194,6 +219,63 @@ fun CompleteProfileScreen(
                 }
             }
 
+            // Industry / Company Size -- Employer only.
+            if (isEmployer) {
+                ExposedDropdownMenuBox(
+                    expanded = expandedIndustry,
+                    onExpandedChange = { expandedIndustry = !expandedIndustry },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = draft.industry,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Industry") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedIndustry) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    ExposedDropdownMenu(expanded = expandedIndustry, onDismissRequest = { expandedIndustry = false }) {
+                        INDUSTRY_OPTIONS.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option) },
+                                onClick = {
+                                    onDraftChange(draft.copy(industry = option))
+                                    expandedIndustry = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                ExposedDropdownMenuBox(
+                    expanded = expandedCompanySize,
+                    onExpandedChange = { expandedCompanySize = !expandedCompanySize },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = draft.companySize,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Company Size") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCompanySize) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    ExposedDropdownMenu(expanded = expandedCompanySize, onDismissRequest = { expandedCompanySize = false }) {
+                        COMPANY_SIZE_OPTIONS.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option) },
+                                onClick = {
+                                    onDraftChange(draft.copy(companySize = option))
+                                    expandedCompanySize = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
             // Portfolio URL Input -- optional, but must be a valid URL if provided
             OutlinedTextField(
                 value = draft.portfolioUrl,
@@ -316,6 +398,8 @@ fun CompleteProfileScreen(
                                 phone = draft.phone.trim(),
                                 location = draft.location.trim(),
                                 bio = compiledBio,
+                                companySize = draft.companySize.trim(),
+                                industry = draft.industry.trim(),
                                 // The "created_at" column is timestamptz -- an empty
                                 // string (the User model's default) would fail to
                                 // insert, so stamp it with the real current time here.

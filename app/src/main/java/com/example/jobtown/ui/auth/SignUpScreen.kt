@@ -53,7 +53,9 @@ data class SignUpFields(
     val skills: String = "",
     val experienceLevel: String = "Junior (1-2 yrs)",
     val portfolioUrl: String = "",
-    val bio: String = ""
+    val bio: String = "",
+    val companySize: String = "",
+    val industry: String = ""
 )
 
 @Composable

@@ -41,6 +41,29 @@ import com.example.jobtown.utils.ValidationUtils
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+private val INDUSTRY_OPTIONS = listOf(
+    "Technology / IT",
+    "Finance / Banking",
+    "Healthcare",
+    "Retail / E-commerce",
+    "Manufacturing",
+    "Education",
+    "Hospitality / F&B",
+    "Construction / Real Estate",
+    "Logistics / Transportation",
+    "Media / Marketing",
+    "Other"
+)
+
+private val COMPANY_SIZE_OPTIONS = listOf(
+    "1-10 employees",
+    "11-50 employees",
+    "51-200 employees",
+    "201-500 employees",
+    "501-1000 employees",
+    "1000+ employees"
+)
+
 // ---------------------------------------------------------------------------
 // Local-only data for Experience / Education / Certifications.
 //
@@ -114,6 +137,8 @@ fun ProfileScreen(
     var editName by remember { mutableStateOf("") }
     var editPhone by remember { mutableStateOf(displayedUser?.phone ?: "") }
     var editLocation by remember { mutableStateOf(displayedUser?.location ?: "") }
+    var editIndustry by remember { mutableStateOf(displayedUser?.industry ?: "") }
+    var editCompanySize by remember { mutableStateOf(displayedUser?.companySize ?: "") }
 
     var nameError by remember { mutableStateOf<String?>(null) }
     var phoneError by remember { mutableStateOf<String?>(null) }
@@ -139,6 +164,8 @@ fun ProfileScreen(
         editName = if (isEmployer) displayedUser?.companyName ?: "" else displayedUser?.name ?: ""
         editPhone = displayedUser?.phone ?: ""
         editLocation = displayedUser?.location ?: ""
+        editIndustry = displayedUser?.industry ?: ""
+        editCompanySize = displayedUser?.companySize ?: ""
         nameError = null
         phoneError = null
         locationError = null
@@ -221,6 +248,53 @@ fun ProfileScreen(
                         shape = RoundedCornerShape(14.dp)
                     )
 
+                    if (isEmployer) {
+                        var expandedIndustry by remember { mutableStateOf(false) }
+                        var expandedCompanySize by remember { mutableStateOf(false) }
+
+                        ExposedDropdownMenuBox(
+                            expanded = expandedIndustry,
+                            onExpandedChange = { expandedIndustry = !expandedIndustry },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = editIndustry,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Industry") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedIndustry) },
+                                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            ExposedDropdownMenu(expanded = expandedIndustry, onDismissRequest = { expandedIndustry = false }) {
+                                INDUSTRY_OPTIONS.forEach { option ->
+                                    DropdownMenuItem(text = { Text(option) }, onClick = { editIndustry = option; expandedIndustry = false })
+                                }
+                            }
+                        }
+
+                        ExposedDropdownMenuBox(
+                            expanded = expandedCompanySize,
+                            onExpandedChange = { expandedCompanySize = !expandedCompanySize },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = editCompanySize,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Company Size") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCompanySize) },
+                                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            ExposedDropdownMenu(expanded = expandedCompanySize, onDismissRequest = { expandedCompanySize = false }) {
+                                COMPANY_SIZE_OPTIONS.forEach { option ->
+                                    DropdownMenuItem(text = { Text(option) }, onClick = { editCompanySize = option; expandedCompanySize = false })
+                                }
+                            }
+                        }
+                    }
+
                     if (saveErrorMessage.isNotBlank()) {
                         Text(text = saveErrorMessage, color = Color.Red, fontSize = 12.sp)
                     }
@@ -262,7 +336,9 @@ fun ProfileScreen(
                                             name = if (isEmployer) currentUserSafe.name else editName.trim(),
                                             companyName = if (isEmployer) editName.trim() else currentUserSafe.companyName,
                                             phone = editPhone.trim(),
-                                            location = editLocation.trim()
+                                            location = editLocation.trim(),
+                                            industry = if (isEmployer) editIndustry.trim() else currentUserSafe.industry,
+                                            companySize = if (isEmployer) editCompanySize.trim() else currentUserSafe.companySize
                                         )
                                         val isSaved = UserRepository.updateUserInSupabase(updatedUser)
                                         isSaving = false
@@ -316,6 +392,16 @@ fun ProfileScreen(
                                 color = TextDark.copy(alpha = if (parsedBio.summary.isBlank()) 0.5f else 0.9f)
                             )
                         }
+                        if (!displayedUser?.industry.isNullOrBlank() || !displayedUser?.companySize.isNullOrBlank()) {
+                            ProfileSectionCard(title = "Company Details", icon = Icons.Default.Business) {
+                                if (!displayedUser?.industry.isNullOrBlank()) {
+                                    InfoRow(icon = Icons.Default.Category, label = "Industry", value = displayedUser?.industry.orEmpty())
+                                }
+                                if (!displayedUser?.companySize.isNullOrBlank()) {
+                                    InfoRow(icon = Icons.Default.Groups, label = "Company Size", value = displayedUser?.companySize.orEmpty())
+                                }
+                            }
+                        }
                         if (parsedBio.portfolioUrl.isNotBlank()) {
                             ProfileSectionCard(title = "Website", icon = Icons.Default.Language) {
                                 InfoRow(
@@ -366,7 +452,7 @@ fun ProfileScreen(
                     }
                 }
 
-                item { Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 16.dp)) { ProfileAccountActions(onLogout = onLogout) } }
+                item { Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 16.dp)) { ProfileAccountActions(isEmployer = true, onLogout = onLogout) } }
                 item { Spacer(modifier = Modifier.height(32.dp)) }
             }
         } else {
@@ -498,7 +584,7 @@ fun ProfileScreen(
                     }
                 }
 
-                item { Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 16.dp)) { ProfileAccountActions(onLogout = onLogout) } }
+                item { Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 16.dp)) { ProfileAccountActions(isEmployer = false, onLogout = onLogout) } }
                 item { Spacer(modifier = Modifier.height(32.dp)) }
             }
         }
@@ -815,12 +901,14 @@ private fun ProfileEntrySection(
 }
 
 @Composable
-private fun ProfileAccountActions(onLogout: () -> Unit) {
+private fun ProfileAccountActions(isEmployer: Boolean, onLogout: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Spacer(modifier = Modifier.height(4.dp))
         Text(text = "ACCOUNT", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextDark.copy(alpha = 0.4f))
 
-        ProfileOptionItem(icon = Icons.Default.Description, title = "Resume / CV", onClick = { })
+        if (!isEmployer) {
+            ProfileOptionItem(icon = Icons.Default.Description, title = "Resume / CV", onClick = { })
+        }
         ProfileOptionItem(icon = Icons.Default.Notifications, title = "Notifications", onClick = { })
         ProfileOptionItem(icon = Icons.Default.Settings, title = "Settings", onClick = { })
 
