@@ -69,6 +69,13 @@ fun HomeScreen(
 
     val isEmployer = currentUser?.role == UserRole.EMPLOYER
 
+    // Job Seekers store their display name in "name"; Employers store it in
+    // "companyName" -- same rule used on ProfileScreen / SignUpScreen /
+    // CompleteProfileScreen. Falls back to a generic greeting if neither is set.
+    val greetingName = (if (isEmployer) currentUser?.companyName else currentUser?.name)
+        .orEmpty()
+        .ifBlank { "Job Finder" }
+
     // Scope jobs for employers with full null safety using .orEmpty()
     val roleScopedJobs = remember(jobsList, currentUser?.id, currentUser?.name, currentUser?.companyName, isEmployer) {
         if (isEmployer) {
@@ -213,7 +220,7 @@ fun HomeScreen(
                                 }
                             }
                             Text(
-                                text = currentUser?.name.orEmpty().ifBlank { "Job Finder" },
+                                text = greetingName,
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextDark
