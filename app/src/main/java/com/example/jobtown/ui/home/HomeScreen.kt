@@ -33,6 +33,9 @@ import com.example.jobtown.data.User
 import com.example.jobtown.data.UserRole
 import com.example.jobtown.ui.components.JobCard
 import com.example.jobtown.ui.theme.*
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun HomeScreen(
@@ -54,11 +57,11 @@ fun HomeScreen(
     onStartRealtime: () -> Unit = {},
     onStopRealtime: () -> Unit = {}
 ) {
-    // Re-fetch data on screen load to keep UI synced, and keep the real-time
-    // job-listings subscription alive only while this screen is visible.
-    LaunchedEffect(Unit) {
+    // Re-fetch data on screen load and manage real-time updates lifecycle
+    LaunchedEffect(currentUser?.id) {
         onRefresh()
     }
+
     DisposableEffect(Unit) {
         onStartRealtime()
         onDispose { onStopRealtime() }
@@ -69,20 +72,30 @@ fun HomeScreen(
 
     val isEmployer = currentUser?.role == UserRole.EMPLOYER
 
-    // Job Seekers store their display name in "name"; Employers store it in
-    // "companyName" -- same rule used on ProfileScreen / SignUpScreen /
-    // CompleteProfileScreen. Falls back to a generic greeting if neither is set.
+    // Greeting name helper
     val greetingName = (if (isEmployer) currentUser?.companyName else currentUser?.name)
         .orEmpty()
         .ifBlank { "Job Finder" }
 
-    // Scope jobs for employers with full null safety using .orEmpty()
-    val roleScopedJobs = remember(jobsList, currentUser?.id, currentUser?.name, currentUser?.companyName, isEmployer) {
+    // Helper to check if a job is expired based on explicit status or `expiredAt` ISO timestamp
+    fun isJobExpired(job: Job): Boolean {
+        if (job.status?.equals("expired", ignoreCase = true) == true) return true
+        val expiredAtStr = job.expiredAt ?: return false
+        return try {
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+            val expiryDate = sdf.parse(expiredAtStr)
+            expiryDate != null && Date().after(expiryDate)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    // STRICT ROLE SCOPING:
+    // Employers see only their own posted jobs. Job Seekers see all listings.
+    val roleScopedJobs = remember(jobsList, currentUser?.id, currentUser?.companyName, currentUser?.name, isEmployer) {
         if (isEmployer) {
             val currentUserId = currentUser?.id.orEmpty()
-            val userName = currentUser?.name.orEmpty()
-            val companyName = currentUser?.companyName.orEmpty()
-            val userCompanyName = companyName.ifBlank { userName }
+            val userCompanyName = currentUser?.companyName.orEmpty().ifBlank { currentUser?.name.orEmpty() }
 
             jobsList.filter { job ->
                 val employerId = job.employerId.orEmpty()
@@ -92,8 +105,8 @@ fun HomeScreen(
 
                 when {
                     currentUserId.isNotBlank() && ownerId.isNotBlank() -> ownerId == currentUserId
-                    userCompanyName.isNotBlank() -> jobCompany.equals(userCompanyName, ignoreCase = true)
-                    else -> true
+                    userCompanyName.isNotBlank() && jobCompany.isNotBlank() -> jobCompany.equals(userCompanyName, ignoreCase = true)
+                    else -> false
                 }
             }
         } else {
@@ -101,16 +114,20 @@ fun HomeScreen(
         }
     }
 
-    val categories = listOf("All", "Full-Time", "Part-Time", "Remote")
+    // Comprehensive category and job type filters including EXPIRED tab
+    val categories = listOf("All", "Full-Time", "Part-Time", "Contract", "Internship", "Freelance", "Remote", "Expired")
 
-    // Filter Logic with safe null checks
+    // Search and Category/Expired Filter Logic
     val filteredJobs = remember(roleScopedJobs, searchQuery, selectedFilter) {
         roleScopedJobs.filter { job ->
             val jobType = job.type.orEmpty()
+            val jobExpired = isJobExpired(job)
+
             val matchesFilter = when (selectedFilter.lowercase()) {
-                "all" -> true
-                else -> jobType.replace("-", " ")
-                    .contains(selectedFilter.replace("-", " "), ignoreCase = true)
+                "all" -> !jobExpired // Default ALL hides expired items to keep feed clean
+                "expired" -> jobExpired
+                "remote" -> !jobExpired && (jobType.contains("remote", ignoreCase = true) || job.location.orEmpty().contains("remote", ignoreCase = true))
+                else -> !jobExpired && jobType.replace("-", " ").contains(selectedFilter.replace("-", " "), ignoreCase = true)
             }
 
             val query = searchQuery.trim().lowercase()
@@ -127,8 +144,7 @@ fun HomeScreen(
         }
     }
 
-    // Best job matching: when the seeker has a profile, "Recommended Jobs" is sorted so the
-    // strongest matches surface first; a toggle lets them switch to a strict newest-first view.
+    // Sort order logic
     val displayedJobs = remember(filteredJobs, sortMode, matchScores) {
         if (!isEmployer && sortMode == JobSortMode.BEST_MATCH && matchScores.isNotEmpty()) {
             filteredJobs.sortedByDescending { matchScores[it.id] ?: 0 }
@@ -191,7 +207,7 @@ fun HomeScreen(
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "Welcome back \uD83D\uDC4B",
+                                    text = "Welcome back 👋",
                                     fontSize = 13.sp,
                                     color = DeepGreenDark.copy(alpha = 0.8f)
                                 )
@@ -278,13 +294,15 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- FILTER CHIPS ---
+            // --- FILTER CHIPS BAR (Job Types + Expired) ---
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(categories) { category ->
                     val isSelected = selectedFilter.equals(category, ignoreCase = true)
+                    val isExpiredTab = category.equals("Expired", ignoreCase = true)
+
                     FilterChip(
                         selected = isSelected,
                         onClick = { selectedFilter = category },
@@ -297,16 +315,16 @@ fun HomeScreen(
                         },
                         shape = RoundedCornerShape(20.dp),
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = DeepGreenDark,
+                            selectedContainerColor = if (isExpiredTab) MaterialTheme.colorScheme.error else DeepGreenDark,
                             selectedLabelColor = Color.White,
                             containerColor = Color.White,
-                            labelColor = TextDark
+                            labelColor = if (isExpiredTab) MaterialTheme.colorScheme.error else TextDark
                         ),
                         border = FilterChipDefaults.filterChipBorder(
                             enabled = true,
                             selected = isSelected,
-                            borderColor = SageGreenDark.copy(alpha = 0.3f),
-                            selectedBorderColor = DeepGreenDark
+                            borderColor = if (isExpiredTab) MaterialTheme.colorScheme.error.copy(alpha = 0.4f) else SageGreenDark.copy(alpha = 0.3f),
+                            selectedBorderColor = if (isExpiredTab) MaterialTheme.colorScheme.error else DeepGreenDark
                         ),
                         modifier = Modifier.semantics {
                             contentDescription = "Filter by $category" + if (isSelected) ", selected" else ""
@@ -315,7 +333,7 @@ fun HomeScreen(
                 }
             }
 
-            // --- SORT TOGGLE (job seekers only, once a profile exists to match against) ---
+            // --- SORT TOGGLE (Job Seekers only) ---
             if (!isEmployer && hasMatchProfile) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
@@ -359,7 +377,11 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (isEmployer) "Your Posted Jobs" else "Recommended Jobs",
+                    text = when {
+                        selectedFilter.equals("Expired", ignoreCase = true) -> "Expired Jobs"
+                        isEmployer -> "Your Posted Jobs"
+                        else -> "Recommended Jobs"
+                    },
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextDark
@@ -404,10 +426,12 @@ fun HomeScreen(
                                 .padding(32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("\uD83D\uDD0D", fontSize = 36.sp)
+                            Text("🔍", fontSize = 36.sp)
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = if (isEmployer) "No Jobs Posted Yet" else "No Jobs Found",
+                                text = if (selectedFilter.equals("Expired", ignoreCase = true)) "No Expired Jobs Found"
+                                else if (isEmployer) "No Jobs Posted Yet"
+                                else "No Jobs Found",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextDark
@@ -415,7 +439,7 @@ fun HomeScreen(
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = if (isEmployer) {
-                                    "Jobs you post will show up here."
+                                    "Tap '+ Add Job' to post your company's first listing."
                                 } else {
                                     "Try clearing your search query or switching filters."
                                 },
@@ -426,9 +450,7 @@ fun HomeScreen(
                     }
                 } else {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // Updated job listings: new postings arriving in real time are staged
-                        // here instead of jumping the list around, so the seeker chooses when
-                        // to bring them into view.
+                        // Realtime banner (Seekers)
                         if (!isEmployer && newListingsAvailable > 0) {
                             Surface(
                                 onClick = onShowNewListings,
@@ -471,16 +493,14 @@ fun HomeScreen(
                             items(
                                 items = displayedJobs,
                                 key = { job ->
-                                    val jobId = job.id.orEmpty()
-                                    if (jobId.isNotEmpty()) jobId else (job.title.orEmpty() + job.company.orEmpty())
+                                    val id = job.id.orEmpty()
+                                    if (id.isNotBlank()) id else "${job.title}_${job.company}_${job.createdAt}"
                                 }
                             ) { job ->
                                 JobCard(
                                     job = job,
                                     onClick = {
-                                        if (!isEmployer) {
-                                            onJobClick(job)
-                                        }
+                                        onJobClick(job)
                                     }
                                 )
                             }

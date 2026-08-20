@@ -22,7 +22,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
-/** Emitted by [JobRepository.observeJobs] so the UI can tell new/edited/removed listings apart. */
 sealed interface JobListingEvent {
     data class Upserted(val job: Job) : JobListingEvent
     data class Removed(val jobId: String) : JobListingEvent
@@ -41,15 +40,34 @@ private data class NewJobPayload(
     @SerialName("skills") val skills: List<String>,
     @SerialName("is_featured") val isFeatured: Boolean,
     @SerialName("employer_id") val employerId: String?,
-    @SerialName("posted_by_user_id") val postedByUserId: String?
+    @SerialName("posted_by_user_id") val postedByUserId: String?,
+    @SerialName("status") val status: String? = "active",
+    @SerialName("expired_at") val expiredAt: String? = null
+)
+
+@Serializable
+private data class UpsertJobPayload(
+    @SerialName("id") val id: String,
+    @SerialName("title") val title: String,
+    @SerialName("company") val company: String,
+    @SerialName("location") val location: String,
+    @SerialName("salary") val salary: String,
+    @SerialName("salary_range") val salaryRange: String?,
+    @SerialName("type") val type: String,
+    @SerialName("description") val description: String,
+    @SerialName("requirements") val requirements: List<String>,
+    @SerialName("skills") val skills: List<String>,
+    @SerialName("is_featured") val isFeatured: Boolean,
+    @SerialName("employer_id") val employerId: String?,
+    @SerialName("posted_by_user_id") val postedByUserId: String?,
+    @SerialName("status") val status: String? = "active",
+    @SerialName("expired_at") val expiredAt: String? = null
 )
 
 class JobRepository(private val supabaseClient: SupabaseClient) {
 
     suspend fun getAllJobs(): List<Job> = withContext(Dispatchers.IO) {
         try {
-            // Newest listings first so "Updated job listings" is true by default,
-            // even before any match-based or manual sort is applied on top.
             val result = supabaseClient.postgrest["jobs"]
                 .select {
                     order("created_at", Order.DESCENDING)
@@ -64,12 +82,6 @@ class JobRepository(private val supabaseClient: SupabaseClient) {
         }
     }
 
-    /**
-     * Streams live inserts/updates/deletes on the `jobs` table via Supabase Realtime.
-     * HomeViewModel merges these into its in-memory list so new postings and edits by
-     * employers appear immediately for every job seeker browsing the feed, with no
-     * manual refresh required.
-     */
     fun observeJobs(): Flow<JobListingEvent> = callbackFlow {
         val channel = supabaseClient.realtime.channel("jobs_feed_${System.currentTimeMillis()}")
         val collectJob = launch {
@@ -112,7 +124,6 @@ class JobRepository(private val supabaseClient: SupabaseClient) {
         }
     }
 
-    // Fetch only jobs posted by the current logged-in user
     suspend fun getJobsByUserId(userId: String): List<Job> = withContext(Dispatchers.IO) {
         try {
             val result = supabaseClient.postgrest["jobs"]
@@ -131,42 +142,77 @@ class JobRepository(private val supabaseClient: SupabaseClient) {
         }
     }
 
-    suspend fun addJob(job: Job) = withContext(Dispatchers.IO) {
-        try {
-            supabaseClient.postgrest["jobs"].insert(job)
-            Log.d("JobRepository", "SUCCESS: Added job '${job.title}' to Supabase!")
-        } catch (e: Exception) {
-            Log.e("JobRepository", "ERROR ADDING JOB: ${e.message}", e)
-            throw e
-        }
+    suspend fun insertJob(job: Job): Job = withContext(Dispatchers.IO) {
+        val cleanEmployerId = job.employerId?.trim()?.ifEmpty { null }
+        val cleanUserId = job.postedByUserId?.trim()?.ifEmpty { null } ?: cleanEmployerId
+
+        val payload = NewJobPayload(
+            title = job.title.trim(),
+            company = job.company.trim(),
+            location = job.location.trim(),
+            salary = job.salary.trim(),
+            salaryRange = job.salaryRange?.trim()?.ifEmpty { null },
+            type = job.type.ifBlank { "Full-time" },
+            description = job.description.trim(),
+            requirements = job.requirements.orEmpty(),
+            skills = job.skills.orEmpty(),
+            isFeatured = job.isFeatured ?: false,
+            employerId = cleanEmployerId,
+            postedByUserId = cleanUserId,
+            status = job.status ?: "active",
+            expiredAt = job.expiredAt
+        )
+
+        // Supabase will automatically generate the primary key UUID
+        val inserted = supabaseClient.postgrest["jobs"]
+            .insert(payload) { select() }
+            .decodeSingle<Job>()
+
+        Log.d("JobRepository", "SUCCESS: Inserted job '${inserted.title}' with id=${inserted.id}")
+        inserted
     }
 
-    suspend fun insertJob(job: Job): Job? = withContext(Dispatchers.IO) {
+    suspend fun updateJob(job: Job): Job = withContext(Dispatchers.IO) {
+        val cleanEmployerId = job.employerId?.trim()?.ifEmpty { null }
+        val cleanUserId = job.postedByUserId?.trim()?.ifEmpty { null } ?: cleanEmployerId
+
+        val payload = UpsertJobPayload(
+            id = job.id,
+            title = job.title.trim(),
+            company = job.company.trim(),
+            location = job.location.trim(),
+            salary = job.salary.trim(),
+            salaryRange = job.salaryRange?.trim()?.ifEmpty { null },
+            type = job.type.ifBlank { "Full-time" },
+            description = job.description.trim(),
+            requirements = job.requirements.orEmpty(),
+            skills = job.skills.orEmpty(),
+            isFeatured = job.isFeatured ?: false,
+            employerId = cleanEmployerId,
+            postedByUserId = cleanUserId,
+            status = job.status ?: "active",
+            expiredAt = job.expiredAt
+        )
+
+        val updated = supabaseClient.postgrest["jobs"]
+            .upsert(payload) { select() }
+            .decodeSingle<Job>()
+
+        Log.d("JobRepository", "SUCCESS: Updated job '${updated.title}' with id=${updated.id}")
+        updated
+    }
+
+    /**
+     * Call this from HomeViewModel to post a job.
+     * @param isNewJob Pass true if creating a new posting, false if updating an existing one.
+     */
+    suspend fun postJob(job: Job, isNewJob: Boolean = true): Result<Job> = withContext(Dispatchers.IO) {
         try {
-            val payload = NewJobPayload(
-                title = job.title.trim(),
-                company = job.company.trim(),
-                location = job.location.trim(),
-                salary = job.salary.trim(),
-                salaryRange = job.salaryRange?.trim(),
-                type = job.type.ifBlank { "Full-time" },
-                description = job.description.trim(),
-                requirements = job.requirements.orEmpty(),
-                skills = job.skills.orEmpty(),
-                isFeatured = job.isFeatured ?: false,
-                employerId = job.employerId?.ifBlank { null },
-                postedByUserId = job.postedByUserId?.ifBlank { null }
-            )
-
-            val inserted = supabaseClient.postgrest["jobs"]
-                .insert(payload) { select() }
-                .decodeSingle<Job>()
-
-            Log.d("JobRepository", "SUCCESS: Inserted job '${inserted.title}' with id=${inserted.id}")
-            inserted
+            val result = if (isNewJob) insertJob(job) else updateJob(job)
+            Result.success(result)
         } catch (e: Exception) {
-            Log.e("JobRepository", "ERROR INSERTING JOB: ${e.message}", e)
-            null
+            Log.e("JobRepository", "ERROR POSTING JOB TO SUPABASE: ${e.message}", e)
+            Result.failure(e)
         }
     }
 }

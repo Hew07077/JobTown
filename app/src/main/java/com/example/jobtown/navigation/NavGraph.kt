@@ -49,6 +49,7 @@ import com.example.jobtown.ui.home.HomeScreen
 import com.example.jobtown.ui.home.HomeViewModel
 import com.example.jobtown.ui.home.HomeViewModelFactory
 import com.example.jobtown.ui.job.ApplyJobScreen
+import com.example.jobtown.ui.postjob.EmployerJobDetailScreen
 import com.example.jobtown.ui.postjob.PostJobScreen
 import com.example.jobtown.ui.profile.ProfileScreen
 import com.example.jobtown.ui.schedule.ScheduleScreen
@@ -192,7 +193,11 @@ fun AppNavGraph(
                     isLoading = homeViewModel.isLoading,
                     onJobClick = { selectedJob ->
                         homeViewModel.selectJob(selectedJob)
-                        navController.navigate("apply_job")
+                        if (loggedInUser?.role == UserRole.EMPLOYER) {
+                            navController.navigate("employer_job_detail/${selectedJob.id}")
+                        } else {
+                            navController.navigate("apply_job")
+                        }
                     },
                     onPostJobClick = {
                         navController.navigate("post_job")
@@ -201,7 +206,7 @@ fun AppNavGraph(
                     onRefresh = { homeViewModel.loadJobs(loggedInUser?.id) },
                     matchScores = homeViewModel.matchScores,
                     sortMode = homeViewModel.sortMode,
-                    onSortModeChange = { homeViewModel.updateSortMode(it) }, // Fixed reference here
+                    onSortModeChange = { homeViewModel.updateSortMode(it) },
                     hasMatchProfile = homeViewModel.seekerProfile != null,
                     isLive = homeViewModel.isLive,
                     newListingsAvailable = homeViewModel.newListingsAvailable,
@@ -215,12 +220,40 @@ fun AppNavGraph(
                 PostJobScreen(
                     navController = navController,
                     currentUser = loggedInUser,
-                    onJobPosted = { createdJob ->
-                        homeViewModel.addJob(createdJob)
-                        navController.popBackStack()
-                    },
-                    onBackClick = { navController.popBackStack() }
+                    onJobPosted = { createdJob, onComplete ->
+                        homeViewModel.postJob(createdJob) { success, message ->
+                            onComplete(success, message)
+                            if (success) {
+                                homeViewModel.loadJobs(loggedInUser?.id)
+                            }
+                        }
+                    }
                 )
+            }
+
+            composable(
+                route = "employer_job_detail/{jobId}",
+                arguments = listOf(navArgument("jobId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val jobId = backStackEntry.arguments?.getString("jobId") ?: ""
+                val currentJob = homeViewModel.jobsList.find { it.id == jobId } ?: homeViewModel.selectedJob
+
+                if (currentJob != null) {
+                    EmployerJobDetailScreen(
+                        job = currentJob,
+                        navController = navController,
+                        onUpdateJob = { updatedJob ->
+                            coroutineScope.launch {
+                                homeViewModel.addJob(updatedJob)
+                                homeViewModel.loadJobs(loggedInUser?.id)
+                                navController.popBackStack()
+                            }
+                        },
+                        onBackClick = { navController.popBackStack() }
+                    )
+                } else {
+                    navController.popBackStack()
+                }
             }
 
             composable("apply_job") {

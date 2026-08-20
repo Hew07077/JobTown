@@ -48,6 +48,12 @@ data class Job(
     @SerialName("posted_by_user_id")
     val postedByUserId: String? = null,
 
+    @SerialName("status")
+    val status: String? = "active",
+
+    @SerialName("expired_at")
+    val expiredAt: String? = null,
+
     @SerialName("created_at")
     val createdAt: String? = null
 ) {
@@ -58,4 +64,8 @@ data class Job(
     @Transient
     val jobType: String
         get() = type.ifBlank { "Full-time" }
+
+    @Transient
+    val isExpired: Boolean
+        get() = status?.equals("expired", ignoreCase = true) == true
 }
