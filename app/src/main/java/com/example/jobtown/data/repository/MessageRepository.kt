@@ -116,7 +116,14 @@ class MessageRepository(private val supabase: SupabaseClient) {
             }
             val path = "$roomId/${UUID.randomUUID()}_$safeName"
 
-            supabase.storage[CHAT_ATTACHMENTS_BUCKET].upload(path, bytes, upsert = false)
+            // Upload bytes successfully without compilation errors
+            supabase.storage[CHAT_ATTACHMENTS_BUCKET].upload(
+                path = path,
+                data = bytes,
+                upsert = false
+            )
+
+            // Return the public URL for images, documents, and voice notes
             supabase.storage[CHAT_ATTACHMENTS_BUCKET].publicUrl(path)
         } catch (e: Exception) {
             Log.e("MessageRepository", "Error uploading chat attachment", e)
@@ -288,6 +295,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
             val snippet = when (type) {
                 MessageType.IMAGE -> "[Image]"
                 MessageType.FILE -> "[Document]"
+                MessageType.VOICE -> "[Voice Note]"
                 else -> content
             }
 
@@ -322,8 +330,14 @@ class MessageRepository(private val supabase: SupabaseClient) {
 
             val latest = getLatestMessage(roomId)
             if (latest != null && latest.id == messageId) {
+                val snippet = when (latest.messageType) {
+                    MessageType.IMAGE -> "[Image]"
+                    MessageType.FILE -> "[Document]"
+                    MessageType.VOICE -> "[Voice Note]"
+                    else -> newText
+                }
                 supabase.postgrest["chat_rooms"].update(
-                    ChatRoomLastMessageUpdate(last_message = newText)
+                    ChatRoomLastMessageUpdate(last_message = snippet)
                 ) {
                     filter { eq("id", roomId) }
                 }
@@ -543,9 +557,11 @@ class MessageRepository(private val supabase: SupabaseClient) {
     suspend fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean) = withContext(Dispatchers.IO) {
         if (roomId.isBlank() || userId.isBlank()) return@withContext
         try {
+            val targetTopic = "presence_room_$roomId"
             val channel = supabase.realtime.subscriptions.values.firstOrNull {
-                it.topic == "realtime:presence_room_$roomId"
-            } ?: return@withContext
+                it.topic.contains(targetTopic)
+            } ?: supabase.channel(targetTopic).apply { subscribe(blockUntilSubscribed = false) }
+
             channel.broadcast(event = "typing", TypingBroadcast(user_id = userId, is_typing = isTyping))
         } catch (e: Exception) {
             Log.e("MessageRepository", "Error sending typing status", e)

@@ -16,6 +16,7 @@ enum class MessageType {
     @SerialName("TEXT") TEXT,
     @SerialName("IMAGE") IMAGE,
     @SerialName("FILE") FILE,
+    @SerialName("VOICE") VOICE, // <-- Added VOICE so voice notes work properly!
     @SerialName("SYSTEM") SYSTEM
 }
 

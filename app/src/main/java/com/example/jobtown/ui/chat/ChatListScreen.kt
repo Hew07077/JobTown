@@ -4,14 +4,17 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,6 +38,10 @@ import java.util.Locale
 private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
 private val dateFormat = SimpleDateFormat("MMM d", Locale.getDefault())
 
+enum class ChatFilterTab {
+    ALL, UNREAD
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatListScreen(
@@ -45,13 +52,21 @@ fun ChatListScreen(
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var selectedTab by remember { mutableStateOf(ChatFilterTab.ALL) }
 
-    val filteredRooms = remember(chatRooms, searchQuery, currentUser?.id) {
-        if (searchQuery.isBlank()) {
+    // Filter chat rooms based on search query and selected tab
+    val filteredRooms = remember(chatRooms, searchQuery, currentUser?.id, selectedTab) {
+        val baseList = if (selectedTab == ChatFilterTab.UNREAD) {
+            chatRooms.filter { it.hasUnreadMessages() }
+        } else {
             chatRooms
+        }
+
+        if (searchQuery.isBlank()) {
+            baseList
         } else {
             val query = searchQuery.trim()
-            chatRooms.filter { room ->
+            baseList.filter { room ->
                 val isSeeker = room.seekerId == currentUser?.id
                 val otherName = if (isSeeker) room.companyName else room.seekerName
                 val positionName = room.jobTitle
@@ -63,18 +78,39 @@ fun ChatListScreen(
         }
     }
 
+    val unreadTotal = remember(chatRooms) { chatRooms.count { it.hasUnreadMessages() } }
+
     Scaffold(
         modifier = modifier,
         containerColor = BackgroundWhite,
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "Messages",
-                        fontWeight = FontWeight.Bold,
-                        color = TextDark,
-                        fontSize = 20.sp
-                    )
+                    Column {
+                        Text(
+                            text = "Messages",
+                            fontWeight = FontWeight.Bold,
+                            color = TextDark,
+                            fontSize = 20.sp
+                        )
+                        if (unreadTotal > 0) {
+                            Text(
+                                text = "$unreadTotal unread conversation${if (unreadTotal > 1) "s" else ""}",
+                                fontSize = 11.sp,
+                                color = DeepGreenDark.copy(alpha = 0.8f),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { /* Optional: Filter or settings action */ }) {
+                        Icon(
+                            imageVector = Icons.Default.FilterList,
+                            contentDescription = "Filter Options",
+                            tint = TextDark
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
             )
@@ -85,6 +121,7 @@ fun ChatListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            // Search Bar Component
             if (chatRooms.isNotEmpty() || searchQuery.isNotEmpty()) {
                 TextField(
                     value = searchQuery,
@@ -120,7 +157,7 @@ fun ChatListScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                     shape = RoundedCornerShape(24.dp),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.White,
@@ -130,7 +167,41 @@ fun ChatListScreen(
                     ),
                     singleLine = true
                 )
+
+                // Filter Tabs (All / Unread)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedTab == ChatFilterTab.ALL,
+                        onClick = { selectedTab = ChatFilterTab.ALL },
+                        label = { Text("All (${chatRooms.size})") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = DeepGreenDark,
+                            selectedLabelColor = Color.White,
+                            containerColor = Color.White,
+                            labelColor = TextDark
+                        )
+                    )
+                    FilterChip(
+                        selected = selectedTab == ChatFilterTab.UNREAD,
+                        onClick = { selectedTab = ChatFilterTab.UNREAD },
+                        label = { Text("Unread ($unreadTotal)") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = DeepGreenDark,
+                            selectedLabelColor = Color.White,
+                            containerColor = Color.White,
+                            labelColor = TextDark
+                        )
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(4.dp))
 
             Box(
                 modifier = Modifier
@@ -145,21 +216,27 @@ fun ChatListScreen(
                         )
                     }
                     chatRooms.isEmpty() -> {
-                        EmptyChatState(modifier = Modifier.align(Alignment.Center))
+                        EmptyChatState(
+                            title = "No Conversations Yet",
+                            subtitle = "When you contact an employer or applicant, your chats will appear here.",
+                            modifier = Modifier.align(Alignment.Center)
+                        )
                     }
                     filteredRooms.isEmpty() -> {
-                        Text(
-                            text = "No results found for \"$searchQuery\"",
-                            color = TextDark.copy(alpha = 0.5f),
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center,
+                        EmptyChatState(
+                            title = "No matches found",
+                            subtitle = if (selectedTab == ChatFilterTab.UNREAD) {
+                                "You have no unread messages matching your filters."
+                            } else {
+                                "No results found for \"$searchQuery\"."
+                            },
                             modifier = Modifier.align(Alignment.Center)
                         )
                     }
                     else -> {
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(10.dp),
-                            contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
                             items(
@@ -203,7 +280,7 @@ private fun ChatRoomItem(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (hasUnread) 2.dp else 0.5.dp)
     ) {
         Row(
             modifier = Modifier
@@ -211,11 +288,12 @@ private fun ChatRoomItem(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Profile Initials Avatar with Online/Unread Accent Ring if needed
             Surface(
                 modifier = Modifier
-                    .size(50.dp)
+                    .size(52.dp)
                     .clip(CircleShape),
-                color = SageGreenLight
+                color = if (hasUnread) SageGreenMain else SageGreenLight
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
@@ -289,12 +367,24 @@ private fun ChatRoomItem(
 
                     if (hasUnread) {
                         Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(DeepGreenDark)
-                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = DeepGreenDark,
+                            modifier = Modifier.defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = room.unreadCount.toString(),
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -303,7 +393,11 @@ private fun ChatRoomItem(
 }
 
 @Composable
-private fun EmptyChatState(modifier: Modifier = Modifier) {
+private fun EmptyChatState(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier
+) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -327,14 +421,15 @@ private fun EmptyChatState(modifier: Modifier = Modifier) {
         }
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "No Conversations Yet",
+            text = title,
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
-            color = TextDark
+            color = TextDark,
+            textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "When you contact an employer or applicant, your chats will appear here.",
+            text = subtitle,
             fontSize = 13.sp,
             color = TextDark.copy(alpha = 0.6f),
             textAlign = TextAlign.Center,

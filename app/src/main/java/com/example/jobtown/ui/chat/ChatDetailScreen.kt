@@ -1,6 +1,12 @@
 package com.example.jobtown.ui.chat
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.media.MediaRecorder
+import android.net.Uri
+import android.os.Build
 import android.webkit.MimeTypeMap
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -16,10 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,15 +33,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.example.jobtown.data.ChatMessage
 import com.example.jobtown.data.MessageType
 import com.example.jobtown.ui.theme.*
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,6 +60,15 @@ fun ChatDetailScreen(
 
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var showInterviewDialog by remember { mutableStateOf(false) }
+    var isSearchActive by remember { mutableStateOf(false) }
+    var inChatSearchQuery by remember { mutableStateOf("") }
+    var hasScrolledToBottomInitially by remember { mutableStateOf(false) }
+
+    // State for photo preview & voice recording
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var isRecordingVoice by remember { mutableStateOf(false) }
+    var mediaRecorder: MediaRecorder? = null
+    var audioFile: File? = null
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -74,6 +85,14 @@ fun ChatDetailScreen(
     val displayCompanyName = companyName.ifBlank { "Company Name" }
     val displayPosition = chatTitle.ifBlank { "Position" }
 
+    val displayedMessages = remember(messages, inChatSearchQuery) {
+        if (inChatSearchQuery.isBlank()) {
+            messages
+        } else {
+            messages.filter { it.text.contains(inChatSearchQuery, ignoreCase = true) }
+        }
+    }
+
     val isNearBottom by remember {
         derivedStateOf {
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
@@ -82,13 +101,12 @@ fun ChatDetailScreen(
         }
     }
 
-    // Map messages to exact LazyColumn index accounting for Date Headers
-    val groupedMessages = remember(messages) { groupMessagesByDate(messages) }
+    val groupedMessages = remember(displayedMessages) { groupMessagesByDate(displayedMessages) }
     val (messageIndexMap, totalLazyItems) = remember(groupedMessages) {
         val map = mutableMapOf<String, Int>()
         var currentIndex = 0
         groupedMessages.forEach { (_, list) ->
-            currentIndex++ // Account for DateHeader item
+            currentIndex++
             list.forEach { msg ->
                 map[msg.id] = currentIndex
                 currentIndex++
@@ -97,33 +115,48 @@ fun ChatDetailScreen(
         Pair(map, currentIndex)
     }
 
-    // Typing status observer helper
+    // Permission launcher for audio recording
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            startVoiceRecording(
+                context = context,
+                onStart = { recorder, file ->
+                    mediaRecorder = recorder
+                    audioFile = file
+                    isRecordingVoice = true
+                }
+            )
+        } else {
+            Toast.makeText(context, "Microphone permission is required to send voice notes.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     LaunchedEffect(messageText) {
         if (roomId.isNotBlank() && currentUserId.isNotBlank()) {
             chatViewModel.sendTypingStatus(roomId, currentUserId, messageText.isNotBlank())
         }
     }
 
-    fun readBytesAndSend(uri: android.net.Uri, type: MessageType) {
+    fun readBytesAndSendWithCaption(uri: Uri, type: MessageType, caption: String) {
         coroutineScope.launch {
             try {
                 val resolver = context.contentResolver
                 val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-                if (bytes == null) {
-                    android.util.Log.e("ChatDetailScreen", "Could not read attachment bytes for $uri")
-                    return@launch
-                }
+                if (bytes == null) return@launch
                 val mimeType = resolver.getType(uri)
                     ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString())
                         ?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
                     ?: "application/octet-stream"
-                val fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "attachment"
+                val rawFileName = uri.lastPathSegment?.substringAfterLast("/") ?: "attachment"
+                val finalFileName = if (caption.isNotBlank()) caption else rawFileName
 
                 chatViewModel.sendAttachment(
                     roomId = roomId,
                     senderId = currentUserId,
                     bytes = bytes,
-                    fileName = fileName,
+                    fileName = finalFileName,
                     mimeType = mimeType,
                     type = type,
                     replyToId = replyingToMessage?.id
@@ -142,13 +175,13 @@ fun ChatDetailScreen(
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let { readBytesAndSend(it, MessageType.IMAGE) }
+        uri?.let { selectedImageUri = it }
     }
 
     val documentPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let { readBytesAndSend(it, MessageType.FILE) }
+        uri?.let { readBytesAndSendWithCaption(it, MessageType.FILE, "") }
     }
 
     LaunchedEffect(roomId) {
@@ -158,74 +191,99 @@ fun ChatDetailScreen(
         }
     }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty() && isNearBottom && totalLazyItems > 0) {
-            listState.animateScrollToItem(totalLazyItems - 1)
-        }
-    }
-
-    LaunchedEffect(listState, roomId) {
-        snapshotFlow { listState.firstVisibleItemIndex }
-            .collect { firstVisible ->
-                if (firstVisible <= 2 && chatViewModel.messagesList.value.isNotEmpty()) {
-                    chatViewModel.loadOlderMessages(roomId)
-                }
+    LaunchedEffect(messages) {
+        if (messages.isNotEmpty() && totalLazyItems > 0 && !isSearchActive) {
+            if (!hasScrolledToBottomInitially) {
+                listState.scrollToItem(totalLazyItems - 1)
+                hasScrolledToBottomInitially = true
+            } else if (isNearBottom) {
+                listState.animateScrollToItem(totalLazyItems - 1)
             }
+        }
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = displayCompanyName,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextDark
-                        )
-                        val otherTyping = roomPresence.typingUserIds.isNotEmpty()
-                        if (otherTyping) {
-                            Text(
-                                text = "typing...",
-                                fontSize = 12.sp,
-                                color = DeepGreenDark,
-                                fontWeight = FontWeight.SemiBold
+            Column {
+                TopAppBar(
+                    title = {
+                        if (isSearchActive) {
+                            TextField(
+                                value = inChatSearchQuery,
+                                onValueChange = { inChatSearchQuery = it },
+                                placeholder = { Text("Search in chat...", fontSize = 14.sp) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent
+                                )
                             )
                         } else {
-                            Text(
-                                text = displayPosition,
-                                fontSize = 12.sp,
-                                color = TextDark.copy(alpha = 0.6f)
+                            Column {
+                                Text(
+                                    text = displayCompanyName,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextDark
+                                )
+                                val otherTyping = roomPresence.typingUserIds.isNotEmpty()
+                                if (otherTyping) {
+                                    Text(
+                                        text = "typing...",
+                                        fontSize = 12.sp,
+                                        color = DeepGreenDark,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                } else {
+                                    Text(
+                                        text = displayPosition,
+                                        fontSize = 12.sp,
+                                        color = TextDark.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = TextDark
                             )
                         }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = TextDark
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showInterviewDialog = true }) {
-                        Icon(
-                            imageVector = Icons.Default.CalendarToday,
-                            contentDescription = "View Interview Details",
-                            tint = DeepGreenDark
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
-            )
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            isSearchActive = !isSearchActive
+                            if (!isSearchActive) inChatSearchQuery = ""
+                        }) {
+                            Icon(
+                                imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = "Toggle Search",
+                                tint = TextDark
+                            )
+                        }
+                        IconButton(onClick = { showInterviewDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarToday,
+                                contentDescription = "View Interview Details",
+                                tint = DeepGreenDark
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
+                )
+            }
         },
         bottomBar = {
             Surface(
                 shadowElevation = 8.dp,
-                color = Color.White
+                color = Color.White,
+                modifier = Modifier.imePadding()
             ) {
                 Column {
                     editingMessage?.let { editMsg ->
@@ -274,6 +332,45 @@ fun ChatDetailScreen(
                         )
                     }
 
+                    if (isRecordingVoice) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Red.copy(alpha = 0.1f))
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Red)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Recording voice note...",
+                                    color = Color.Red,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            IconButton(onClick = {
+                                try {
+                                    mediaRecorder?.stop()
+                                    mediaRecorder?.release()
+                                    mediaRecorder = null
+                                } catch (_: Exception) {}
+                                isRecordingVoice = false
+                                audioFile?.delete()
+                                audioFile = null
+                            }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Cancel Voice Note", tint = Color.Red)
+                            }
+                        }
+                    }
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -303,7 +400,8 @@ fun ChatDetailScreen(
                         TextField(
                             value = messageText,
                             onValueChange = { messageText = it },
-                            placeholder = { Text("Type a message...") },
+                            placeholder = { Text(if (isRecordingVoice) "Recording..." else "Type a message...") },
+                            enabled = !isRecordingVoice,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(24.dp),
                             colors = TextFieldDefaults.colors(
@@ -322,7 +420,51 @@ fun ChatDetailScreen(
 
                         IconButton(
                             onClick = {
-                                if (canSend) {
+                                if (messageText.isBlank()) {
+                                    if (isRecordingVoice) {
+                                        try {
+                                            mediaRecorder?.stop()
+                                            mediaRecorder?.release()
+                                            mediaRecorder = null
+                                        } catch (_: Exception) {}
+                                        isRecordingVoice = false
+
+                                        audioFile?.let { file ->
+                                            if (file.exists() && file.length() > 0) {
+                                                val bytes = file.readBytes()
+                                                chatViewModel.sendAttachment(
+                                                    roomId = roomId,
+                                                    senderId = currentUserId,
+                                                    bytes = bytes,
+                                                    fileName = "voice_note_${System.currentTimeMillis()}.3gp",
+                                                    mimeType = "audio/3gpp",
+                                                    type = MessageType.FILE,
+                                                    replyToId = replyingToMessage?.id
+                                                ) { success ->
+                                                    if (success) {
+                                                        replyingToMessage = null
+                                                        chatViewModel.loadUserChatRooms(currentUserId)
+                                                    }
+                                                    file.delete()
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        val permission = Manifest.permission.RECORD_AUDIO
+                                        if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
+                                            startVoiceRecording(
+                                                context = context,
+                                                onStart = { recorder, file ->
+                                                    mediaRecorder = recorder
+                                                    audioFile = file
+                                                    isRecordingVoice = true
+                                                }
+                                            )
+                                        } else {
+                                            permissionLauncher.launch(permission)
+                                        }
+                                    }
+                                } else {
                                     val textToSend = messageText
                                     val currentEdit = editingMessage
                                     val currentReplyId = replyingToMessage?.id
@@ -351,11 +493,10 @@ fun ChatDetailScreen(
                                     }
                                 }
                             },
-                            enabled = canSend,
                             modifier = Modifier
                                 .size(44.dp)
                                 .clip(CircleShape)
-                                .background(if (canSend) SageGreenMain else SageGreenMain.copy(alpha = 0.4f))
+                                .background(if (isRecordingVoice || canSend) SageGreenMain else SageGreenMain.copy(alpha = 0.4f))
                         ) {
                             if (isSendingMessage && editingMessage == null) {
                                 CircularProgressIndicator(
@@ -365,8 +506,12 @@ fun ChatDetailScreen(
                                 )
                             } else {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Send",
+                                    imageVector = if (messageText.isBlank()) {
+                                        if (isRecordingVoice) Icons.Default.Check else Icons.Default.Mic
+                                    } else {
+                                        Icons.AutoMirrored.Filled.Send
+                                    },
+                                    contentDescription = "Action Button",
                                     tint = DeepGreenDark
                                 )
                             }
@@ -389,9 +534,9 @@ fun ChatDetailScreen(
                         color = DeepGreenDark
                     )
                 }
-                messages.isEmpty() -> {
+                displayedMessages.isEmpty() -> {
                     Text(
-                        text = "No messages yet. Send a message to start!",
+                        text = if (inChatSearchQuery.isNotBlank()) "No messages found matching \"$inChatSearchQuery\"" else "No messages yet. Send a message to start!",
                         color = TextDark.copy(alpha = 0.5f),
                         fontSize = 14.sp,
                         modifier = Modifier.align(Alignment.Center)
@@ -404,7 +549,7 @@ fun ChatDetailScreen(
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        if (isLoadingOlderMessages) {
+                        if (isLoadingOlderMessages && inChatSearchQuery.isBlank()) {
                             item(key = "loading_older") {
                                 Box(
                                     modifier = Modifier
@@ -452,6 +597,9 @@ fun ChatDetailScreen(
                                                 listState.animateScrollToItem(targetIndex)
                                             }
                                         }
+                                    },
+                                    onReactionSelected = { emoji ->
+                                        chatViewModel.toggleReaction(roomId, msg.id, currentUserId, emoji)
                                     }
                                 )
                             }
@@ -459,7 +607,7 @@ fun ChatDetailScreen(
                     }
 
                     AnimatedVisibility(
-                        visible = !isNearBottom,
+                        visible = !isNearBottom && inChatSearchQuery.isBlank(),
                         enter = fadeIn(),
                         exit = fadeOut(),
                         modifier = Modifier
@@ -500,6 +648,17 @@ fun ChatDetailScreen(
         )
     }
 
+    selectedImageUri?.let { uri ->
+        PhotoPreviewDialog(
+            imageUri = uri,
+            onDismiss = { selectedImageUri = null },
+            onSend = { caption ->
+                selectedImageUri = null
+                readBytesAndSendWithCaption(uri, MessageType.IMAGE, caption)
+            }
+        )
+    }
+
     if (showInterviewDialog) {
         InterviewDetailDialog(
             companyName = displayCompanyName,
@@ -507,12 +666,5 @@ fun ChatDetailScreen(
             onDismiss = { showInterviewDialog = false },
             onNavigateToSchedule = onNavigateToSchedule
         )
-    }
-}
-
-private fun groupMessagesByDate(messages: List<ChatMessage>): Map<String, List<ChatMessage>> {
-    val formatter = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-    return messages.groupBy { msg ->
-        formatter.format(Date(msg.timestamp))
     }
 }

@@ -39,6 +39,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
     private val _roomPresence = MutableStateFlow(RoomPresence())
     val roomPresence: StateFlow<RoomPresence> = _roomPresence.asStateFlow()
 
+    // UI State flags
     private val _isLoadingRooms = MutableStateFlow(false)
     val isLoadingRooms: StateFlow<Boolean> = _isLoadingRooms.asStateFlow()
 
@@ -56,6 +57,16 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
 
     private val _hasMoreMessages = MutableStateFlow(true)
     val hasMoreMessages: StateFlow<Boolean> = _hasMoreMessages.asStateFlow()
+
+    // Advanced UI filters & archiving
+    private val _pinnedRoomIds = MutableStateFlow<Set<String>>(emptySet())
+    val pinnedRoomIds: StateFlow<Set<String>> = _pinnedRoomIds.asStateFlow()
+
+    private val _archivedRoomIds = MutableStateFlow<Set<String>>(emptySet())
+    val archivedRoomIds: StateFlow<Set<String>> = _archivedRoomIds.asStateFlow()
+
+    private val _messageSearchQuery = MutableStateFlow("")
+    val messageSearchQuery: StateFlow<String> = _messageSearchQuery.asStateFlow()
 
     private val _eventFlow = MutableSharedFlow<ChatUiEvent>()
     val eventFlow: SharedFlow<ChatUiEvent> = _eventFlow.asSharedFlow()
@@ -100,6 +111,20 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         )
     }
 
+    fun togglePinRoom(roomId: String) {
+        if (roomId.isBlank()) return
+        _pinnedRoomIds.update { current ->
+            if (current.contains(roomId)) current - roomId else current + roomId
+        }
+    }
+
+    fun toggleArchiveRoom(roomId: String) {
+        if (roomId.isBlank()) return
+        _archivedRoomIds.update { current ->
+            if (current.contains(roomId)) current - roomId else current + roomId
+        }
+    }
+
     // ==================== Message Loading ====================
 
     fun loadMessages(roomId: String, currentUserId: String = "") {
@@ -110,6 +135,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         reactionListenerJob?.cancel()
         presenceListenerJob?.cancel()
         _hasMoreMessages.value = true
+        _messageSearchQuery.value = ""
 
         roomListenerJob = viewModelScope.launch {
             _isLoadingMessages.value = true
@@ -185,6 +211,10 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         }
     }
 
+    fun updateMessageSearchQuery(query: String) {
+        _messageSearchQuery.value = query
+    }
+
     // ==================== Sending Messages ====================
 
     fun sendMessage(
@@ -243,7 +273,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
 
         viewModelScope.launch {
             try {
-                // Check if there are already messages in the room
                 val existingMessages = messageRepository.getMessagesForRoom(roomId, limit = 1)
                 if (existingMessages.isNotEmpty()) {
                     initialQuestionSentForRooms.add(key)
@@ -259,7 +288,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 if (success) {
                     initialQuestionSentForRooms.add(key)
                     loadUserChatRooms(userId)
-                    // Reload messages to show the sent question
                     loadMessages(roomId, userId)
                 }
             } catch (e: Exception) {
@@ -293,7 +321,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         viewModelScope.launch {
             _isUploadingAttachment.value = true
             try {
-                // Upload the file to storage
                 val url = messageRepository.uploadChatAttachment(
                     roomId = roomId,
                     fileName = fileName,
@@ -307,7 +334,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                     return@launch
                 }
 
-                // Send the attachment as a message with the URL as the text
                 val success = messageRepository.sendMessage(
                     roomId = roomId,
                     senderId = senderId,
@@ -318,7 +344,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
 
                 if (success) {
                     loadUserChatRooms(senderId)
-                    // Reload messages to show the attachment
                     loadMessages(roomId, senderId)
                 } else {
                     _eventFlow.emit(ChatUiEvent.ShowToast("Failed to send attachment."))
@@ -392,7 +417,13 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         _messagesList.update { current ->
             val index = current.indexOfFirst { it.id == incoming.id }
             if (index != -1) {
-                current.toMutableList().apply { set(index, incoming) }
+                val existing = current[index]
+                // Safety check: preserve local edit/delete states if incoming stream lags behind
+                val updated = incoming.copy(
+                    isEdited = incoming.isEdited || existing.isEdited,
+                    isDeleted = incoming.isDeleted || existing.isDeleted
+                )
+                current.toMutableList().apply { set(index, updated) }
             } else {
                 val filtered = current.filterNot {
                     it.id.startsWith("temp_") && it.senderId == incoming.senderId && it.text == incoming.text
