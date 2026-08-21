@@ -31,6 +31,7 @@ sealed interface JobListingEvent {
 private data class NewJobPayload(
     @SerialName("title") val title: String,
     @SerialName("company") val company: String,
+    @SerialName("company_image_url") val companyImageUrl: String?,
     @SerialName("location") val location: String,
     @SerialName("salary") val salary: String,
     @SerialName("salary_range") val salaryRange: String?,
@@ -50,6 +51,7 @@ private data class UpsertJobPayload(
     @SerialName("id") val id: String,
     @SerialName("title") val title: String,
     @SerialName("company") val company: String,
+    @SerialName("company_image_url") val companyImageUrl: String?,
     @SerialName("location") val location: String,
     @SerialName("salary") val salary: String,
     @SerialName("salary_range") val salaryRange: String?,
@@ -149,6 +151,7 @@ class JobRepository(private val supabaseClient: SupabaseClient) {
         val payload = NewJobPayload(
             title = job.title.trim(),
             company = job.company.trim(),
+            companyImageUrl = job.companyImageUrl?.trim()?.ifEmpty { null },
             location = job.location.trim(),
             salary = job.salary.trim(),
             salaryRange = job.salaryRange?.trim()?.ifEmpty { null },
@@ -163,7 +166,6 @@ class JobRepository(private val supabaseClient: SupabaseClient) {
             expiredAt = job.expiredAt
         )
 
-        // Supabase will automatically generate the primary key UUID
         val inserted = supabaseClient.postgrest["jobs"]
             .insert(payload) { select() }
             .decodeSingle<Job>()
@@ -180,6 +182,7 @@ class JobRepository(private val supabaseClient: SupabaseClient) {
             id = job.id,
             title = job.title.trim(),
             company = job.company.trim(),
+            companyImageUrl = job.companyImageUrl?.trim()?.ifEmpty { null },
             location = job.location.trim(),
             salary = job.salary.trim(),
             salaryRange = job.salaryRange?.trim()?.ifEmpty { null },
@@ -202,10 +205,6 @@ class JobRepository(private val supabaseClient: SupabaseClient) {
         updated
     }
 
-    /**
-     * Call this from HomeViewModel to post a job.
-     * @param isNewJob Pass true if creating a new posting, false if updating an existing one.
-     */
     suspend fun postJob(job: Job, isNewJob: Boolean = true): Result<Job> = withContext(Dispatchers.IO) {
         try {
             val result = if (isNewJob) insertJob(job) else updateJob(job)

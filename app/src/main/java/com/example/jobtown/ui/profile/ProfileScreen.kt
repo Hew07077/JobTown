@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.example.jobtown.data.User
 import com.example.jobtown.data.UserRole
 import com.example.jobtown.data.repository.UserRepository
@@ -43,7 +45,7 @@ import java.util.UUID
 
 private val INDUSTRY_OPTIONS = listOf(
     "Technology / IT",
-    "Finance / Banking",
+    "Finance / BaAnking",
     "Healthcare",
     "Retail / E-commerce",
     "Manufacturing",
@@ -64,15 +66,6 @@ private val COMPANY_SIZE_OPTIONS = listOf(
     "1000+ employees"
 )
 
-// ---------------------------------------------------------------------------
-// Local-only data for Experience / Education / Certifications.
-//
-// NOTE: There is no Supabase table for these yet, so entries added here only
-// live for the current session (in-memory) and are lost on logout / app
-// restart. Wiring this up to real persistence needs a new table per category
-// (e.g. "experiences", "education", "certifications", each with a user_id
-// foreign key) plus matching UserRepository functions.
-// ---------------------------------------------------------------------------
 private data class ProfileEntry(
     val id: String = UUID.randomUUID().toString(),
     val title: String,
@@ -80,36 +73,6 @@ private data class ProfileEntry(
     val period: String,
     val description: String
 )
-
-private data class ParsedBio(
-    val skills: List<String>,
-    val experienceLevel: String,
-    val portfolioUrl: String,
-    val summary: String
-)
-
-// The "Save & Continue" step on CompleteProfileScreen compiles Skills / Exp /
-// Portfolio / Bio into a single text blob (see CompleteProfileScreen.kt). This
-// pulls those pieces back apart so they can be shown as proper UI elements
-// (chips, a clickable link, badges) instead of one wall of plain text.
-private fun parseBio(bio: String): ParsedBio {
-    var skills = ""
-    var experienceLevel = ""
-    var portfolioUrl = ""
-    val summaryLines = mutableListOf<String>()
-
-    bio.lines().forEach { line ->
-        when {
-            line.startsWith("Skills:") -> skills = line.removePrefix("Skills:").trim()
-            line.startsWith("Exp:") -> experienceLevel = line.removePrefix("Exp:").trim()
-            line.startsWith("Portfolio:") -> portfolioUrl = line.removePrefix("Portfolio:").trim()
-            line.isNotBlank() -> summaryLines.add(line)
-        }
-    }
-
-    val skillsList = skills.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-    return ParsedBio(skillsList, experienceLevel, portfolioUrl, summaryLines.joinToString("\n").trim())
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -119,16 +82,23 @@ fun ProfileScreen(
     onLogout: () -> Unit = {},
     onProfileUpdated: (User) -> Unit = {}
 ) {
-    // Local copy so edits reflect immediately without requiring the parent
-    // screen / nav graph to be touched.
     var displayedUser by remember(currentUser) { mutableStateOf(currentUser) }
     val isEmployer = displayedUser?.role == UserRole.EMPLOYER
-    // Job Seekers store their display name in "name"; Employers store it in
-    // "companyName" -- pick the right one everywhere on this screen.
     val displayName = (if (isEmployer) displayedUser?.companyName else displayedUser?.name)
         ?.ifBlank { null } ?: "User Name"
     val memberSince = displayedUser?.createdAt?.takeIf { it.isNotBlank() }?.substringBefore("T")
-    val parsedBio = remember(displayedUser?.bio) { parseBio(displayedUser?.bio.orEmpty()) }
+
+    // Extract lists/URLs directly from dedicated User model fields safely
+    val skillsList = remember(displayedUser?.skills) {
+        displayedUser?.skills
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?: emptyList()
+    }
+    val websiteOrPortfolioUrl = remember(displayedUser?.websiteUrl, displayedUser?.portfolioUrl, isEmployer) {
+        if (isEmployer) displayedUser?.websiteUrl.orEmpty() else displayedUser?.portfolioUrl.orEmpty()
+    }
 
     var isEditing by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
@@ -144,7 +114,6 @@ fun ProfileScreen(
     var phoneError by remember { mutableStateOf<String?>(null) }
     var locationError by remember { mutableStateOf<String?>(null) }
 
-    // Cosmetic highlight for whichever tab was last tapped / scrolled to.
     var selectedTab by remember { mutableStateOf("Overview") }
     val experienceEntries = remember { mutableStateListOf<ProfileEntry>() }
     val educationEntries = remember { mutableStateListOf<ProfileEntry>() }
@@ -175,7 +144,6 @@ fun ProfileScreen(
 
     Scaffold(containerColor = BackgroundWhite) { innerPadding ->
         if (isEditing) {
-            // ================= EDIT MODE (plain scroll, no sticky tabs needed) ====
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -189,6 +157,7 @@ fun ProfileScreen(
                     displayName = displayName,
                     email = displayedUser?.email,
                     memberSince = memberSince,
+                    avatarUrl = displayedUser?.avatarUrl,
                     onEditClick = { }
                 )
 
@@ -367,11 +336,8 @@ fun ProfileScreen(
                 }
             }
         } else if (isEmployer) {
-            // ================= EMPLOYER: sticky tab bar + scroll ===================
-            // Item indices (fixed structure below): 0 Header, 1 ContactCard,
-            // 2 stickyHeader TabBar, 3 Overview, 4 Open Positions, 5 Account.
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, onEditClick = { startEditing() }) }
+                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, displayedUser?.avatarUrl, onEditClick = { startEditing() }) }
                 item { ContactCard(displayedUser?.phone, displayedUser?.email, displayedUser?.location) }
 
                 stickyHeader {
@@ -385,13 +351,49 @@ fun ProfileScreen(
                 item {
                     Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         ProfileSectionCard(title = "About the Company", icon = Icons.Default.Info) {
+                            val bioText = displayedUser?.bio.orEmpty().ifBlank { "This company hasn't added a description yet. Tap the pencil icon above to add one." }
                             Text(
-                                text = parsedBio.summary.ifBlank { "This company hasn't added a description yet. Tap the pencil icon above to add one." },
+                                text = bioText,
                                 fontSize = 14.sp,
                                 lineHeight = 20.sp,
-                                color = TextDark.copy(alpha = if (parsedBio.summary.isBlank()) 0.5f else 0.9f)
+                                color = TextDark.copy(alpha = if (displayedUser?.bio.isNullOrBlank()) 0.5f else 0.9f)
                             )
+                            if (!displayedUser?.tagline.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = displayedUser?.tagline.orEmpty(),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = DeepGreenDark
+                                )
+                            }
                         }
+
+                        if (!displayedUser?.perks.isNullOrEmpty()) {
+                            ProfileSectionCard(title = "Perks & Benefits", icon = Icons.Default.Star) {
+                                @OptIn(ExperimentalLayoutApi::class)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    displayedUser?.perks.orEmpty().forEach { perk ->
+                                        Surface(
+                                            color = SageGreenLight,
+                                            shape = RoundedCornerShape(20.dp)
+                                        ) {
+                                            Text(
+                                                text = perk,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = DeepGreenDark,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         if (!displayedUser?.industry.isNullOrBlank() || !displayedUser?.companySize.isNullOrBlank()) {
                             ProfileSectionCard(title = "Company Details", icon = Icons.Default.Business) {
                                 if (!displayedUser?.industry.isNullOrBlank()) {
@@ -402,15 +404,16 @@ fun ProfileScreen(
                                 }
                             }
                         }
-                        if (parsedBio.portfolioUrl.isNotBlank()) {
+
+                        if (websiteOrPortfolioUrl.isNotBlank()) {
                             ProfileSectionCard(title = "Website", icon = Icons.Default.Language) {
                                 InfoRow(
                                     icon = Icons.Default.Language,
                                     label = "Company website",
-                                    value = parsedBio.portfolioUrl,
+                                    value = websiteOrPortfolioUrl,
                                     valueColor = DeepGreenDark,
                                     onClick = {
-                                        val url = parsedBio.portfolioUrl.let { if (it.startsWith("http")) it else "https://$it" }
+                                        val url = websiteOrPortfolioUrl.let { if (it.startsWith("http")) it else "https://$it" }
                                         uriHandler.openUri(url)
                                     }
                                 )
@@ -456,11 +459,8 @@ fun ProfileScreen(
                 item { Spacer(modifier = Modifier.height(32.dp)) }
             }
         } else {
-            // ================= JOB SEEKER: sticky tab bar + scroll =================
-            // Item indices: 0 Header, 1 ContactCard, 2 stickyHeader TabBar,
-            // 3 Overview, 4 Experience, 5 Education, 6 Certifications, 7 Account.
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, onEditClick = { startEditing() }) }
+                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, displayedUser?.avatarUrl, onEditClick = { startEditing() }) }
                 item { ContactCard(displayedUser?.phone, displayedUser?.email, displayedUser?.location) }
 
                 stickyHeader {
@@ -482,28 +482,29 @@ fun ProfileScreen(
                 item {
                     Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         ProfileSectionCard(title = "Professional Summary", icon = Icons.Default.Info) {
+                            val bioText = displayedUser?.bio.orEmpty().ifBlank { "You haven't added a summary yet. Tap the pencil icon above to add one." }
                             Text(
-                                text = parsedBio.summary.ifBlank { "You haven't added a summary yet. Tap the pencil icon above to add one." },
+                                text = bioText,
                                 fontSize = 14.sp,
                                 lineHeight = 20.sp,
-                                color = TextDark.copy(alpha = if (parsedBio.summary.isBlank()) 0.5f else 0.9f)
+                                color = TextDark.copy(alpha = if (displayedUser?.bio.isNullOrBlank()) 0.5f else 0.9f)
                             )
-                            if (parsedBio.experienceLevel.isNotBlank()) {
+                            if (!displayedUser?.experienceLevel.isNullOrBlank()) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Surface(color = SageGreenLight, shape = RoundedCornerShape(20.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                                         Icon(Icons.Default.TrendingUp, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(14.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text(parsedBio.experienceLevel, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = DeepGreenDark)
+                                        Text(displayedUser?.experienceLevel.orEmpty(), fontSize = 12.sp, fontWeight = FontWeight.Medium, color = DeepGreenDark)
                                     }
                                 }
                             }
                         }
 
-                        if (parsedBio.skills.isNotEmpty()) {
+                        if (skillsList.isNotEmpty()) {
                             ProfileSectionCard(title = "Key Skills", icon = Icons.Default.Star) {
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    items(parsedBio.skills) { skill ->
+                                    items(skillsList) { skill ->
                                         Surface(
                                             color = Color.White,
                                             shape = RoundedCornerShape(20.dp),
@@ -516,15 +517,15 @@ fun ProfileScreen(
                             }
                         }
 
-                        if (parsedBio.portfolioUrl.isNotBlank()) {
+                        if (websiteOrPortfolioUrl.isNotBlank()) {
                             ProfileSectionCard(title = "Portfolio", icon = Icons.Default.Language) {
                                 InfoRow(
                                     icon = Icons.Default.Language,
                                     label = "Portfolio / LinkedIn / GitHub",
-                                    value = parsedBio.portfolioUrl,
+                                    value = websiteOrPortfolioUrl,
                                     valueColor = DeepGreenDark,
                                     onClick = {
-                                        val url = parsedBio.portfolioUrl.let { if (it.startsWith("http")) it else "https://$it" }
+                                        val url = websiteOrPortfolioUrl.let { if (it.startsWith("http")) it else "https://$it" }
                                         uriHandler.openUri(url)
                                     }
                                 )
@@ -614,6 +615,7 @@ private fun ProfileHeader(
     displayName: String,
     email: String?,
     memberSince: String?,
+    avatarUrl: String? = null,
     onEditClick: () -> Unit
 ) {
     Column(
@@ -636,12 +638,21 @@ private fun ProfileHeader(
         Box(contentAlignment = Alignment.BottomEnd) {
             Surface(modifier = Modifier.size(96.dp), shape = CircleShape, color = Color.White, shadowElevation = 8.dp) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (isEmployer) Icons.Default.Business else Icons.Default.Person,
-                        contentDescription = "Avatar",
-                        tint = DeepGreenDark,
-                        modifier = Modifier.size(44.dp)
-                    )
+                    if (!avatarUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = avatarUrl,
+                            contentDescription = "Profile Logo",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (isEmployer) Icons.Default.Business else Icons.Default.Person,
+                            contentDescription = "Avatar",
+                            tint = DeepGreenDark,
+                            modifier = Modifier.size(44.dp)
+                        )
+                    }
                 }
             }
             if (!isEditing) {
@@ -707,12 +718,6 @@ private fun ContactCard(phone: String?, email: String?, location: String?) {
     }
 }
 
-/**
- * Read-only contact display. Each item gets an equal share of the card's
- * width (via Modifier.weight) instead of a fixed max-width, and long values
- * (like emails) are allowed to wrap onto a second line with an ellipsis as a
- * last resort -- instead of being hard-clipped mid-character like before.
- */
 @Composable
 private fun ContactDisplayItem(icon: ImageVector, label: String, value: String?, modifier: Modifier = Modifier) {
     val hasValue = !value.isNullOrBlank()
@@ -746,11 +751,6 @@ private fun ContactDisplayItem(icon: ImageVector, label: String, value: String?,
     }
 }
 
-/**
- * The pill-track tab bar. Used as a `stickyHeader` inside a LazyColumn, so it
- * needs a fully opaque, full-width background -- otherwise content scrolling
- * underneath would show through around the rounded pill while it's pinned.
- */
 @Composable
 private fun ProfileTabBar(tabs: List<String>, selectedTab: String, onSelect: (String) -> Unit) {
     Surface(color = BackgroundWhite, modifier = Modifier.fillMaxWidth()) {

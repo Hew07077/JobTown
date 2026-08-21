@@ -71,8 +71,8 @@ object UserRepository {
         }
     }
 
-    // Fetches the skills/location/experience fields job matching relies on.
-    // These live as extra columns on the same "users" row (see ProfileViewModel.saveProfile).
+    // Fetches the profile fields (skills, location, tagline, website, perks, etc.)
+    // from the "users" table.
     suspend fun fetchUserProfile(userId: String): UserProfile? = withContext(Dispatchers.IO) {
         if (userId.isBlank()) return@withContext null
         try {
@@ -84,6 +84,20 @@ object UserRepository {
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        }
+    }
+
+    // Updates extra profile fields (tagline, website_url, perks, skills, etc.) for an existing user row.
+    suspend fun updateUserProfile(profile: UserProfile): Boolean = withContext(Dispatchers.IO) {
+        if (profile.id.isBlank()) return@withContext false
+        try {
+            SupabaseClient.client.from("users").update(profile) {
+                filter { eq("id", profile.id) }
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
         }
     }
 
@@ -100,7 +114,7 @@ object UserRepository {
         }
     }
 
-    // NEW: Fetch only jobs posted by a specific Employer
+    // Fetch only jobs posted by a specific Employer
     suspend fun fetchJobsByEmployer(employerId: String): List<Job> = withContext(Dispatchers.IO) {
         try {
             SupabaseClient.client.from("jobs")
@@ -131,7 +145,7 @@ object UserRepository {
         withContext(Dispatchers.IO) {
             try {
                 if (isEmployer) {
-                    // Fixed: Filters applications by the employer's ID so they don't see ALL applications in the app
+                    // Filters applications by the employer's ID
                     SupabaseClient.client.from("applications")
                         .select {
                             filter { eq("employer_id", userId) }
@@ -162,7 +176,7 @@ object UserRepository {
             }
         }
 
-    // NEW: Allow Employers to update application status (e.g., Pending -> Shortlisted / Rejected)
+    // Allow Employers to update application status (e.g., Pending -> Shortlisted / Rejected)
     suspend fun updateApplicationStatus(applicationId: String, newStatus: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
@@ -197,6 +211,21 @@ object UserRepository {
                 emptyList()
             }
         }
+
+    // Fetch a full User row by ID
+    suspend fun fetchUserById(userId: String): User? = withContext(Dispatchers.IO) {
+        if (userId.isBlank()) return@withContext null
+        try {
+            SupabaseClient.client.from("users")
+                .select {
+                    filter { eq("id", userId) }
+                }
+                .decodeSingleOrNull<User>()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
 
     suspend fun saveScheduleToSupabase(schedule: InterviewSchedule): Boolean =
         withContext(Dispatchers.IO) {

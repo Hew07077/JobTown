@@ -1,6 +1,7 @@
 package com.example.jobtown.ui.postjob
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,25 +9,220 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.example.jobtown.data.Job
 import com.example.jobtown.data.User
 import com.example.jobtown.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
+
+@Composable
+fun StandardJobCard(
+    job: Job,
+    expiryDaysText: String? = null,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (job.isFeatured == true) SageGreenMain.copy(alpha = 0.25f) else Color.White
+        ),
+        border = BorderStroke(
+            width = if (job.isFeatured == true) 1.dp else 0.5.dp,
+            color = if (job.isFeatured == true) DeepGreenDark else Color(0xFFE0E0E0)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Surface(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+                color = SageGreenMain.copy(alpha = 0.3f),
+                border = BorderStroke(0.5.dp, DeepGreenDark.copy(alpha = 0.2f))
+            ) {
+                if (!job.companyImageUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = job.companyImageUrl,
+                        contentDescription = "Company Avatar",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Business,
+                            contentDescription = null,
+                            tint = DeepGreenDark,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = job.title.ifBlank { "Job Title Placeholder" },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextDark,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (job.isFeatured == true) {
+                        Surface(
+                            color = DeepGreenDark,
+                            shape = RoundedCornerShape(3.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Star,
+                                    contentDescription = null,
+                                    tint = Color.Yellow,
+                                    modifier = Modifier.size(8.dp)
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text(
+                                    text = "FEATURED",
+                                    fontSize = 7.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Business,
+                        contentDescription = null,
+                        tint = DeepGreenDark,
+                        modifier = Modifier.size(10.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = job.companyName,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextDark.copy(alpha = 0.8f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        Icons.Default.LocationOn,
+                        contentDescription = null,
+                        tint = DeepGreenDark,
+                        modifier = Modifier.size(10.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = job.location.ifBlank { "Location" },
+                        fontSize = 10.sp,
+                        color = TextDark.copy(alpha = 0.6f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Surface(
+                    color = SageGreenMain.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(3.dp)
+                ) {
+                    Text(
+                        text = job.jobType,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = DeepGreenDark,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = DeepGreenDark.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(3.dp)
+                    ) {
+                        Text(
+                            text = job.salary.ifBlank { "Negotiable" },
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = DeepGreenDark,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+
+                    if (!expiryDaysText.isNullOrBlank()) {
+                        Surface(
+                            color = Color.Gray.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(3.dp)
+                        ) {
+                            Text(
+                                text = "Expires: $expiryDaysText",
+                                fontSize = 9.sp,
+                                color = TextDark.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+                }
+
+                if (job.description.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = job.description,
+                        fontSize = 10.sp,
+                        color = TextDark.copy(alpha = 0.7f),
+                        maxLines = 2
+                    )
+                }
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,12 +232,22 @@ fun PostJobScreen(
     onJobPosted: (Job, onComplete: (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onBackClick: () -> Unit = { navController?.popBackStack() }
 ) {
+    val employerAvatar = remember(currentUser?.avatarUrl) {
+        currentUser?.avatarUrl?.trim()?.takeIf { it.isNotBlank() }
+    }
+
     var title by remember { mutableStateOf("") }
     var company by remember {
         mutableStateOf(currentUser?.companyName?.ifBlank { currentUser.name } ?: currentUser?.name ?: "")
     }
-    var location by remember { mutableStateOf("") }
 
+    LaunchedEffect(currentUser?.companyName, currentUser?.name) {
+        if (company.isBlank()) {
+            company = currentUser?.companyName?.ifBlank { currentUser.name } ?: currentUser?.name ?: ""
+        }
+    }
+
+    var location by remember { mutableStateOf("") }
     var minSalary by remember { mutableStateOf("") }
     var maxSalary by remember { mutableStateOf("") }
     var minSalaryExpanded by remember { mutableStateOf(false) }
@@ -54,9 +260,23 @@ fun PostJobScreen(
     var jobTypeExpanded by remember { mutableStateOf(false) }
     val jobTypeOptions = listOf("Full-time", "Part-time", "Contract", "Internship", "Freelance")
 
-    var expiryDays by remember { mutableStateOf("30 Days") }
-    var expiryExpanded by remember { mutableStateOf(false) }
-    val expiryOptions = listOf("7 Days", "14 Days", "30 Days", "60 Days", "Never")
+    var selectedExpiryMillis by remember { mutableStateOf<Long?>(null) }
+    var showDatePickerDialog by remember { mutableStateOf(false) }
+
+    val displayExpiryDate = remember(selectedExpiryMillis) {
+        selectedExpiryMillis?.let {
+            SimpleDateFormat("MMM dd, yyyy", Locale.US).format(Date(it))
+        } ?: "Select Date"
+    }
+
+    val displayIsoExpiryDate = remember(selectedExpiryMillis) {
+        selectedExpiryMillis?.let {
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+            sdf.format(Date(it))
+        }
+    }
 
     var description by remember { mutableStateOf("") }
     var requirements by remember { mutableStateOf("") }
@@ -77,6 +297,40 @@ fun PostJobScreen(
         else if (minSalary.isNotBlank()) "From $$minSalary / month"
         else if (maxSalary.isNotBlank()) "Up to $$maxSalary / month"
         else "Negotiable"
+    }
+
+    if (showDatePickerDialog) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedExpiryMillis ?: Calendar.getInstance().apply {
+                add(Calendar.DAY_OF_YEAR, 30)
+            }.timeInMillis
+        )
+
+        DatePickerDialog(
+            onDismissRequest = { showDatePickerDialog = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    selectedExpiryMillis = datePickerState.selectedDateMillis
+                    showDatePickerDialog = false
+                }) {
+                    Text("OK", color = DeepGreenDark, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePickerDialog = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
+        ) {
+            DatePicker(
+                state = datePickerState,
+                colors = DatePickerDefaults.colors(
+                    selectedDayContainerColor = DeepGreenDark,
+                    todayDateBorderColor = DeepGreenDark,
+                    todayContentColor = DeepGreenDark
+                )
+            )
+        }
     }
 
     Scaffold(
@@ -121,147 +375,20 @@ fun PostJobScreen(
             }
 
             if (showPreview) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isFeatured) SageGreenMain.copy(alpha = 0.25f) else Color.White
+                StandardJobCard(
+                    job = Job(
+                        title = title,
+                        company = company,
+                        companyImageUrl = employerAvatar,
+                        location = location,
+                        salary = formattedSalary,
+                        type = type,
+                        description = description,
+                        isFeatured = isFeatured
                     ),
-                    border = BorderStroke(
-                        width = if (isFeatured) 1.5.dp else 1.dp,
-                        color = if (isFeatured) DeepGreenDark else Color(0xFFE0E0E0)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = title.ifBlank { "Job Title Placeholder" },
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextDark,
-                                modifier = Modifier.weight(1f)
-                            )
-                            if (isFeatured) {
-                                Surface(
-                                    color = DeepGreenDark,
-                                    shape = RoundedCornerShape(4.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Star,
-                                            contentDescription = null,
-                                            tint = Color.Yellow,
-                                            modifier = Modifier.size(10.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                        Text(
-                                            text = "FEATURED",
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Business,
-                                contentDescription = null,
-                                tint = DeepGreenDark,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = company.ifBlank { "Company Name" },
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = TextDark.copy(alpha = 0.8f)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Icon(
-                                Icons.Default.LocationOn,
-                                contentDescription = null,
-                                tint = DeepGreenDark,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = location.ifBlank { "Location" },
-                                fontSize = 11.sp,
-                                color = TextDark.copy(alpha = 0.6f)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                color = SageGreenMain.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = type,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = DeepGreenDark,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            Surface(
-                                color = DeepGreenDark.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = formattedSalary,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = DeepGreenDark,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            Surface(
-                                color = Color.Gray.copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = "Expires: $expiryDays",
-                                    fontSize = 10.sp,
-                                    color = TextDark.copy(alpha = 0.7f),
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-
-                        if (description.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = description,
-                                fontSize = 11.sp,
-                                color = TextDark.copy(alpha = 0.7f),
-                                maxLines = 2
-                            )
-                        }
-                    }
-                }
+                    expiryDaysText = displayExpiryDate,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
             }
 
             OutlinedTextField(
@@ -391,35 +518,31 @@ fun PostJobScreen(
                     }
                 }
 
-                ExposedDropdownMenuBox(
-                    expanded = expiryExpanded && !isSubmitting,
-                    onExpandedChange = { if (!isSubmitting) expiryExpanded = !expiryExpanded },
-                    modifier = Modifier.weight(1f)
-                ) {
+                Box(modifier = Modifier.weight(1f)) {
                     OutlinedTextField(
-                        value = expiryDays,
+                        value = displayExpiryDate,
                         onValueChange = {},
                         readOnly = true,
                         enabled = !isSubmitting,
-                        label = { Text("Expires In", fontSize = 10.sp) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expiryExpanded) },
-                        modifier = Modifier.menuAnchor(),
+                        label = { Text("Expiry Date", fontSize = 10.sp) },
+                        trailingIcon = {
+                            IconButton(onClick = { if (!isSubmitting) showDatePickerDialog = true }) {
+                                Icon(
+                                    Icons.Default.DateRange,
+                                    contentDescription = "Select Date",
+                                    tint = DeepGreenDark,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(6.dp)
                     )
-                    ExposedDropdownMenu(
-                        expanded = expiryExpanded,
-                        onDismissRequest = { expiryExpanded = false }
-                    ) {
-                        expiryOptions.forEach { opt ->
-                            DropdownMenuItem(
-                                text = { Text(opt, fontSize = 11.sp) },
-                                onClick = {
-                                    expiryDays = opt
-                                    expiryExpanded = false
-                                }
-                            )
-                        }
-                    }
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable(enabled = !isSubmitting) { showDatePickerDialog = true }
+                    )
                 }
             }
 
@@ -500,25 +623,11 @@ fun PostJobScreen(
                         isSubmitting = true
                         val userId = currentUser?.id?.trim()?.ifEmpty { null }
 
-                        val days = when (expiryDays) {
-                            "7 Days" -> 7L
-                            "14 Days" -> 14L
-                            "30 Days" -> 30L
-                            "60 Days" -> 60L
-                            else -> null
-                        }
-
-                        val expiredAtString = days?.let {
-                            val calendar = Calendar.getInstance()
-                            calendar.add(Calendar.DAY_OF_YEAR, it.toInt())
-                            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(calendar.time)
-                        }
-
-                        // Added UUID.randomUUID().toString() so Supabase has a primary key
                         val newJob = Job(
                             id = UUID.randomUUID().toString(),
                             title = title.trim(),
                             company = company.trim(),
+                            companyImageUrl = employerAvatar,
                             location = location.trim(),
                             salary = formattedSalary,
                             salaryRange = formattedSalary,
@@ -530,10 +639,9 @@ fun PostJobScreen(
                             employerId = userId,
                             postedByUserId = userId,
                             status = "active",
-                            expiredAt = expiredAtString
+                            expiredAt = displayIsoExpiryDate
                         )
 
-                        // Trigger Supabase call via ViewModel and handle result callback
                         onJobPosted(newJob) { success, message ->
                             isSubmitting = false
                             if (success) {

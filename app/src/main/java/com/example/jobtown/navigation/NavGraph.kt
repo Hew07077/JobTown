@@ -26,6 +26,7 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.jobtown.Screen
+import com.example.jobtown.data.InterviewSchedule
 import com.example.jobtown.data.User
 import com.example.jobtown.data.UserRole
 import com.example.jobtown.data.repository.ApplicationRepository
@@ -44,16 +45,21 @@ import com.example.jobtown.ui.chat.ChatDetailScreen
 import com.example.jobtown.ui.chat.ChatListScreen
 import com.example.jobtown.ui.chat.ChatViewModel
 import com.example.jobtown.ui.chat.ChatViewModelFactory
+import com.example.jobtown.ui.employer.CompanyDetailScreen
+import com.example.jobtown.ui.employer.ManageJobsScreen
 import com.example.jobtown.ui.components.JobTownBottomNavigationBar
 import com.example.jobtown.ui.home.HomeScreen
 import com.example.jobtown.ui.home.HomeViewModel
 import com.example.jobtown.ui.home.HomeViewModelFactory
 import com.example.jobtown.ui.job.ApplyJobScreen
+import com.example.jobtown.ui.postjob.EmployerJobDetailScreen
 import com.example.jobtown.ui.postjob.PostJobScreen
 import com.example.jobtown.ui.profile.ProfileScreen
 import com.example.jobtown.ui.schedule.ScheduleScreen
+import com.example.jobtown.ui.schedule.SchedulePrefill
 import io.github.jan.supabase.SupabaseClient
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 @Composable
 fun AppNavGraph(
@@ -71,13 +77,17 @@ fun AppNavGraph(
     var signupDraft by remember { mutableStateOf(SignUpFields()) }
     var chatCreationInProgressId by remember { mutableStateOf<String?>(null) }
 
-    var chatErrorMessage by remember { mutableStateOf<String?>(null) }
+    var snackbarMessage by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(chatErrorMessage) {
-        chatErrorMessage?.let {
+    var scheduleList by remember { mutableStateOf<List<InterviewSchedule>>(emptyList()) }
+    var isSavingSchedule by remember { mutableStateOf(false) }
+    var schedulePrefill by remember { mutableStateOf(SchedulePrefill()) }
+
+    LaunchedEffect(snackbarMessage) {
+        snackbarMessage?.let {
             snackbarHostState.showSnackbar(message = it, duration = SnackbarDuration.Long)
-            chatErrorMessage = null
+            snackbarMessage = null
         }
     }
 
@@ -90,10 +100,14 @@ fun AppNavGraph(
     val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModelFactory(messageRepository))
 
     LaunchedEffect(loggedInUser?.id) {
-        loggedInUser?.id?.let { userId ->
-            homeViewModel.loadJobs(userId)
-            appliedViewModel.loadApplications(userId)
-            chatViewModel.loadUserChatRooms(userId)
+        loggedInUser?.let { user ->
+            homeViewModel.loadJobs(user.id)
+            if (user.role == UserRole.EMPLOYER) {
+                appliedViewModel.loadEmployerApplications(user.id)
+            } else {
+                appliedViewModel.loadApplications(user.id)
+            }
+            chatViewModel.loadUserChatRooms(user.id)
         }
     }
 
@@ -102,7 +116,8 @@ fun AppNavGraph(
         Screen.Applied.route,
         Screen.Schedule.route,
         Screen.Chat.route,
-        "chat_list"
+        "chat_list",
+        "manage_jobs"
     )
 
     Scaffold(
@@ -192,16 +207,24 @@ fun AppNavGraph(
                     isLoading = homeViewModel.isLoading,
                     onJobClick = { selectedJob ->
                         homeViewModel.selectJob(selectedJob)
-                        navController.navigate("apply_job")
+                        if (loggedInUser?.role == UserRole.EMPLOYER) {
+                            navController.navigate("employer_job_detail/${selectedJob.id}")
+                        } else {
+                            navController.navigate("apply_job")
+                        }
                     },
                     onPostJobClick = {
-                        navController.navigate("post_job")
+                        if (loggedInUser?.role == UserRole.EMPLOYER) {
+                            navController.navigate("manage_jobs")
+                        } else {
+                            navController.navigate("post_job")
+                        }
                     },
                     onProfileClick = { navController.navigate("profile") },
                     onRefresh = { homeViewModel.loadJobs(loggedInUser?.id) },
                     matchScores = homeViewModel.matchScores,
                     sortMode = homeViewModel.sortMode,
-                    onSortModeChange = { homeViewModel.updateSortMode(it) }, // Fixed reference here
+                    onSortModeChange = { homeViewModel.updateSortMode(it) },
                     hasMatchProfile = homeViewModel.seekerProfile != null,
                     isLive = homeViewModel.isLive,
                     newListingsAvailable = homeViewModel.newListingsAvailable,
@@ -211,15 +234,71 @@ fun AppNavGraph(
                 )
             }
 
+            // MANAGE JOBS SCREEN (For Employers)
+            composable("manage_jobs") {
+                LaunchedEffect(loggedInUser?.id) {
+                    loggedInUser?.id?.let { employerId ->
+                        appliedViewModel.loadEmployerApplications(employerId, forceRefresh = true)
+                    }
+                }
+
+                val employerJobs = homeViewModel.jobsList.filter { job ->
+                    job.employerId == loggedInUser?.id || job.postedByUserId == loggedInUser?.id
+                }
+
+                ManageJobsScreen(
+                    navController = navController,
+                    employerJobs = employerJobs,
+                    appliedViewModel = appliedViewModel,
+                    onAddJobClick = { navController.navigate("post_job") },
+                    onJobClick = { job -> navController.navigate("employer_job_detail/${job.id}") },
+                    onApplicationClick = { applicationId ->
+                        navController.navigate(Screen.ApplicationDetail.createRoute(applicationId))
+                    },
+                    onProfileClick = { navController.navigate("profile") }
+                )
+            }
+
             composable("post_job") {
                 PostJobScreen(
                     navController = navController,
                     currentUser = loggedInUser,
-                    onJobPosted = { job, onComplete ->
-                        homeViewModel.postJob(job, onComplete)
-                    },
-                    onBackClick = { navController.popBackStack() }
+                    onJobPosted = { createdJob, onComplete ->
+                        homeViewModel.postJob(createdJob) { success, message ->
+                            onComplete(success, message)
+                            if (success) {
+                                homeViewModel.loadJobs(loggedInUser?.id)
+                            }
+                        }
+                    }
                 )
+            }
+
+            composable(
+                route = "employer_job_detail/{jobId}",
+                arguments = listOf(navArgument("jobId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val jobId = backStackEntry.arguments?.getString("jobId") ?: ""
+                val currentJob = homeViewModel.jobsList.find { it.id == jobId } ?: homeViewModel.selectedJob
+
+                if (currentJob != null) {
+                    EmployerJobDetailScreen(
+                        job = currentJob,
+                        navController = navController,
+                        onUpdateJob = { updatedJob ->
+                            homeViewModel.updateJob(updatedJob) { success, message ->
+                                if (success) {
+                                    navController.popBackStack()
+                                } else {
+                                    snackbarMessage = message ?: "Failed to update job. Please try again."
+                                }
+                            }
+                        },
+                        onBackClick = { navController.popBackStack() }
+                    )
+                } else {
+                    navController.popBackStack()
+                }
             }
 
             composable("apply_job") {
@@ -231,18 +310,47 @@ fun AppNavGraph(
                         job = selectedJob,
                         currentUser = loggedInUser,
                         onApplySubmit = { application ->
-                            appliedViewModel.submitNewApplication(application) {
-                                navController.navigate(Screen.Applied.route) {
-                                    popUpTo(Screen.Home.route) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
+                            appliedViewModel.submitNewApplication(application) { success ->
+                                if (success) {
+                                    navController.navigate(Screen.Applied.route) {
+                                        popUpTo(Screen.Home.route) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                } else {
+                                    snackbarMessage = "Failed to submit application. Please try again."
                                 }
                             }
+                        },
+                        onViewCompanyDetails = { companyId ->
+                            val encodedCompanyId = Uri.encode(companyId)
+                            navController.navigate("company_detail/$encodedCompanyId")
                         }
                     )
                 } else {
                     navController.popBackStack()
                 }
+            }
+
+            composable(
+                route = "company_detail/{companyId}",
+                arguments = listOf(navArgument("companyId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val companyId = backStackEntry.arguments?.getString("companyId") ?: ""
+
+                CompanyDetailScreen(
+                    navController = navController,
+                    companyIdOrName = companyId,
+                    openJobs = homeViewModel.jobsList,
+                    onJobClick = { selectedJob ->
+                        homeViewModel.selectJob(selectedJob)
+                        if (loggedInUser?.role == UserRole.EMPLOYER) {
+                            navController.navigate("employer_job_detail/${selectedJob.id}")
+                        } else {
+                            navController.navigate("apply_job")
+                        }
+                    }
+                )
             }
 
             composable("profile") {
@@ -262,8 +370,14 @@ fun AppNavGraph(
 
             composable(Screen.Applied.route) {
                 LaunchedEffect(Unit) {
-                    loggedInUser?.id?.let { userId ->
-                        appliedViewModel.loadApplications(userId, forceRefresh = true)
+                    loggedInUser?.let { user ->
+                        if (user.role == UserRole.EMPLOYER) {
+                            navController.navigate("manage_jobs") {
+                                popUpTo(Screen.Applied.route) { inclusive = true }
+                            }
+                        } else {
+                            appliedViewModel.loadApplications(user.id, forceRefresh = true)
+                        }
                     }
                 }
 
@@ -290,7 +404,7 @@ fun AppNavGraph(
                     onChatWithCompany = { application ->
                         val userId = loggedInUser?.id
                         if (userId.isNullOrBlank()) {
-                            chatErrorMessage = "You need to be logged in to start a chat."
+                            snackbarMessage = "You need to be logged in to start a chat."
                             return@MyAppliedScreen
                         }
 
@@ -332,7 +446,7 @@ fun AppNavGraph(
 
                                 navController.navigate("chat_detail/$roomId/$encodedCompany/$encodedTitle/none")
                             } else {
-                                chatErrorMessage = if (caughtErrorText != null) {
+                                snackbarMessage = if (caughtErrorText != null) {
                                     "Chat error: $caughtErrorText"
                                 } else {
                                     "Couldn't start the chat. Please check your connection and try again."
@@ -358,10 +472,30 @@ fun AppNavGraph(
             }
 
             composable(Screen.Schedule.route) {
+                val currentUserId = loggedInUser?.id.orEmpty()
+                val isEmployer = loggedInUser?.role == UserRole.EMPLOYER
+                val visibleSchedules = scheduleList.filter { schedule ->
+                    if (isEmployer) schedule.employerId == currentUserId else schedule.userId == currentUserId
+                }
+
                 ScheduleScreen(
                     navController = navController,
                     user = loggedInUser,
-                    schedules = emptyList(),
+                    schedules = visibleSchedules,
+                    isEmployer = isEmployer,
+                    isSaving = isSavingSchedule,
+                    prefill = schedulePrefill,
+                    onCreateSchedule = { newSchedule ->
+                        isSavingSchedule = true
+                        scheduleList = listOf(newSchedule.copy(id = UUID.randomUUID().toString())) + scheduleList
+                        schedulePrefill = SchedulePrefill()
+                        isSavingSchedule = false
+                    },
+                    onUpdateStatus = { scheduleId, status ->
+                        scheduleList = scheduleList.map {
+                            if (it.id == scheduleId) it.copy(status = status) else it
+                        }
+                    },
                     onProfileClick = { navController.navigate("profile") }
                 )
             }

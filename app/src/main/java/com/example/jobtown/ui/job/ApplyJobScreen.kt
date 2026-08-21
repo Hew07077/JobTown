@@ -36,13 +36,335 @@ import com.example.jobtown.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ApplyJobScreen(
     navController: NavController,
     job: Job,
     currentUser: User?,
-    onApplySubmit: (JobApplication) -> Unit
+    onApplySubmit: (JobApplication) -> Unit,
+    onViewCompanyDetails: (String) -> Unit = {}
+) {
+    // Stage state: false = viewing Job Details, true = performing multi-step application
+    var isApplying by remember { mutableStateOf(false) }
+
+    if (!isApplying) {
+        // Overview Screen before committing to apply
+        JobDetailsOverviewScreen(
+            job = job,
+            onBackToHome = { navController.popBackStack() },
+            onStartApplication = { isApplying = true },
+            onViewCompanyDetails = onViewCompanyDetails
+        )
+    } else {
+        // Multi-step application wizard
+        ApplicationFlowScreen(
+            navController = navController,
+            job = job,
+            currentUser = currentUser,
+            onApplySubmit = onApplySubmit,
+            onCancelApplication = { isApplying = false }
+        )
+    }
+}
+
+// ==================== Job Details Overview Screen ====================
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun JobDetailsOverviewScreen(
+    job: Job,
+    onBackToHome: () -> Unit,
+    onStartApplication: () -> Unit,
+    onViewCompanyDetails: (String) -> Unit
+) {
+    val displayTitle = job.title.ifBlank { "Untitled Position" }
+    val displayCompany = job.companyName.ifBlank { "Company Name" }
+    val displayLocation = job.location.ifBlank { "Location Undisclosed" }
+    val displaySalary = job.salary.ifBlank { "Salary Not Specified" }
+    val displayType = job.jobType.ifBlank { "Full-time" }
+    val displayDescription = job.description.ifBlank { "No detailed description available for this role." }
+
+    Scaffold(
+        containerColor = BackgroundWhite,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Job Details",
+                        fontWeight = FontWeight.Bold,
+                        color = DeepGreenDark,
+                        fontSize = 18.sp
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBackToHome) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back to Home",
+                            tint = DeepGreenDark
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
+            )
+        },
+        bottomBar = {
+            Surface(
+                shadowElevation = 8.dp,
+                color = Color.White
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onBackToHome,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Not Interested", fontSize = 14.sp, color = TextDark)
+                    }
+
+                    Button(
+                        onClick = onStartApplication,
+                        modifier = Modifier
+                            .weight(1.2f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                    ) {
+                        Text("Apply Now", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Main Overview Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = displayTitle,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextDark
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Interactive Company Profile Card
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = SageGreenLight.copy(alpha = 0.5f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.3f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onViewCompanyDetails(job.employerId ?: displayCompany) }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = DeepGreenDark,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Business,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                                Column {
+                                    Text(
+                                        text = displayCompany,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = DeepGreenDark
+                                    )
+                                    Text(
+                                        text = "Tap to view company profile & jobs",
+                                        fontSize = 11.sp,
+                                        color = SageGreenDark,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = DeepGreenDark,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        InfoBadge(icon = Icons.Filled.LocationOn, text = displayLocation)
+                        InfoBadge(icon = Icons.Filled.Work, text = displayType)
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = DeepGreenDark.copy(alpha = 0.08f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AttachMoney,
+                                contentDescription = null,
+                                tint = DeepGreenDark,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = displaySalary,
+                                fontWeight = FontWeight.Bold,
+                                color = DeepGreenDark,
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Job Description & Requirements Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = "Job Description",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextDark
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = displayDescription,
+                        fontSize = 13.sp,
+                        color = TextDark.copy(alpha = 0.8f),
+                        lineHeight = 20.sp
+                    )
+
+                    // Null-safe handling for Requirements
+                    if (!job.requirements.isNullOrEmpty()) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Requirements",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextDark
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        job.requirements.orEmpty().forEach { req ->
+                            Row(
+                                modifier = Modifier.padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("•", fontSize = 14.sp, color = DeepGreenDark, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = req,
+                                    fontSize = 13.sp,
+                                    color = TextDark.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+                    }
+
+                    // Null-safe handling for Skills
+                    if (!job.skills.isNullOrEmpty()) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Required Skills",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextDark
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            job.skills.orEmpty().forEach { skill ->
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = SageGreenLight
+                                ) {
+                                    Text(
+                                        text = skill,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        fontSize = 11.sp,
+                                        color = DeepGreenDark,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==================== Multi-Step Application Flow ====================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ApplicationFlowScreen(
+    navController: NavController,
+    job: Job,
+    currentUser: User?,
+    onApplySubmit: (JobApplication) -> Unit,
+    onCancelApplication: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -64,7 +386,7 @@ fun ApplyJobScreen(
 
     // Animation states
     val animatedProgress by animateFloatAsState(
-        targetValue = (currentStep + 1) / 4f,
+        targetValue = (currentStep + 1) / 3f,
         animationSpec = tween(400, easing = FastOutSlowInEasing),
         label = "progress"
     )
@@ -72,10 +394,6 @@ fun ApplyJobScreen(
     // Job details
     val displayTitle = job.title.ifBlank { "Untitled Position" }
     val displayCompany = job.companyName
-    val displayLocation = job.location.ifBlank { "Location Undisclosed" }
-    val displaySalary = job.salary.ifBlank { "Salary Not Specified" }
-    val displayType = job.jobType
-    val displayDescription = job.description.ifBlank { "No description available" }
 
     // Validation
     val isResumeValid = resumeUrl.isNotBlank() &&
@@ -105,7 +423,7 @@ fun ApplyJobScreen(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = "${currentStep + 1}/4",
+                                    text = "${currentStep + 1}/3",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = DeepGreenDark
@@ -119,7 +437,7 @@ fun ApplyJobScreen(
                         if (currentStep > 0) {
                             currentStep--
                         } else {
-                            navController.popBackStack()
+                            onCancelApplication()
                         }
                     }) {
                         Icon(
@@ -134,15 +452,14 @@ fun ApplyJobScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        repeat(4) { index ->
+                        repeat(3) { index ->
                             Box(
                                 modifier = Modifier
                                     .size(if (index == currentStep) 10.dp else 8.dp)
                                     .clip(CircleShape)
                                     .background(
                                         when {
-                                            index < currentStep -> DeepGreenDark
-                                            index == currentStep -> DeepGreenDark
+                                            index <= currentStep -> DeepGreenDark
                                             else -> TextDark.copy(alpha = 0.2f)
                                         }
                                     )
@@ -193,21 +510,16 @@ fun ApplyJobScreen(
                 // Step Title
                 when (currentStep) {
                     0 -> StepTitle(
-                        icon = Icons.Filled.Info,
-                        title = "Job Details",
-                        subtitle = "Review the position you're applying for"
-                    )
-                    1 -> StepTitle(
                         icon = Icons.Filled.Person,
                         title = "Personal Information",
                         subtitle = "Tell us about yourself"
                     )
-                    2 -> StepTitle(
+                    1 -> StepTitle(
                         icon = Icons.Filled.Description,
                         title = "Resume & Cover Letter",
                         subtitle = "Share your qualifications"
                     )
-                    3 -> StepTitle(
+                    2 -> StepTitle(
                         icon = Icons.Filled.CheckCircle,
                         title = "Review & Submit",
                         subtitle = "Double-check your application"
@@ -216,15 +528,7 @@ fun ApplyJobScreen(
 
                 // Step Content
                 when (currentStep) {
-                    0 -> Step0JobDetails(
-                        displayTitle = displayTitle,
-                        displayCompany = displayCompany,
-                        displayLocation = displayLocation,
-                        displaySalary = displaySalary,
-                        displayType = displayType,
-                        displayDescription = displayDescription
-                    )
-                    1 -> Step1PersonalInfo(
+                    0 -> Step1PersonalInfo(
                         phoneNumber = phoneNumber,
                         onPhoneNumberChange = { newValue -> phoneNumber = newValue },
                         linkedInUrl = linkedInUrl,
@@ -238,7 +542,7 @@ fun ApplyJobScreen(
                         isSalaryValid = isSalaryValid,
                         errorMessage = errorMessage
                     )
-                    2 -> Step2Resume(
+                    1 -> Step2Resume(
                         resumeUrl = resumeUrl,
                         onResumeUrlChange = {
                             resumeUrl = it
@@ -252,7 +556,7 @@ fun ApplyJobScreen(
                         isResumeValid = isResumeValid,
                         errorMessage = errorMessage
                     )
-                    3 -> Step3Review(
+                    2 -> Step3Review(
                         jobTitle = displayTitle,
                         companyName = displayCompany,
                         coverLetter = coverLetter,
@@ -304,29 +608,29 @@ fun ApplyJobScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (currentStep > 0) {
-                        OutlinedButton(
-                            onClick = { currentStep-- },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(52.dp),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Back", fontSize = 15.sp)
-                        }
+                    OutlinedButton(
+                        onClick = {
+                            if (currentStep > 0) currentStep-- else onCancelApplication()
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (currentStep > 0) "Back" else "Overview", fontSize = 15.sp)
                     }
 
                     Button(
                         onClick = {
-                            if (currentStep < 3) {
+                            if (currentStep < 2) {
                                 when (currentStep) {
-                                    1 -> {
+                                    0 -> {
                                         showValidationErrors = true
                                         if (phoneNumber.isNotEmpty() && !isPhoneValid) {
                                             errorMessage = "Please enter a valid phone number"
@@ -337,7 +641,7 @@ fun ApplyJobScreen(
                                             currentStep++
                                         }
                                     }
-                                    2 -> {
+                                    1 -> {
                                         showValidationErrors = true
                                         if (!isResumeValid) {
                                             errorMessage = "Please provide a valid resume URL (must start with http:// or https://)"
@@ -345,9 +649,6 @@ fun ApplyJobScreen(
                                             errorMessage = ""
                                             currentStep++
                                         }
-                                    }
-                                    else -> {
-                                        currentStep++
                                     }
                                 }
                             } else {
@@ -386,23 +687,23 @@ fun ApplyJobScreen(
                             }
                         },
                         modifier = Modifier
-                            .weight(if (currentStep > 0) 1f else 1f)
+                            .weight(1f)
                             .height(52.dp),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (currentStep == 3) DeepGreenDark else SageGreenMain
+                            containerColor = if (currentStep == 2) DeepGreenDark else SageGreenMain
                         ),
                         enabled = !isSubmitting
                     ) {
                         when {
-                            isSubmitting && currentStep == 3 -> {
+                            isSubmitting && currentStep == 2 -> {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(22.dp),
                                     color = Color.White,
                                     strokeWidth = 2.5.dp
                                 )
                             }
-                            currentStep == 3 -> {
+                            currentStep == 2 -> {
                                 Icon(
                                     imageVector = Icons.Filled.Check,
                                     contentDescription = null,
@@ -575,108 +876,6 @@ private fun InfoBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, tex
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-    }
-}
-
-// ==================== Step 0: Job Details ====================
-
-@Composable
-private fun Step0JobDetails(
-    displayTitle: String,
-    displayCompany: String,
-    displayLocation: String,
-    displaySalary: String,
-    displayType: String,
-    displayDescription: String
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = displayTitle,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = DeepGreenDark,
-                    modifier = Modifier.weight(1f)
-                )
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = SageGreenLight
-                ) {
-                    Text(
-                        text = displayType,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        fontSize = 11.sp,
-                        color = DeepGreenDark,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                InfoBadge(
-                    icon = Icons.Filled.Business,
-                    text = displayCompany
-                )
-                InfoBadge(
-                    icon = Icons.Filled.LocationOn,
-                    text = displayLocation
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = DeepGreenDark.copy(alpha = 0.08f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-            ) {
-                Text(
-                    text = displaySalary,
-                    fontWeight = FontWeight.Bold,
-                    color = DeepGreenDark,
-                    fontSize = 16.sp,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-            }
-
-            if (displayDescription.isNotBlank()) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 14.dp),
-                    color = SageGreenLight
-                )
-                Text(
-                    text = "About the Role",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextDark
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = displayDescription,
-                    fontSize = 13.sp,
-                    color = TextDark.copy(alpha = 0.7f),
-                    lineHeight = 20.sp
-                )
-            }
-        }
     }
 }
 

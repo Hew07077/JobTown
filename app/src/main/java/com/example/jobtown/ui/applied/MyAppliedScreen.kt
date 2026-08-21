@@ -27,6 +27,7 @@ import com.example.jobtown.data.JobApplication
 import com.example.jobtown.data.User
 import com.example.jobtown.ui.theme.BackgroundWhite
 import com.example.jobtown.ui.theme.DeepGreenDark
+import com.example.jobtown.ui.theme.SageGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.SageGreenMain
 import com.example.jobtown.ui.theme.TextDark
@@ -65,7 +66,8 @@ fun MyAppliedScreen(
                     Text(
                         text = "My Applications",
                         fontWeight = FontWeight.Bold,
-                        color = TextDark
+                        color = DeepGreenDark,
+                        fontSize = 18.sp
                     )
                 },
                 actions = {
@@ -102,12 +104,34 @@ fun MyAppliedScreen(
                     )
                 }
                 applications.isEmpty() -> {
-                    Text(
-                        text = "No job applications found.",
-                        color = TextDark.copy(alpha = 0.6f),
-                        fontSize = 14.sp,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.Business,
+                                contentDescription = null,
+                                tint = SageGreenDark,
+                                modifier = Modifier.size(54.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "No Job Applications Found",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = TextDark
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Explore available listings and send your applications to track them here.",
+                                fontSize = 13.sp,
+                                color = TextDark.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
                 }
                 else -> {
                     LazyColumn(
@@ -228,7 +252,7 @@ fun ApplicationCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Action Button: Direct Trigger
+            // Action Button: Direct Chat Trigger
             Button(
                 onClick = onChatWithCompany,
                 enabled = !isChatLoading,

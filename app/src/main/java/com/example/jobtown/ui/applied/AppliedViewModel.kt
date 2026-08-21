@@ -1,5 +1,6 @@
 package com.example.jobtown.ui.applied
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -27,24 +28,15 @@ class AppliedViewModel(
     var recentlyUpdatedApplicationId by mutableStateOf<String?>(null)
         private set
 
-    /**
-     * Starts observing live updates/changes for user applications.
-     */
     fun startTracking(userId: String) {
         isTrackingLive = true
         loadApplications(userId, forceRefresh = true)
     }
 
-    /**
-     * Stops observing live application updates.
-     */
     fun stopTracking() {
         isTrackingLive = false
     }
 
-    /**
-     * Consumes/resets the recently updated application ID notification highlight.
-     */
     fun consumeRecentUpdate() {
         recentlyUpdatedApplicationId = null
     }
@@ -66,13 +58,32 @@ class AppliedViewModel(
         }
     }
 
+    /**
+     * Fetches candidate applications submitted specifically to jobs posted by this employer.
+     */
+    fun loadEmployerApplications(employerId: String, forceRefresh: Boolean = false) {
+        if (employerId.isBlank()) return
+        if (!forceRefresh && applicationsList.isNotEmpty()) return
+
+        viewModelScope.launch {
+            isLoading = true
+            try {
+                val result = applicationRepository.getApplicationsForEmployer(employerId, forceRefresh)
+                applicationsList = result
+            } catch (e: Exception) {
+                Log.e("AppliedViewModel", "Failed to load employer applications", e)
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
     fun submitNewApplication(application: JobApplication, onComplete: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
             isLoading = true
             try {
                 val success = applicationRepository.applyForJob(application)
                 if (success) {
-                    // Prepend new application locally
                     applicationsList = listOf(application) + applicationsList
                 }
                 onComplete(success)

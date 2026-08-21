@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import coil.compose.SubcomposeAsyncImage
 import com.example.jobtown.data.Job
 import com.example.jobtown.data.User
 import com.example.jobtown.data.UserRole
@@ -243,6 +245,7 @@ fun HomeScreen(
                             )
                         }
 
+                        // --- PROFILE / COMPANY LOGO BUTTON ---
                         IconButton(
                             onClick = onProfileClick,
                             modifier = Modifier
@@ -250,11 +253,22 @@ fun HomeScreen(
                                 .clip(CircleShape)
                                 .background(SageGreenLight)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "Open your profile",
-                                tint = DeepGreenDark
-                            )
+                            val logoUrl = currentUser?.avatarUrl
+
+                            if (!logoUrl.isNullOrBlank()) {
+                                SubcomposeAsyncImage(
+                                    model = logoUrl,
+                                    contentDescription = "Open your profile",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = "Open your profile",
+                                    tint = DeepGreenDark
+                                )
+                            }
                         }
                     }
 

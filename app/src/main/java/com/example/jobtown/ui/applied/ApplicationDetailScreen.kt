@@ -23,7 +23,10 @@ import com.example.jobtown.ui.theme.*
 fun ApplicationDetailScreen(
     applicationId: String,
     viewModel: AppliedViewModel,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onChatClick: (applicantId: String, applicantName: String) -> Unit = { _, _ -> },
+    onScheduleClick: (applicationId: String, applicantId: String, applicantName: String) -> Unit = { _, _, _ -> },
+    onStatusChange: (applicationId: String, newStatus: String) -> Unit = { _, _ -> }
 ) {
     val application = remember(applicationId, viewModel.applicationsList) {
         viewModel.applicationsList.find { it.id == applicationId }
@@ -90,20 +93,26 @@ fun ApplicationDetailScreen(
                             color = TextDark.copy(alpha = 0.7f),
                             fontWeight = FontWeight.Medium
                         )
-                        
+
                         Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = SageGreenMain.copy(alpha = 0.4f)
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = application.status.ifBlank { "Pending" },
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = DeepGreenDark,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = SageGreenMain.copy(alpha = 0.4f)
+                            ) {
+                                Text(
+                                    text = application.status.ifBlank { "Pending" },
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = DeepGreenDark,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -118,7 +127,7 @@ fun ApplicationDetailScreen(
                     color = DeepGreenDark
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
                 DetailItem(icon = Icons.Default.Person, label = "Name", value = application.applicantName)
                 DetailItem(icon = Icons.Default.Email, label = "Email", value = application.applicantEmail)
                 DetailItem(icon = Icons.Default.CalendarToday, label = "Applied On", value = application.appliedDate)
@@ -146,6 +155,71 @@ fun ApplicationDetailScreen(
                             color = TextDark.copy(alpha = 0.8f),
                             lineHeight = 22.sp
                         )
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
+                // ==================== Employer Action Hub ====================
+                Text(
+                    text = "Employer Actions",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = DeepGreenDark
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Primary Action Buttons: Chat & Schedule Interview
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = { onChatClick(application.userId, application.applicantName) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Chat", fontSize = 14.sp)
+                    }
+
+                    Button(
+                        onClick = { onScheduleClick(application.id, application.userId, application.applicantName) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = SageGreenDark),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Event, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Schedule", fontSize = 14.sp, color = DeepGreenDark)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Quick Status Updates (Shortlist / Reject)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { onStatusChange(application.id, "Shortlisted") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, DeepGreenDark)
+                    ) {
+                        Text("Shortlist", color = DeepGreenDark, fontSize = 13.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = { onStatusChange(application.id, "Rejected") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f))
+                    ) {
+                        Text("Reject", fontSize = 13.sp)
                     }
                 }
             }

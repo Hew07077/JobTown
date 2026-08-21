@@ -61,14 +61,30 @@ object JobMatchUtils {
     /** Scores a single job against a profile. Falls back gracefully when the profile is incomplete. */
     fun score(job: Job, profile: UserProfile?): JobMatchResult {
         if (profile == null) {
-            return JobMatchResult(score = 0, matchedSkills = emptyList(), missingSkills = job.skills.orEmpty(), reasons = emptyList())
+            return JobMatchResult(
+                score = 0,
+                matchedSkills = emptyList(),
+                missingSkills = job.skills.orEmpty(),
+                reasons = emptyList()
+            )
         }
 
         val reasons = mutableListOf<String>()
 
         // --- Skills (55%) ---
         val jobSkills = job.skills.orEmpty().ifEmpty { job.requirements.orEmpty() }
-        val seekerSkillsNormalized = profile.skills.map { normalizeSkill(it) }.filter { it.isNotBlank() }.toSet()
+
+        // Handle skills safely whether provided as a String or List representation
+        val rawSeekerSkills: List<String> = when (val skillsObj = profile.skills as Any?) {
+            is List<*> -> skillsObj.mapNotNull { it?.toString() }
+            is String -> skillsObj.split(",")
+            else -> emptyList()
+        }
+
+        val seekerSkillsNormalized = rawSeekerSkills
+            .map { normalizeSkill(it) }
+            .filter { it.isNotBlank() }
+            .toSet()
 
         val matched = mutableListOf<String>()
         val missing = mutableListOf<String>()
@@ -90,7 +106,7 @@ object JobMatchUtils {
 
         // --- Experience level (20%) ---
         val seekerLevel = experienceKeyword(profile.experienceLevel)
-        val jobText = "${job.title} ${job.description} ${job.requirements.orEmpty().joinToString(" ")}".lowercase()
+        val jobText = "${job.title} ${job.description.orEmpty()} ${job.requirements.orEmpty().joinToString(" ")}".lowercase()
         val jobLevel = experienceOrder.firstOrNull { jobText.contains(it) }
         val experienceScore: Double = when {
             seekerLevel == null || jobLevel == null -> 70.0 // Unknown - neutral, don't penalize
@@ -107,9 +123,9 @@ object JobMatchUtils {
         }
 
         // --- Location (15%) ---
-        val jobLocation = job.location.trim().lowercase()
+        val jobLocation = job.location.orEmpty().trim().lowercase()
         val seekerLocation = profile.location?.trim()?.lowercase().orEmpty()
-        val isRemote = jobLocation.contains("remote") || job.type.contains("remote", ignoreCase = true)
+        val isRemote = jobLocation.contains("remote") || job.type.orEmpty().contains("remote", ignoreCase = true)
         val locationScore: Double = when {
             isRemote -> 100.0
             seekerLocation.isBlank() || jobLocation.isBlank() -> 60.0
@@ -121,7 +137,7 @@ object JobMatchUtils {
         else if (seekerLocation.isNotBlank() && (jobLocation == seekerLocation)) reasons += "Same location as your profile"
 
         // --- Recency boost (10%) ---
-        val recencyScore: Double = 70.0 // Neutral baseline; real timestamp comparison happens where createdAt is parseable
+        val recencyScore: Double = 70.0 // Neutral baseline
 
         val weighted = skillScore * 0.55 + experienceScore * 0.20 + locationScore * 0.15 + recencyScore * 0.10
 

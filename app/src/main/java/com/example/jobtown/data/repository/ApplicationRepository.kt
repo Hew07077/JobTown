@@ -51,6 +51,33 @@ class ApplicationRepository(private val supabase: SupabaseClient) {
     }
 
     /**
+     * Fetches all candidate applications submitted for jobs posted by this employer.
+     */
+    suspend fun getApplicationsForEmployer(employerId: String, forceRefresh: Boolean = false): List<JobApplication> = withContext(Dispatchers.IO) {
+        if (employerId.isBlank()) return@withContext emptyList()
+
+        try {
+            println("DEBUG_SUPABASE: Fetching incoming applications for employerId = '$employerId'")
+
+            val results = supabase.postgrest["applications"]
+                .select {
+                    filter {
+                        eq("employer_id", employerId)
+                    }
+                    order("applied_at", Order.DESCENDING)
+                }
+                .decodeList<JobApplication>()
+
+            println("DEBUG_SUPABASE: Successfully retrieved ${results.size} application(s) for employer.")
+            results
+        } catch (e: Exception) {
+            println("DEBUG_SUPABASE_ERROR (Employer Fetch): ${e.localizedMessage}")
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    /**
      * Live tracking stream: emits every insert/update/delete on this user's rows in the
      * `applications` table (e.g. an employer moving a status from "Pending" to
      * "Shortlisted" or "Rejected") so "My Applications" updates the instant it happens,

@@ -16,6 +16,9 @@ class ProfileViewModel(private val supabase: SupabaseClient) : ViewModel() {
 
     var phone by mutableStateOf("")
     var location by mutableStateOf("")
+    var tagline by mutableStateOf("")
+    var websiteUrl by mutableStateOf("")
+    var perks by mutableStateOf<List<String>>(emptyList())
     var skillsInput by mutableStateOf("")
     var experienceLevel by mutableStateOf("Junior (1-2 yrs)")
     var portfolioUrl by mutableStateOf("")
@@ -37,23 +40,21 @@ class ProfileViewModel(private val supabase: SupabaseClient) : ViewModel() {
                 return@launch
             }
 
-            val skillsList = skillsInput
-                .split(",")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-
             val profile = UserProfile(
                 id = currentUser.id,
                 phone = phone.trim(),
                 location = location.trim(),
-                skills = skillsList,
-                experienceLevel = experienceLevel,
+                tagline = tagline.trim(),
+                websiteUrl = websiteUrl.trim(),
+                perks = perks,
+                skills = skillsInput.trim(),
+                experienceLevel = experienceLevel.trim(),
                 portfolioUrl = portfolioUrl.trim(),
                 bio = bio.trim()
             )
 
             try {
-                supabase.from("users").upsert(profile)
+                supabase.from("user_profiles").upsert(profile)
                 isSuccess = true
             } catch (e: RestException) {
                 errorMessage = e.description ?: "Database permission or input error."

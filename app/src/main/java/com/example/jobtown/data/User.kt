@@ -44,6 +44,24 @@ data class User(
     @SerialName("industry")
     val industry: String = "",
 
+    @SerialName("tagline")
+    val tagline: String = "",
+
+    @SerialName("website_url")
+    val websiteUrl: String = "",
+
+    @SerialName("perks")
+    val perks: List<String> = emptyList(),
+
+    @SerialName("skills")
+    val skills: String = "",
+
+    @SerialName("experience_level")
+    val experienceLevel: String = "",
+
+    @SerialName("portfolio_url")
+    val portfolioUrl: String = "",
+
     @SerialName("bio")
     val bio: String = "",
 
