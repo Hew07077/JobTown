@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -12,6 +13,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -49,7 +51,8 @@ fun ScheduleScreen(
     isSaving: Boolean = false,
     prefill: SchedulePrefill = SchedulePrefill(),
     onCreateSchedule: (InterviewSchedule) -> Unit = {},
-    onUpdateStatus: (scheduleId: String, status: String) -> Unit = { _, _ -> }
+    onUpdateStatus: (scheduleId: String, status: String) -> Unit = { _, _ -> },
+    onProfileClick: () -> Unit = {}
 ) {
     var showCreateDialog by remember(prefill) { mutableStateOf(isEmployer && !prefill.isEmpty) }
 
@@ -64,6 +67,22 @@ fun ScheduleScreen(
                         color = TextDark,
                         fontSize = 18.sp
                     )
+                },
+                actions = {
+                    IconButton(
+                        onClick = onProfileClick,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(SageGreenLight)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Profile",
+                            tint = DeepGreenDark
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
             )

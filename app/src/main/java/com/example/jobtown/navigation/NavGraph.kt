@@ -25,7 +25,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.jobtown.Screen // Ensure this points to your Screen sealed class file
+import com.example.jobtown.Screen
 import com.example.jobtown.data.User
 import com.example.jobtown.data.UserRole
 import com.example.jobtown.data.repository.ApplicationRepository
@@ -192,11 +192,7 @@ fun AppNavGraph(
                     isLoading = homeViewModel.isLoading,
                     onJobClick = { selectedJob ->
                         homeViewModel.selectJob(selectedJob)
-                        if (loggedInUser?.role == UserRole.EMPLOYER) {
-                            navController.navigate("employer_job_detail/${selectedJob.id}")
-                        } else {
-                            navController.navigate("apply_job")
-                        }
+                        navController.navigate("apply_job")
                     },
                     onPostJobClick = {
                         navController.navigate("post_job")
@@ -205,7 +201,7 @@ fun AppNavGraph(
                     onRefresh = { homeViewModel.loadJobs(loggedInUser?.id) },
                     matchScores = homeViewModel.matchScores,
                     sortMode = homeViewModel.sortMode,
-                    onSortModeChange = { homeViewModel.updateSortMode(it) },
+                    onSortModeChange = { homeViewModel.updateSortMode(it) }, // Fixed reference here
                     hasMatchProfile = homeViewModel.seekerProfile != null,
                     isLive = homeViewModel.isLive,
                     newListingsAvailable = homeViewModel.newListingsAvailable,
@@ -219,33 +215,11 @@ fun AppNavGraph(
                 PostJobScreen(
                     navController = navController,
                     currentUser = loggedInUser,
-                    onJobPosted = { createdJob, onComplete ->
-                        homeViewModel.postJob(createdJob) { success, message ->
-                            onComplete(success, message)
-                            if (success) {
-                                homeViewModel.loadJobs(loggedInUser?.id)
-                            }
-                        }
-                    }
+                    onJobPosted = { job, onComplete ->
+                        homeViewModel.postJob(job, onComplete)
+                    },
+                    onBackClick = { navController.popBackStack() }
                 )
-            }
-
-            composable(
-                route = "employer_job_detail/{jobId}",
-                arguments = listOf(navArgument("jobId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val jobId = backStackEntry.arguments?.getString("jobId") ?: ""
-                val currentJob = homeViewModel.jobsList.find { it.id == jobId } ?: homeViewModel.selectedJob
-
-                if (currentJob != null) {
-                    PostJobScreen(
-                        navController = navController,
-                        currentUser = loggedInUser,
-                        onJobPosted = { _, _ -> navController.popBackStack() }
-                    )
-                } else {
-                    navController.popBackStack()
-                }
             }
 
             composable("apply_job") {
@@ -259,9 +233,7 @@ fun AppNavGraph(
                         onApplySubmit = { application ->
                             appliedViewModel.submitNewApplication(application) {
                                 navController.navigate(Screen.Applied.route) {
-                                    popUpTo(Screen.Home.route) {
-                                        saveState = true
-                                    }
+                                    popUpTo(Screen.Home.route) { saveState = true }
                                     launchSingleTop = true
                                     restoreState = true
                                 }
@@ -314,6 +286,7 @@ fun AppNavGraph(
                     onStartTracking = { userId: String -> appliedViewModel.startTracking(userId) },
                     onStopTracking = { appliedViewModel.stopTracking() },
                     onConsumeRecentUpdate = { appliedViewModel.consumeRecentUpdate() },
+                    onProfileClick = { navController.navigate("profile") },
                     onChatWithCompany = { application ->
                         val userId = loggedInUser?.id
                         if (userId.isNullOrBlank()) {
@@ -348,21 +321,16 @@ fun AppNavGraph(
                             if (roomId.isNotBlank()) {
                                 chatViewModel.loadUserChatRooms(userId)
 
+                                val encodedCompany = Uri.encode(application.companyName.ifBlank { "Company Name" })
+                                val encodedTitle = Uri.encode(application.jobTitle.ifBlank { "Position" })
+
                                 navController.navigate(Screen.Chat.route) {
-                                    popUpTo(Screen.Home.route) {
-                                        saveState = true
-                                    }
+                                    popUpTo(Screen.Home.route) { saveState = true }
                                     launchSingleTop = true
                                     restoreState = true
                                 }
 
-                                val chatDetailRoute = Screen.ChatDetail.createRoute(
-                                    chatRoomId = roomId,
-                                    company = application.companyName,
-                                    title = application.jobTitle,
-                                    initialQuestion = ""
-                                )
-                                navController.navigate(chatDetailRoute)
+                                navController.navigate("chat_detail/$roomId/$encodedCompany/$encodedTitle/none")
                             } else {
                                 chatErrorMessage = if (caughtErrorText != null) {
                                     "Chat error: $caughtErrorText"
@@ -393,7 +361,8 @@ fun AppNavGraph(
                 ScheduleScreen(
                     navController = navController,
                     user = loggedInUser,
-                    schedules = emptyList()
+                    schedules = emptyList(),
+                    onProfileClick = { navController.navigate("profile") }
                 )
             }
 
@@ -415,20 +384,17 @@ fun AppNavGraph(
                         currentUser = loggedInUser,
                         chatRooms = chatRooms,
                         isLoading = isLoadingRooms,
-                        onChatRoomClick = { chatRoomId: String, companyName: String, position: String ->
-                            val chatDetailRoute = Screen.ChatDetail.createRoute(
-                                chatRoomId = chatRoomId,
-                                company = companyName,
-                                title = position,
-                                initialQuestion = ""
-                            )
-                            navController.navigate(chatDetailRoute)
-                        }
+                        onChatRoomClick = { chatRoomId, companyName, position ->
+                            val encodedCompany = Uri.encode(companyName.ifBlank { "Company Name" })
+                            val encodedPosition = Uri.encode(position.ifBlank { "Position" })
+                            navController.navigate("chat_detail/$chatRoomId/$encodedCompany/$encodedPosition/none")
+                        },
+                        onProfileClick = { navController.navigate("profile") }
                     )
                 }
 
                 composable(
-                    route = Screen.ChatDetail.route,
+                    route = "chat_detail/{chatRoomId}/{company}/{title}/{initialQuestion}",
                     arguments = listOf(
                         navArgument("chatRoomId") { type = NavType.StringType },
                         navArgument("company") { type = NavType.StringType; defaultValue = "Company Name" },
@@ -446,7 +412,7 @@ fun AppNavGraph(
                         roomId = roomId,
                         companyName = company,
                         chatTitle = title,
-                        initialQuestion = initialQuestion,
+                        initialQuestion = if (initialQuestion == "none") "" else initialQuestion,
                         currentUserId = loggedInUser?.id ?: "1",
                         chatViewModel = chatViewModel,
                         onNavigateToSchedule = {

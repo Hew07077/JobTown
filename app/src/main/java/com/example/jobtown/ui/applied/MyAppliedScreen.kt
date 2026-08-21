@@ -1,5 +1,6 @@
 package com.example.jobtown.ui.applied
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,11 +11,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -24,6 +27,7 @@ import com.example.jobtown.data.JobApplication
 import com.example.jobtown.data.User
 import com.example.jobtown.ui.theme.BackgroundWhite
 import com.example.jobtown.ui.theme.DeepGreenDark
+import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.SageGreenMain
 import com.example.jobtown.ui.theme.TextDark
 
@@ -42,6 +46,7 @@ fun MyAppliedScreen(
     onStartTracking: (String) -> Unit = {},
     onStopTracking: () -> Unit = {},
     onConsumeRecentUpdate: () -> Unit = {},
+    onProfileClick: () -> Unit = {},
     onChatWithCompany: (JobApplication) -> Unit
 ) {
     // Automatically start tracking live application updates when the screen is active and user is available
@@ -62,6 +67,22 @@ fun MyAppliedScreen(
                         fontWeight = FontWeight.Bold,
                         color = TextDark
                     )
+                },
+                actions = {
+                    IconButton(
+                        onClick = onProfileClick,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(SageGreenLight)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Profile",
+                            tint = DeepGreenDark
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
             )
