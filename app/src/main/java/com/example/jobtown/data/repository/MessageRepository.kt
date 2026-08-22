@@ -68,19 +68,6 @@ private data class ReadStatusUpdate(
 )
 
 @Serializable
-private data class EditMessagePayload(
-    val text: String,
-    val is_edited: Boolean
-)
-
-@Serializable
-private data class DeleteMessagePayload(
-    val text: String,
-    val is_deleted: Boolean,
-    val is_edited: Boolean = false
-)
-
-@Serializable
 private data class NewReactionPayload(
     val message_id: String,
     val chat_room_id: String,
@@ -116,17 +103,15 @@ class MessageRepository(private val supabase: SupabaseClient) {
             }
             val path = "$roomId/${UUID.randomUUID()}_$safeName"
 
-            // Upload bytes successfully without compilation errors
             supabase.storage[CHAT_ATTACHMENTS_BUCKET].upload(
                 path = path,
                 data = bytes,
-                upsert = false
+                upsert = true
             )
 
-            // Return the public URL for images, documents, and voice notes
             supabase.storage[CHAT_ATTACHMENTS_BUCKET].publicUrl(path)
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error uploading chat attachment", e)
+            Log.e("MessageRepository", "Error uploading chat attachment: ${e.message}", e)
             null
         }
     }
@@ -310,7 +295,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
 
             true
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error in sendMessage", e)
+            Log.e("MessageRepository", "Error in sendMessage: ${e.message}", e)
             false
         }
     }
@@ -320,7 +305,10 @@ class MessageRepository(private val supabase: SupabaseClient) {
 
         try {
             supabase.postgrest["chat_messages"].update(
-                EditMessagePayload(text = newText, is_edited = true)
+                mapOf(
+                    "text" to newText,
+                    "is_edited" to true
+                )
             ) {
                 filter {
                     eq("id", messageId)
@@ -337,7 +325,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
                     else -> newText
                 }
                 supabase.postgrest["chat_rooms"].update(
-                    ChatRoomLastMessageUpdate(last_message = snippet)
+                    mapOf("last_message" to snippet)
                 ) {
                     filter { eq("id", roomId) }
                 }
@@ -345,7 +333,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
 
             true
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error editing message $messageId", e)
+            Log.e("MessageRepository", "Error editing message $messageId: ${e.message}", e)
             false
         }
     }
@@ -356,7 +344,11 @@ class MessageRepository(private val supabase: SupabaseClient) {
         try {
             val deletedText = "This message was deleted"
             supabase.postgrest["chat_messages"].update(
-                DeleteMessagePayload(text = deletedText, is_deleted = true, is_edited = false)
+                mapOf(
+                    "text" to deletedText,
+                    "is_deleted" to true,
+                    "is_edited" to false
+                )
             ) {
                 filter {
                     eq("id", messageId)
@@ -367,7 +359,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
             val latest = getLatestMessage(roomId)
             if (latest != null && latest.id == messageId) {
                 supabase.postgrest["chat_rooms"].update(
-                    ChatRoomLastMessageUpdate(last_message = deletedText)
+                    mapOf("last_message" to deletedText)
                 ) {
                     filter { eq("id", roomId) }
                 }

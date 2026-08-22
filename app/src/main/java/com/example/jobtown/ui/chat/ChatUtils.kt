@@ -73,18 +73,67 @@ fun startVoiceRecording(
 }
 
 /**
- * Dialog preview component for images before they are sent.
+ * Safely stops and releases the MediaRecorder, returning the recorded audio File.
+ */
+fun stopVoiceRecording(
+    recorder: MediaRecorder?,
+    audioFile: File?
+): File? {
+    return try {
+        recorder?.apply {
+            stop()
+            release()
+        }
+        if (audioFile != null && audioFile.exists() && audioFile.length() > 0) {
+            audioFile
+        } else {
+            Log.e("ChatUtils", "Audio file is missing or empty")
+            null
+        }
+    } catch (e: Exception) {
+        Log.e("ChatUtils", "Failed to stop voice recording", e)
+        recorder?.release()
+        null
+    }
+}
+
+/**
+ * Copies a content URI (e.g., from Gallery) to a local cache file to ensure
+ * persistent read permissions and prevent security/permission crashes upon sending.
+ */
+fun getFileFromContentUri(context: Context, uri: Uri, fileExtension: String = ".jpg"): File? {
+    return try {
+        val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+        val outputDir = context.cacheDir
+        val outputFile = File.createTempFile("upload_", fileExtension, outputDir)
+
+        outputFile.outputStream().use { outputStream ->
+            inputStream.copyTo(outputStream)
+        }
+        inputStream.close()
+
+        if (outputFile.exists() && outputFile.length() > 0) outputFile else null
+    } catch (e: Exception) {
+        Log.e("ChatUtils", "Error copying content URI to file", e)
+        null
+    }
+}
+
+/**
+ * Dialog preview component for images before they are sent, with built-in URI validation and loading protection.
  */
 @Composable
 fun PhotoPreviewDialog(
+    context: Context,
     imageUri: Uri,
     onDismiss: () -> Unit,
-    onSend: (caption: String) -> Unit
+    onSend: (file: File, caption: String) -> Unit
 ) {
     var captionText by remember { mutableStateOf("") }
+    var isSending by remember { mutableStateOf(false) }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSending) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
@@ -101,8 +150,16 @@ fun PhotoPreviewDialog(
                     contentScale = ContentScale.Fit
                 )
 
+                if (isSending) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = SageGreenMain
+                    )
+                }
+
                 IconButton(
                     onClick = onDismiss,
+                    enabled = !isSending,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(16.dp)
@@ -134,6 +191,7 @@ fun PhotoPreviewDialog(
                             placeholder = { Text("Add a caption...", color = Color.White.copy(alpha = 0.6f)) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(24.dp),
+                            enabled = !isSending,
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.DarkGray,
                                 unfocusedContainerColor = Color.DarkGray,
@@ -148,7 +206,17 @@ fun PhotoPreviewDialog(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         IconButton(
-                            onClick = { onSend(captionText) },
+                            onClick = {
+                                isSending = true
+                                val preparedFile = getFileFromContentUri(context, imageUri)
+                                if (preparedFile != null) {
+                                    onSend(preparedFile, captionText)
+                                } else {
+                                    Log.e("PhotoPreview", "Failed to resolve local file from URI")
+                                    isSending = false
+                                }
+                            },
+                            enabled = !isSending,
                             modifier = Modifier
                                 .size(44.dp)
                                 .clip(CircleShape)
