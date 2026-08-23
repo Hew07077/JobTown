@@ -29,9 +29,10 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
-        // OPTION 2: Disables @InternalSerializationApi compiler warnings globally
         freeCompilerArgs += listOf(
-            "-opt-in=kotlinx.serialization.InternalSerializationApi"
+            "-opt-in=kotlinx.serialization.InternalSerializationApi",
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi"
         )
     }
 }
