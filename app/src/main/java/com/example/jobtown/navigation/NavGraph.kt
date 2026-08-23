@@ -7,14 +7,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -26,14 +22,13 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.jobtown.Screen
-import com.example.jobtown.data.InterviewSchedule
 import com.example.jobtown.data.User
 import com.example.jobtown.data.UserRole
 import com.example.jobtown.data.repository.ApplicationRepository
 import com.example.jobtown.data.repository.JobRepository
 import com.example.jobtown.data.repository.MessageRepository
+import com.example.jobtown.data.repository.ScheduleRepository
 import com.example.jobtown.ui.applied.AppliedViewModel
-import com.example.jobtown.ui.applied.AppliedViewModelFactory
 import com.example.jobtown.ui.applied.MyAppliedScreen
 import com.example.jobtown.ui.applied.ApplicationDetailScreen
 import com.example.jobtown.ui.auth.CompleteProfileScreen
@@ -44,7 +39,6 @@ import com.example.jobtown.ui.auth.StartupScreen
 import com.example.jobtown.ui.chat.ChatDetailScreen
 import com.example.jobtown.ui.chat.ChatListScreen
 import com.example.jobtown.ui.chat.ChatViewModel
-import com.example.jobtown.ui.chat.ChatViewModelFactory
 import com.example.jobtown.ui.employer.CompanyDetailScreen
 import com.example.jobtown.ui.employer.ManageJobsScreen
 import com.example.jobtown.ui.components.JobTownBottomNavigationBar
@@ -56,10 +50,10 @@ import com.example.jobtown.ui.postjob.EmployerJobDetailScreen
 import com.example.jobtown.ui.postjob.PostJobScreen
 import com.example.jobtown.ui.profile.ProfileScreen
 import com.example.jobtown.ui.schedule.ScheduleScreen
+import com.example.jobtown.ui.schedule.ScheduleViewModel
 import com.example.jobtown.ui.schedule.SchedulePrefill
 import io.github.jan.supabase.SupabaseClient
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 @Composable
 fun AppNavGraph(
@@ -80,10 +74,6 @@ fun AppNavGraph(
     var snackbarMessage by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var scheduleList by remember { mutableStateOf<List<InterviewSchedule>>(emptyList()) }
-    var isSavingSchedule by remember { mutableStateOf(false) }
-    var schedulePrefill by remember { mutableStateOf(SchedulePrefill()) }
-
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
             snackbarHostState.showSnackbar(message = it, duration = SnackbarDuration.Long)
@@ -94,10 +84,36 @@ fun AppNavGraph(
     val jobRepository = remember(supabaseClient) { JobRepository(supabaseClient) }
     val applicationRepository = remember(supabaseClient) { ApplicationRepository(supabaseClient) }
     val messageRepository = remember(supabaseClient) { MessageRepository(supabaseClient) }
+    val scheduleRepository = remember(supabaseClient) { ScheduleRepository(supabaseClient) }
 
     val homeViewModel: HomeViewModel = viewModel(factory = HomeViewModelFactory(jobRepository))
-    val appliedViewModel: AppliedViewModel = viewModel(factory = AppliedViewModelFactory(applicationRepository))
-    val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModelFactory(messageRepository))
+
+    val appliedViewModel: AppliedViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return AppliedViewModel(applicationRepository) as T
+            }
+        }
+    )
+
+    val chatViewModel: ChatViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return ChatViewModel(messageRepository) as T
+            }
+        }
+    )
+
+    val scheduleViewModel: ScheduleViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return ScheduleViewModel(scheduleRepository) as T
+            }
+        }
+    )
 
     LaunchedEffect(loggedInUser?.id) {
         loggedInUser?.let { user ->
@@ -108,6 +124,7 @@ fun AppNavGraph(
                 appliedViewModel.loadApplications(user.id)
             }
             chatViewModel.loadUserChatRooms(user.id)
+            scheduleViewModel.loadSchedules(user.id, user.role == UserRole.EMPLOYER)
         }
     }
 
@@ -234,7 +251,6 @@ fun AppNavGraph(
                 )
             }
 
-            // MANAGE JOBS SCREEN (For Employers)
             composable("manage_jobs") {
                 LaunchedEffect(loggedInUser?.id) {
                     loggedInUser?.id?.let { employerId ->
@@ -381,11 +397,15 @@ fun AppNavGraph(
                     }
                 }
 
+                val isLoading by appliedViewModel.isLoading.collectAsStateWithLifecycle()
+                val isTrackingLive by appliedViewModel.isTrackingLive.collectAsStateWithLifecycle()
+                val recentlyUpdatedId by appliedViewModel.recentlyUpdatedApplicationId.collectAsStateWithLifecycle()
+
                 MyAppliedScreen(
                     navController = navController,
                     user = loggedInUser,
                     applications = appliedViewModel.applicationsList,
-                    isLoading = appliedViewModel.isLoading,
+                    isLoading = isLoading,
                     onRefresh = {
                         loggedInUser?.id?.let { userId ->
                             appliedViewModel.loadApplications(userId, forceRefresh = true)
@@ -395,8 +415,8 @@ fun AppNavGraph(
                         navController.navigate(Screen.ApplicationDetail.createRoute(applicationId))
                     },
                     chatLoadingApplicationId = chatCreationInProgressId,
-                    isTrackingLive = appliedViewModel.isTrackingLive,
-                    recentlyUpdatedApplicationId = appliedViewModel.recentlyUpdatedApplicationId,
+                    isTrackingLive = isTrackingLive,
+                    recentlyUpdatedApplicationId = recentlyUpdatedId,
                     onStartTracking = { userId: String -> appliedViewModel.startTracking(userId) },
                     onStopTracking = { appliedViewModel.stopTracking() },
                     onConsumeRecentUpdate = { appliedViewModel.consumeRecentUpdate() },
@@ -467,33 +487,76 @@ fun AppNavGraph(
                 ApplicationDetailScreen(
                     applicationId = applicationId,
                     viewModel = appliedViewModel,
-                    onBackClick = { navController.popBackStack() }
+                    onBackClick = { navController.popBackStack() },
+                    onChatClick = { applicantId, applicantName ->
+                        // Optional handling for chat routing from detail view
+                    },
+                    onScheduleClick = { _, applicantId, applicantName, jobTitle, companyName ->
+                        scheduleViewModel.setPrefill(
+                            SchedulePrefill(
+                                seekerId = applicantId,
+                                seekerName = applicantName,
+                                employerId = loggedInUser?.id.orEmpty(),
+                                company = companyName,
+                                title = jobTitle
+                            )
+                        )
+                        navController.navigate(Screen.Schedule.route)
+                    },
+                    onStatusChange = { targetAppId, newStatus ->
+                        appliedViewModel.updateApplicationStatus(targetAppId, newStatus) { success ->
+                            if (success) {
+                                snackbarMessage = "Application status updated to $newStatus"
+                            } else {
+                                snackbarMessage = "Failed to update application status."
+                            }
+                        }
+                    }
                 )
             }
 
             composable(Screen.Schedule.route) {
                 val currentUserId = loggedInUser?.id.orEmpty()
                 val isEmployer = loggedInUser?.role == UserRole.EMPLOYER
-                val visibleSchedules = scheduleList.filter { schedule ->
-                    if (isEmployer) schedule.employerId == currentUserId else schedule.userId == currentUserId
+
+                // Automatically fetch or refresh remote schedules when opening schedule screen
+                LaunchedEffect(currentUserId) {
+                    if (currentUserId.isNotBlank()) {
+                        scheduleViewModel.loadSchedules(currentUserId, isEmployer)
+                    }
                 }
 
                 ScheduleScreen(
                     navController = navController,
                     user = loggedInUser,
-                    schedules = visibleSchedules,
+                    schedules = scheduleViewModel.schedulesList,
                     isEmployer = isEmployer,
-                    isSaving = isSavingSchedule,
-                    prefill = schedulePrefill,
+                    isSaving = scheduleViewModel.isSaving,
+                    prefill = scheduleViewModel.schedulePrefill,
                     onCreateSchedule = { newSchedule ->
-                        isSavingSchedule = true
-                        scheduleList = listOf(newSchedule.copy(id = UUID.randomUUID().toString())) + scheduleList
-                        schedulePrefill = SchedulePrefill()
-                        isSavingSchedule = false
+                        scheduleViewModel.createSchedule(newSchedule, currentUserId, isEmployer) { success, message ->
+                            snackbarMessage = message
+                            if (success) {
+                                navController.popBackStack()
+                            }
+                        }
                     },
                     onUpdateStatus = { scheduleId, status ->
-                        scheduleList = scheduleList.map {
-                            if (it.id == scheduleId) it.copy(status = status) else it
+                        scheduleViewModel.updateScheduleStatus(scheduleId, status, currentUserId, isEmployer) { success ->
+                            if (success) {
+                                snackbarMessage = "Schedule status updated to $status."
+                            } else {
+                                snackbarMessage = "Failed to update schedule status."
+                            }
+                        }
+                    },
+                    onRespondInvite = { scheduleId, status ->
+                        scheduleViewModel.updateScheduleStatus(scheduleId, status, currentUserId, isEmployer) { success ->
+                            if (success) {
+                                snackbarMessage = "Interview invitation $status successfully."
+                            } else {
+                                snackbarMessage = "Failed to update interview invitation response."
+                            }
                         }
                     },
                     onProfileClick = { navController.navigate("profile") }

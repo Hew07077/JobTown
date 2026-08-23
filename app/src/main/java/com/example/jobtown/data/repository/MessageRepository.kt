@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import java.util.UUID
@@ -89,33 +90,55 @@ data class RoomPresence(
 
 class MessageRepository(private val supabase: SupabaseClient) {
 
+    private val json = Json { ignoreUnknownKeys = true }
+
+    // --- ATTACHMENT UPLOAD ---
     suspend fun uploadChatAttachment(
         roomId: String,
         fileName: String,
         bytes: ByteArray,
         mimeType: String
-    ): String? = withContext(Dispatchers.IO) {
-        try {
-            var safeName = fileName.ifBlank { "file" }.replace(Regex("[^A-Za-z0-9._-]"), "_")
-            if (!safeName.contains(".")) {
-                val ext = mimeType.substringAfter("/", "").substringBefore(";")
-                if (ext.isNotBlank()) safeName = "$safeName.$ext"
-            }
-            val path = "$roomId/${UUID.randomUUID()}_$safeName"
+    ): String = withContext(Dispatchers.IO) {
+        var safeName = fileName.ifBlank { "file" }.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        if (!safeName.contains(".")) {
+            val ext = mimeType.substringAfter("/", "").substringBefore(";")
+            if (ext.isNotBlank()) safeName = "$safeName.$ext"
+        }
+        val path = "$roomId/${UUID.randomUUID()}_$safeName"
+        val bucket = supabase.storage[CHAT_ATTACHMENTS_BUCKET]
 
-            supabase.storage[CHAT_ATTACHMENTS_BUCKET].upload(
+        try {
+            bucket.upload(
                 path = path,
                 data = bytes,
                 upsert = true
             )
-
-            supabase.storage[CHAT_ATTACHMENTS_BUCKET].publicUrl(path)
         } catch (e: Exception) {
             Log.e("MessageRepository", "Error uploading chat attachment: ${e.message}", e)
-            null
+            throw Exception(describeUploadError(e), e)
+        }
+
+        bucket.publicUrl(path)
+    }
+
+    /** Translates common Supabase Storage failures into an actionable message. */
+    private fun describeUploadError(e: Exception): String {
+        val msg = e.message ?: return "Upload failed. Check the \"$CHAT_ATTACHMENTS_BUCKET\" bucket exists and its policies allow uploads."
+        return when {
+            msg.contains("Bucket not found", ignoreCase = true) ->
+                "The \"$CHAT_ATTACHMENTS_BUCKET\" storage bucket doesn't exist in this Supabase project."
+            msg.contains("row-level security", ignoreCase = true) || msg.contains("policy", ignoreCase = true) ||
+                    msg.contains("permission", ignoreCase = true) || msg.contains("403", ignoreCase = true) ->
+                "Upload blocked by a Storage policy — add an INSERT policy on \"$CHAT_ATTACHMENTS_BUCKET\" for authenticated users."
+            msg.contains("mime", ignoreCase = true) ->
+                "This file type isn't in the bucket's allowed MIME type list."
+            msg.contains("exceed", ignoreCase = true) || msg.contains("size", ignoreCase = true) ->
+                "The file exceeds the bucket's configured file size limit."
+            else -> "Upload failed: $msg"
         }
     }
 
+    // --- ROOM MANAGEMENT ---
     suspend fun getOrCreateChatRoom(
         seekerId: String,
         seekerName: String,
@@ -186,6 +209,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
         }
     }
 
+    // --- MESSAGES FETCHING & MUTATIONS ---
     suspend fun getMessagesForRoom(
         roomId: String,
         limit: Int = DEFAULT_PAGE_SIZE,
@@ -210,6 +234,19 @@ class MessageRepository(private val supabase: SupabaseClient) {
         } catch (e: Exception) {
             Log.e("MessageRepository", "Error in getMessagesForRoom", e)
             emptyList()
+        }
+    }
+
+    suspend fun getMessageById(messageId: String): ChatMessage? = withContext(Dispatchers.IO) {
+        try {
+            if (messageId.isBlank()) return@withContext null
+            supabase.postgrest["chat_messages"]
+                .select { filter { eq("id", messageId) } }
+                .decodeList<ChatMessage>()
+                .firstOrNull()
+        } catch (e: Exception) {
+            Log.e("MessageRepository", "Error fetching message by id: $messageId", e)
+            null
         }
     }
 
@@ -304,7 +341,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
         if (messageId.isBlank() || roomId.isBlank() || newText.isBlank()) return@withContext false
 
         try {
-            supabase.postgrest["chat_messages"].update(
+            val updatedRows = supabase.postgrest["chat_messages"].update(
                 mapOf(
                     "text" to newText,
                     "is_edited" to true
@@ -314,6 +351,15 @@ class MessageRepository(private val supabase: SupabaseClient) {
                     eq("id", messageId)
                     eq("chat_room_id", roomId)
                 }
+                select()
+            }.decodeList<ChatMessage>()
+
+            if (updatedRows.isEmpty()) {
+                Log.e(
+                    "MessageRepository",
+                    "editMessage FAILED: 0 rows updated for id=$messageId, room=$roomId. Check if messageId exists or if RLS policies block update."
+                )
+                return@withContext false
             }
 
             val latest = getLatestMessage(roomId)
@@ -333,7 +379,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
 
             true
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error editing message $messageId: ${e.message}", e)
+            Log.e("MessageRepository", "Error editing message $messageId: ${e.localizedMessage}", e)
             false
         }
     }
@@ -343,7 +389,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
 
         try {
             val deletedText = "This message was deleted"
-            supabase.postgrest["chat_messages"].update(
+            val updatedRows = supabase.postgrest["chat_messages"].update(
                 mapOf(
                     "text" to deletedText,
                     "is_deleted" to true,
@@ -354,6 +400,15 @@ class MessageRepository(private val supabase: SupabaseClient) {
                     eq("id", messageId)
                     eq("chat_room_id", roomId)
                 }
+                select()
+            }.decodeList<ChatMessage>()
+
+            if (updatedRows.isEmpty()) {
+                Log.e(
+                    "MessageRepository",
+                    "deleteMessage FAILED: 0 rows updated for id=$messageId, room=$roomId. Check if messageId exists or if RLS policies block update."
+                )
+                return@withContext false
             }
 
             val latest = getLatestMessage(roomId)
@@ -367,7 +422,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
 
             true
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error deleting message $messageId: ${e.message}", e)
+            Log.e("MessageRepository", "Error deleting message $messageId: ${e.localizedMessage}", e)
             false
         }
     }
@@ -390,6 +445,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
         }
     }
 
+    // --- REACTION MANAGEMENT ---
     suspend fun getReactionsForRoom(roomId: String): List<MessageReaction> = withContext(Dispatchers.IO) {
         try {
             if (roomId.isBlank()) return@withContext emptyList()
@@ -426,11 +482,24 @@ class MessageRepository(private val supabase: SupabaseClient) {
                 .firstOrNull()
 
             if (existing != null) {
-                supabase.postgrest["message_reactions"].delete {
-                    filter { eq("id", existing.id) }
+                val deletedRows = supabase.postgrest["message_reactions"].delete {
+                    filter {
+                        eq("message_id", messageId)
+                        eq("user_id", userId)
+                        eq("emoji", emoji)
+                    }
+                    select()
+                }.decodeList<MessageReaction>()
+
+                if (deletedRows.isEmpty()) {
+                    Log.e(
+                        "MessageRepository",
+                        "toggleReaction: 0 rows deleted for message=$messageId, user=$userId, emoji=$emoji"
+                    )
+                    return@withContext false
                 }
             } else {
-                supabase.postgrest["message_reactions"].insert(
+                val insertedRows = supabase.postgrest["message_reactions"].insert(
                     NewReactionPayload(
                         message_id = messageId,
                         chat_room_id = roomId,
@@ -438,11 +507,19 @@ class MessageRepository(private val supabase: SupabaseClient) {
                         emoji = emoji,
                         created_at = System.currentTimeMillis()
                     )
-                )
+                ) { select() }.decodeList<MessageReaction>()
+
+                if (insertedRows.isEmpty()) {
+                    Log.e(
+                        "MessageRepository",
+                        "toggleReaction: insert returned 0 rows — check RLS INSERT policy on message_reactions."
+                    )
+                    return@withContext false
+                }
             }
             true
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error toggling reaction", e)
+            Log.e("MessageRepository", "Error toggling reaction: ${e.localizedMessage}", e)
             false
         }
     }
@@ -486,6 +563,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
         }
     }
 
+    // --- REALTIME PRESENCE & MESSAGES ---
     fun observeRoomPresence(roomId: String, selfUserId: String): Flow<RoomPresence> = callbackFlow {
         if (roomId.isBlank() || selfUserId.isBlank()) {
             close()
@@ -572,18 +650,28 @@ class MessageRepository(private val supabase: SupabaseClient) {
                 table = "chat_messages"
                 filter = "chat_room_id=eq.$roomId"
             }.collect { action ->
-                when (action) {
-                    is PostgresAction.Insert, is PostgresAction.Update -> {
-                        try {
-                            val message = action.decodeRecord<ChatMessage>()
-                            if (message.chatRoomId == roomId) {
-                                trySend(message)
-                            }
-                        } catch (e: Exception) {
-                            Log.e("MessageRepository", "Error decoding realtime message", e)
+                try {
+                    when (action) {
+                        is PostgresAction.Insert -> {
+                            val decoded = action.decodeRecord<ChatMessage>()
+                            trySend(decoded)
                         }
+                        is PostgresAction.Update -> {
+                            val decoded = action.decodeRecord<ChatMessage>()
+                            trySend(decoded)
+                        }
+                        else -> {}
                     }
-                    else -> {}
+                } catch (e: Exception) {
+                    Log.e("MessageRepository", "Error decoding realtime message action", e)
+                    val recordId = when (action) {
+                        is PostgresAction.Insert -> action.record["id"]?.toString()?.trim('"')
+                        is PostgresAction.Update -> action.record["id"]?.toString()?.trim('"')
+                        else -> null
+                    }
+                    if (!recordId.isNullOrBlank()) {
+                        getMessageById(recordId)?.let { trySend(it) }
+                    }
                 }
             }
         }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -47,21 +48,34 @@ fun ChatListScreen(
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var showUnreadOnly by remember { mutableStateOf(false) }
 
-    val filteredRooms = remember(chatRooms, searchQuery, currentUser?.id) {
-        if (searchQuery.isBlank()) {
-            chatRooms
-        } else {
-            val query = searchQuery.trim()
-            chatRooms.filter { room ->
-                val isSeeker = room.seekerId == currentUser?.id
-                val otherName = if (isSeeker) room.companyName else room.seekerName
-                val positionName = room.jobTitle
+    // Calculate total unread count across all rooms
+    val totalUnreadCount by remember(chatRooms) {
+        derivedStateOf { chatRooms.sumOf { it.unreadCount } }
+    }
 
-                otherName.contains(query, ignoreCase = true) ||
-                        positionName.contains(query, ignoreCase = true) ||
-                        room.lastMessage.contains(query, ignoreCase = true)
+    val filteredRooms by remember(chatRooms, searchQuery, showUnreadOnly, currentUser?.id) {
+        derivedStateOf {
+            var rooms = chatRooms
+
+            if (showUnreadOnly) {
+                rooms = rooms.filter { it.unreadCount > 0 }
             }
+
+            if (searchQuery.isNotBlank()) {
+                val query = searchQuery.trim()
+                rooms = rooms.filter { room ->
+                    val isSeeker = room.seekerId == currentUser?.id
+                    val otherName = if (isSeeker) room.companyName else room.seekerName
+                    val positionName = room.jobTitle
+
+                    otherName.contains(query, ignoreCase = true) ||
+                            positionName.contains(query, ignoreCase = true) ||
+                            room.lastMessage.contains(query, ignoreCase = true)
+                }
+            }
+            rooms.sortedByDescending { it.lastMessageTime }
         }
     }
 
@@ -71,12 +85,29 @@ fun ChatListScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "Messages",
-                        fontWeight = FontWeight.Bold,
-                        color = TextDark,
-                        fontSize = 20.sp
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Messages",
+                            fontWeight = FontWeight.Bold,
+                            color = TextDark,
+                            fontSize = 20.sp
+                        )
+                        if (totalUnreadCount > 0) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                shape = CircleShape,
+                                color = DeepGreenDark
+                            ) {
+                                Text(
+                                    text = if (totalUnreadCount > 99) "99+" else totalUnreadCount.toString(),
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
                 },
                 actions = {
                     IconButton(
@@ -103,50 +134,80 @@ fun ChatListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            if (chatRooms.isNotEmpty() || searchQuery.isNotEmpty()) {
-                TextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = {
-                        Text(
-                            text = "Search messages, companies, or positions...",
-                            fontSize = 13.sp,
-                            color = TextDark.copy(alpha = 0.5f)
-                        )
-                    },
+            // Search and Filter Bar Row
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = {
+                            Text(
+                                text = "Search messages or companies...",
+                                fontSize = 13.sp,
+                                color = TextDark.copy(alpha = 0.5f)
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = TextDark.copy(alpha = 0.5f)
+                            )
+                        },
+                        trailingIcon = {
+                            AnimatedVisibility(
+                                visible = searchQuery.isNotEmpty(),
+                                enter = fadeIn(),
+                                exit = fadeOut()
+                            ) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "Clear search",
+                                        tint = TextDark.copy(alpha = 0.5f)
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        singleLine = true
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                FilterChip(
+                    selected = showUnreadOnly,
+                    onClick = { showUnreadOnly = !showUnreadOnly },
+                    label = { Text("Unread only", fontSize = 12.sp) },
                     leadingIcon = {
                         Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search",
-                            tint = TextDark.copy(alpha = 0.5f)
+                            imageVector = Icons.Default.FilterList,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
                         )
                     },
-                    trailingIcon = {
-                        AnimatedVisibility(
-                            visible = searchQuery.isNotEmpty(),
-                            enter = fadeIn(),
-                            exit = fadeOut()
-                        ) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Default.Clear,
-                                    contentDescription = "Clear search",
-                                    tint = TextDark.copy(alpha = 0.5f)
-                                )
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    singleLine = true
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = DeepGreenDark,
+                        selectedLabelColor = Color.White,
+                        selectedLeadingIconColor = Color.White,
+                        containerColor = Color.White,
+                        labelColor = TextDark
+                    )
                 )
             }
 
@@ -167,7 +228,7 @@ fun ChatListScreen(
                     }
                     filteredRooms.isEmpty() -> {
                         Text(
-                            text = "No results found for \"$searchQuery\"",
+                            text = if (showUnreadOnly) "No unread messages" else "No results found for \"$searchQuery\"",
                             color = TextDark.copy(alpha = 0.5f),
                             fontSize = 14.sp,
                             textAlign = TextAlign.Center,
@@ -176,7 +237,7 @@ fun ChatListScreen(
                     }
                     else -> {
                         LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
@@ -214,7 +275,8 @@ private fun ChatRoomItem(
     val formattedTime = remember(room.lastMessageTime) {
         if (room.lastMessageTime > 0L) formatRelativeTime(room.lastMessageTime) else ""
     }
-    val hasUnread = remember(room) { room.hasUnreadMessages() }
+    val unreadCount = room.unreadCount
+    val hasUnread = unreadCount > 0
 
     Card(
         onClick = onClick,
@@ -229,19 +291,21 @@ private fun ChatRoomItem(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                modifier = Modifier
-                    .size(50.dp)
-                    .clip(CircleShape),
-                color = SageGreenLight
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = otherName.take(1).uppercase(),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = DeepGreenDark
-                    )
+            Box {
+                Surface(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(CircleShape),
+                    color = SageGreenLight
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = otherName.take(1).uppercase(),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = DeepGreenDark
+                        )
+                    }
                 }
             }
 
@@ -307,12 +371,19 @@ private fun ChatRoomItem(
 
                     if (hasUnread) {
                         Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(DeepGreenDark)
-                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = DeepGreenDark
+                        ) {
+                            Text(
+                                text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
             }
@@ -361,18 +432,17 @@ private fun EmptyChatState(modifier: Modifier = Modifier) {
     }
 }
 
-private fun ChatRoom.hasUnreadMessages(): Boolean = this.unreadCount > 0
-
 private fun formatRelativeTime(timestamp: Long): String {
     val now = Calendar.getInstance()
     val time = Calendar.getInstance().apply { timeInMillis = timestamp }
 
     val isSameYear = now.get(Calendar.YEAR) == time.get(Calendar.YEAR)
-    val dayOfYearDiff = now.get(Calendar.DAY_OF_YEAR) - time.get(Calendar.DAY_OF_YEAR)
+    val dayOfYearNow = now.get(Calendar.DAY_OF_YEAR)
+    val dayOfYearTime = time.get(Calendar.DAY_OF_YEAR)
 
     return when {
-        isSameYear && dayOfYearDiff == 0 -> timeFormat.format(Date(timestamp))
-        isSameYear && dayOfYearDiff == 1 -> "Yesterday"
+        isSameYear && dayOfYearNow == dayOfYearTime -> timeFormat.format(Date(timestamp))
+        isSameYear && (dayOfYearNow - dayOfYearTime == 1) -> "Yesterday"
         else -> dateFormat.format(Date(timestamp))
     }
 }
