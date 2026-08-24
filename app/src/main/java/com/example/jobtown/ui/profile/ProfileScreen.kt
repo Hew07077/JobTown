@@ -1,5 +1,11 @@
 package com.example.jobtown.ui.profile
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +32,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -37,10 +44,13 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.jobtown.data.User
 import com.example.jobtown.data.UserRole
+import com.example.jobtown.data.repository.AvatarHistoryItem
 import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
 import com.example.jobtown.utils.ValidationUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 private val INDUSTRY_OPTIONS = listOf(
@@ -123,6 +133,141 @@ fun ProfileScreen(
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+
+    // --- Avatar upload -------------------------------------------------
+    var isUploadingAvatar by remember { mutableStateOf(false) }
+    var avatarError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(avatarError) {
+        avatarError?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            avatarError = null
+        }
+    }
+
+    val avatarPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val userId = displayedUser?.id
+        if (userId.isNullOrBlank()) {
+            avatarError = "User information is missing."
+            return@rememberLauncherForActivityResult
+        }
+
+        isUploadingAvatar = true
+        scope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                }
+                if (bytes == null) {
+                    avatarError = "Couldn't read the selected image."
+                    isUploadingAvatar = false
+                    return@launch
+                }
+
+                val mimeType = context.contentResolver.getType(uri)
+                val extension = when {
+                    mimeType?.contains("png") == true -> "png"
+                    mimeType?.contains("webp") == true -> "webp"
+                    else -> "jpg"
+                }
+
+                val uploadedUrl = UserRepository.uploadAvatar(userId, bytes, extension)
+                if (uploadedUrl == null) {
+                    avatarError = "Failed to upload photo. Please try again."
+                    isUploadingAvatar = false
+                    return@launch
+                }
+
+                // Cache-bust so Coil doesn't keep showing the old cached
+                // image at the same URL after a re-upload.
+                val freshUrl = "$uploadedUrl?t=${System.currentTimeMillis()}"
+                val currentUserSafe = displayedUser
+                if (currentUserSafe != null) {
+                    val updatedUser = currentUserSafe.copy(avatarUrl = freshUrl)
+                    val isSaved = UserRepository.updateUserInSupabase(updatedUser)
+                    isUploadingAvatar = false
+                    if (isSaved) {
+                        displayedUser = updatedUser
+                        onProfileUpdated(updatedUser)
+                    } else {
+                        avatarError = "Photo uploaded, but couldn't save it to your profile."
+                    }
+                } else {
+                    isUploadingAvatar = false
+                }
+            } catch (e: Exception) {
+                isUploadingAvatar = false
+                avatarError = e.message ?: "An unexpected error occurred."
+            }
+        }
+    }
+
+    fun pickAvatar() {
+        avatarPickerLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
+
+    // --- Avatar manager (only reachable from inside Edit Profile) ------
+    // Replaces the old behaviour where tapping the avatar anywhere on the
+    // screen immediately launched the system photo picker. Now tapping the
+    // avatar while editing opens this in-app sheet, which offers uploading a
+    // brand new photo OR switching back to a previously uploaded one, plus
+    // deleting old ones.
+    var showAvatarManager by remember { mutableStateOf(false) }
+    var isLoadingAvatarHistory by remember { mutableStateOf(false) }
+    var avatarHistory by remember { mutableStateOf<List<AvatarHistoryItem>>(emptyList()) }
+
+    LaunchedEffect(showAvatarManager) {
+        val userId = displayedUser?.id
+        if (showAvatarManager && !userId.isNullOrBlank()) {
+            isLoadingAvatarHistory = true
+            avatarHistory = UserRepository.listAvatarHistory(userId)
+            isLoadingAvatarHistory = false
+        }
+    }
+
+    fun selectAvatarFromHistory(item: AvatarHistoryItem) {
+        val currentUserSafe = displayedUser ?: return
+        scope.launch {
+            val freshUrl = "${item.url}?t=${System.currentTimeMillis()}"
+            val updatedUser = currentUserSafe.copy(avatarUrl = freshUrl)
+            val isSaved = UserRepository.updateUserInSupabase(updatedUser)
+            if (isSaved) {
+                displayedUser = updatedUser
+                onProfileUpdated(updatedUser)
+                showAvatarManager = false
+            } else {
+                avatarError = "Couldn't switch photo. Please try again."
+            }
+        }
+    }
+
+    fun deleteAvatarFromHistory(item: AvatarHistoryItem) {
+        scope.launch {
+            val deleted = UserRepository.deleteAvatar(item.path)
+            if (!deleted) {
+                avatarError = "Couldn't delete photo. Please try again."
+                return@launch
+            }
+            avatarHistory = avatarHistory.filterNot { it.path == item.path }
+            // If the photo just deleted was the one currently in use, clear
+            // it from the profile too so it doesn't keep pointing at a file
+            // that no longer exists.
+            val currentUserSafe = displayedUser
+            if (currentUserSafe != null && currentUserSafe.avatarUrl.substringBefore("?") == item.url) {
+                val updatedUser = currentUserSafe.copy(avatarUrl = "")
+                if (UserRepository.updateUserInSupabase(updatedUser)) {
+                    displayedUser = updatedUser
+                    onProfileUpdated(updatedUser)
+                }
+            }
+        }
+    }
 
     fun jumpTo(index: Int, tab: String) {
         selectedTab = tab
@@ -158,6 +303,8 @@ fun ProfileScreen(
                     email = displayedUser?.email,
                     memberSince = memberSince,
                     avatarUrl = displayedUser?.avatarUrl,
+                    isUploadingAvatar = isUploadingAvatar,
+                    onAvatarClick = { showAvatarManager = true },
                     onEditClick = { }
                 )
 
@@ -337,7 +484,7 @@ fun ProfileScreen(
             }
         } else if (isEmployer) {
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, displayedUser?.avatarUrl, onEditClick = { startEditing() }) }
+                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, displayedUser?.avatarUrl, isUploadingAvatar, onEditClick = { startEditing() }) }
                 item { ContactCard(displayedUser?.phone, displayedUser?.email, displayedUser?.location) }
 
                 stickyHeader {
@@ -460,7 +607,7 @@ fun ProfileScreen(
             }
         } else {
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, displayedUser?.avatarUrl, onEditClick = { startEditing() }) }
+                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, displayedUser?.avatarUrl, isUploadingAvatar, onEditClick = { startEditing() }) }
                 item { ContactCard(displayedUser?.phone, displayedUser?.email, displayedUser?.location) }
 
                 stickyHeader {
@@ -605,6 +752,131 @@ fun ProfileScreen(
             }
         )
     }
+
+    if (showAvatarManager) {
+        AvatarManagerSheet(
+            isLoadingHistory = isLoadingAvatarHistory,
+            historyItems = avatarHistory,
+            currentAvatarUrl = displayedUser?.avatarUrl,
+            onDismiss = { showAvatarManager = false },
+            onUploadNewClick = {
+                showAvatarManager = false
+                pickAvatar()
+            },
+            onSelect = ::selectAvatarFromHistory,
+            onDelete = ::deleteAvatarFromHistory
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bottom sheet shown when tapping the avatar WHILE editing the profile.
+// Lets the user upload a brand new photo, switch back to a previously
+// uploaded one, or permanently delete an old one -- replacing the old
+// behaviour where tapping the avatar anywhere just launched the system photo
+// picker directly.
+// ---------------------------------------------------------------------------
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AvatarManagerSheet(
+    isLoadingHistory: Boolean,
+    historyItems: List<AvatarHistoryItem>,
+    currentAvatarUrl: String?,
+    onDismiss: () -> Unit,
+    onUploadNewClick: () -> Unit,
+    onSelect: (AvatarHistoryItem) -> Unit,
+    onDelete: (AvatarHistoryItem) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+    val currentUrlWithoutCacheBust = currentAvatarUrl?.substringBefore("?")
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color.White
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp)
+        ) {
+            Text(text = "Profile Photo", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DeepGreenDark)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onUploadNewClick,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+            ) {
+                Icon(Icons.Default.AddAPhoto, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Upload New Photo", fontWeight = FontWeight.Bold, color = Color.White)
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(text = "PREVIOUS PHOTOS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextDark.copy(alpha = 0.4f))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            when {
+                isLoadingHistory -> {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = DeepGreenDark, modifier = Modifier.size(24.dp))
+                    }
+                }
+                historyItems.isEmpty() -> {
+                    Text(
+                        text = "No previous photos yet -- they'll show up here once you upload one.",
+                        fontSize = 12.sp,
+                        color = TextDark.copy(alpha = 0.5f),
+                        lineHeight = 16.sp
+                    )
+                }
+                else -> {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        items(historyItems, key = { it.path }) { item ->
+                            val isCurrent = item.url == currentUrlWithoutCacheBust
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(contentAlignment = Alignment.TopEnd) {
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(72.dp)
+                                            .clip(CircleShape)
+                                            .clickable { onSelect(item) },
+                                        shape = CircleShape,
+                                        border = if (isCurrent) BorderStroke(2.dp, DeepGreenDark) else null
+                                    ) {
+                                        AsyncImage(
+                                            model = item.url,
+                                            contentDescription = "Previous profile photo",
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.White)
+                                            .border(1.dp, SageGreenLight, CircleShape)
+                                            .clickable { onDelete(item) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Delete photo", tint = Color.Red, modifier = Modifier.size(13.dp))
+                                    }
+                                }
+                                if (isCurrent) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(text = "Current", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = DeepGreenDark)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -616,6 +888,8 @@ private fun ProfileHeader(
     email: String?,
     memberSince: String?,
     avatarUrl: String? = null,
+    isUploadingAvatar: Boolean = false,
+    onAvatarClick: () -> Unit = {},
     onEditClick: () -> Unit
 ) {
     Column(
@@ -636,7 +910,14 @@ private fun ProfileHeader(
         }
 
         Box(contentAlignment = Alignment.BottomEnd) {
-            Surface(modifier = Modifier.size(96.dp), shape = CircleShape, color = Color.White, shadowElevation = 8.dp) {
+            Surface(
+                modifier = Modifier.size(96.dp).then(
+                    if (isEditing) Modifier.clickable(onClick = onAvatarClick) else Modifier
+                ),
+                shape = CircleShape,
+                color = Color.White,
+                shadowElevation = 8.dp
+            ) {
                 Box(contentAlignment = Alignment.Center) {
                     if (!avatarUrl.isNullOrBlank()) {
                         AsyncImage(
@@ -652,6 +933,21 @@ private fun ProfileHeader(
                             tint = DeepGreenDark,
                             modifier = Modifier.size(44.dp)
                         )
+                    }
+                    if (isUploadingAvatar) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.4f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                strokeWidth = 3.dp,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -910,7 +1206,6 @@ private fun ProfileAccountActions(isEmployer: Boolean, onLogout: () -> Unit) {
             ProfileOptionItem(icon = Icons.Default.Description, title = "Resume / CV", onClick = { })
         }
         ProfileOptionItem(icon = Icons.Default.Notifications, title = "Notifications", onClick = { })
-        ProfileOptionItem(icon = Icons.Default.Settings, title = "Settings", onClick = { })
 
         Spacer(modifier = Modifier.height(4.dp))
 

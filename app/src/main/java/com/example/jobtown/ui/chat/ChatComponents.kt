@@ -9,6 +9,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import com.example.jobtown.data.ChatMessage
 import com.example.jobtown.data.MessageType
@@ -74,6 +76,7 @@ fun DateHeader(dateString: String) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageBubble(
     message: ChatMessage,
@@ -126,7 +129,7 @@ fun MessageBubble(
                             sourceMessage = replySourceMessage,
                             isMe = isMe,
                             onClick = {
-                                message.replyToId?.let { onReplyPreviewClick(it) }
+                                onReplyPreviewClick(message.replyToId)
                             }
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -418,7 +421,7 @@ private fun displayFileName(url: String): String {
 
 private fun openAttachmentUrl(context: android.content.Context, url: String) {
     try {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        val intent = Intent(Intent.ACTION_VIEW, url.toUri())
         context.startActivity(intent)
     } catch (e: Exception) {
         Log.e("MessageBubble", "Error opening attachment URI", e)
@@ -635,10 +638,10 @@ fun ReplyComposerBanner(
                     color = DeepGreenDark
                 )
                 Text(
-                    text = when {
-                        replyTarget.messageType == MessageType.IMAGE -> "📷 Photo"
-                        replyTarget.messageType == MessageType.FILE -> "📄 ${displayFileName(replyTarget.text)}"
-                        replyTarget.messageType == MessageType.VOICE -> "🎤 Voice message"
+                    text = when (replyTarget.messageType) {
+                        MessageType.IMAGE -> "📷 Photo"
+                        MessageType.FILE -> "📄 ${displayFileName(replyTarget.text)}"
+                        MessageType.VOICE -> "🎤 Voice message"
                         else -> replyTarget.text
                     },
                     fontSize = 12.sp,
