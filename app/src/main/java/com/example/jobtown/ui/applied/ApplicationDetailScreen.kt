@@ -25,7 +25,7 @@ fun ApplicationDetailScreen(
     viewModel: AppliedViewModel,
     onBackClick: () -> Unit,
     onChatClick: (applicantId: String, applicantName: String) -> Unit = { _, _ -> },
-    onScheduleClick: (applicationId: String, applicantId: String, applicantName: String) -> Unit = { _, _, _ -> },
+    onScheduleClick: (applicationId: String, applicantId: String, applicantName: String, jobTitle: String, companyName: String) -> Unit = { _, _, _, _, _ -> },
     onStatusChange: (applicationId: String, newStatus: String) -> Unit = { _, _ -> }
 ) {
     val application = remember(applicationId, viewModel.applicationsList) {
@@ -185,7 +185,15 @@ fun ApplicationDetailScreen(
                     }
 
                     Button(
-                        onClick = { onScheduleClick(application.id, application.userId, application.applicantName) },
+                        onClick = {
+                            onScheduleClick(
+                                application.id,
+                                application.userId,
+                                application.applicantName,
+                                application.jobTitle,
+                                application.companyName
+                            )
+                        },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = SageGreenDark),
                         shape = RoundedCornerShape(12.dp)

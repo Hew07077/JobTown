@@ -1,12 +1,7 @@
 package com.example.jobtown.ui.chat
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.media.MediaRecorder
 import android.net.Uri
-import android.os.Build
 import android.webkit.MimeTypeMap
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -33,11 +28,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.example.jobtown.data.ChatMessage
 import com.example.jobtown.data.MessageType
+import com.example.jobtown.data.toReactionGroups
 import com.example.jobtown.ui.theme.*
 import kotlinx.coroutines.launch
 import java.io.File
@@ -64,17 +59,15 @@ fun ChatDetailScreen(
     var inChatSearchQuery by remember { mutableStateOf("") }
     var hasScrolledToBottomInitially by remember { mutableStateOf(false) }
 
-    // State for photo preview & voice recording
+    // State for photo preview
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-    var isRecordingVoice by remember { mutableStateOf(false) }
-    var mediaRecorder: MediaRecorder? = null
-    var audioFile: File? = null
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
     val messages by chatViewModel.messagesList.collectAsStateWithLifecycle()
+    val reactions by chatViewModel.reactionsList.collectAsStateWithLifecycle()
     val roomPresence by chatViewModel.roomPresence.collectAsStateWithLifecycle()
 
     val isMessagesLoading by chatViewModel.isLoadingMessages.collectAsStateWithLifecycle()
@@ -101,6 +94,13 @@ fun ChatDetailScreen(
         }
     }
 
+    // Pre-group raw reaction rows into per-message emoji summaries (emoji, count, reactedByMe)
+    // so MessageBubble can render them without redoing this work on every recomposition.
+    val reactionsByMessage = remember(reactions, currentUserId) {
+        reactions.groupBy { it.messageId }
+            .mapValues { (_, messageReactions) -> messageReactions.toReactionGroups(currentUserId) }
+    }
+
     val groupedMessages = remember(displayedMessages) { groupMessagesByDate(displayedMessages) }
     val (messageIndexMap, totalLazyItems) = remember(groupedMessages) {
         val map = mutableMapOf<String, Int>()
@@ -113,24 +113,6 @@ fun ChatDetailScreen(
             }
         }
         Pair(map, currentIndex)
-    }
-
-    // Permission launcher for audio recording
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            startVoiceRecording(
-                context = context,
-                onStart = { recorder, file ->
-                    mediaRecorder = recorder
-                    audioFile = file
-                    isRecordingVoice = true
-                }
-            )
-        } else {
-            Toast.makeText(context, "Microphone permission is required to send voice notes.", Toast.LENGTH_SHORT).show()
-        }
     }
 
     LaunchedEffect(messageText) {
@@ -332,45 +314,6 @@ fun ChatDetailScreen(
                         )
                     }
 
-                    if (isRecordingVoice) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color.Red.copy(alpha = 0.1f))
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.Red)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Recording voice note...",
-                                    color = Color.Red,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                            }
-                            IconButton(onClick = {
-                                try {
-                                    mediaRecorder?.stop()
-                                    mediaRecorder?.release()
-                                    mediaRecorder = null
-                                } catch (_: Exception) {}
-                                isRecordingVoice = false
-                                audioFile?.delete()
-                                audioFile = null
-                            }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Cancel Voice Note", tint = Color.Red)
-                            }
-                        }
-                    }
-
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -400,8 +343,7 @@ fun ChatDetailScreen(
                         TextField(
                             value = messageText,
                             onValueChange = { messageText = it },
-                            placeholder = { Text(if (isRecordingVoice) "Recording..." else "Type a message...") },
-                            enabled = !isRecordingVoice,
+                            placeholder = { Text("Type a message...") },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(24.dp),
                             colors = TextFieldDefaults.colors(
@@ -420,51 +362,7 @@ fun ChatDetailScreen(
 
                         IconButton(
                             onClick = {
-                                if (messageText.isBlank()) {
-                                    if (isRecordingVoice) {
-                                        try {
-                                            mediaRecorder?.stop()
-                                            mediaRecorder?.release()
-                                            mediaRecorder = null
-                                        } catch (_: Exception) {}
-                                        isRecordingVoice = false
-
-                                        audioFile?.let { file ->
-                                            if (file.exists() && file.length() > 0) {
-                                                val bytes = file.readBytes()
-                                                chatViewModel.sendAttachment(
-                                                    roomId = roomId,
-                                                    senderId = currentUserId,
-                                                    bytes = bytes,
-                                                    fileName = "voice_note_${System.currentTimeMillis()}.3gp",
-                                                    mimeType = "audio/3gpp",
-                                                    type = MessageType.FILE,
-                                                    replyToId = replyingToMessage?.id
-                                                ) { success ->
-                                                    if (success) {
-                                                        replyingToMessage = null
-                                                        chatViewModel.loadUserChatRooms(currentUserId)
-                                                    }
-                                                    file.delete()
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        val permission = Manifest.permission.RECORD_AUDIO
-                                        if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
-                                            startVoiceRecording(
-                                                context = context,
-                                                onStart = { recorder, file ->
-                                                    mediaRecorder = recorder
-                                                    audioFile = file
-                                                    isRecordingVoice = true
-                                                }
-                                            )
-                                        } else {
-                                            permissionLauncher.launch(permission)
-                                        }
-                                    }
-                                } else {
+                                if (canSend) {
                                     val textToSend = messageText
                                     val currentEdit = editingMessage
                                     val currentReplyId = replyingToMessage?.id
@@ -493,10 +391,11 @@ fun ChatDetailScreen(
                                     }
                                 }
                             },
+                            enabled = canSend,
                             modifier = Modifier
                                 .size(44.dp)
                                 .clip(CircleShape)
-                                .background(if (isRecordingVoice || canSend) SageGreenMain else SageGreenMain.copy(alpha = 0.4f))
+                                .background(if (canSend) SageGreenMain else SageGreenMain.copy(alpha = 0.4f))
                         ) {
                             if (isSendingMessage && editingMessage == null) {
                                 CircularProgressIndicator(
@@ -506,12 +405,8 @@ fun ChatDetailScreen(
                                 )
                             } else {
                                 Icon(
-                                    imageVector = if (messageText.isBlank()) {
-                                        if (isRecordingVoice) Icons.Default.Check else Icons.Default.Mic
-                                    } else {
-                                        Icons.AutoMirrored.Filled.Send
-                                    },
-                                    contentDescription = "Action Button",
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Send Message",
                                     tint = DeepGreenDark
                                 )
                             }
@@ -600,7 +495,8 @@ fun ChatDetailScreen(
                                     },
                                     onReactionSelected = { emoji ->
                                         chatViewModel.toggleReaction(roomId, msg.id, currentUserId, emoji)
-                                    }
+                                    },
+                                    reactions = reactionsByMessage[msg.id] ?: emptyList()
                                 )
                             }
                         }
@@ -650,11 +546,13 @@ fun ChatDetailScreen(
 
     selectedImageUri?.let { uri ->
         PhotoPreviewDialog(
+            context = context,
             imageUri = uri,
             onDismiss = { selectedImageUri = null },
-            onSend = { caption ->
+            onSend = { file, caption ->
                 selectedImageUri = null
-                readBytesAndSendWithCaption(uri, MessageType.IMAGE, caption)
+                val imageUri = Uri.fromFile(file)
+                readBytesAndSendWithCaption(imageUri, MessageType.IMAGE, caption)
             }
         )
     }

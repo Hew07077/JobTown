@@ -7,8 +7,18 @@ import com.example.jobtown.data.SupabaseClient
 import com.example.jobtown.data.User
 import com.example.jobtown.data.UserProfile
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+// One previously-uploaded profile photo, as returned by
+// UserRepository.listAvatarHistory(). `path` is the full Storage path
+// (needed for deleteAvatar), `url` is the ready-to-display public URL.
+data class AvatarHistoryItem(
+    val fileName: String,
+    val path: String,
+    val url: String
+)
 
 object UserRepository {
 
@@ -64,6 +74,67 @@ object UserRepository {
             SupabaseClient.client.from("users").update(user) {
                 filter { eq("id", user.id) }
             }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    // --- AVATAR ---
+    // Uploads image bytes to the "avatars" Storage bucket (must already exist
+    // and be set to Public in the Supabase dashboard) and returns its public
+    // URL, or null on failure. Stored under "logos/{userId}/" (same bucket
+    // company logos use) so both job-seeker avatars and employer logos live
+    // together. Unlike before, this does NOT overwrite the previous photo --
+    // each upload gets its own timestamped filename inside the user's own
+    // subfolder, so old photos stay in Storage and the user can switch back
+    // to one later via listAvatarHistory() / can remove one via deleteAvatar().
+    suspend fun uploadAvatar(userId: String, bytes: ByteArray, fileExtension: String): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val bucket = SupabaseClient.client.storage.from("avatars")
+                val path = "logos/$userId/${System.currentTimeMillis()}.$fileExtension"
+                // NOTE: storage-kt 2.0.0 does NOT have the { upsert = true }
+                // options DSL -- that was added in 3.0.0. In 2.0.0, upsert is
+                // a plain named Boolean parameter on upload() itself. upsert
+                // is false here since every filename is already unique.
+                bucket.upload(path, bytes, upsert = false)
+                bucket.publicUrl(path)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+
+    // Lists every photo previously uploaded for this user (newest first --
+    // filenames are millis-since-epoch, so a plain descending string sort
+    // works), so the profile screen can offer "switch back to an old photo"
+    // instead of only ever letting you upload a brand new one.
+    suspend fun listAvatarHistory(userId: String): List<AvatarHistoryItem> = withContext(Dispatchers.IO) {
+        if (userId.isBlank()) return@withContext emptyList()
+        try {
+            val bucket = SupabaseClient.client.storage.from("avatars")
+            val folder = "logos/$userId"
+            // Positional arg (not named) -- avoids relying on the exact
+            // parameter name, which isn't confirmed for this pinned version.
+            bucket.list(folder)
+                .mapNotNull { item -> item.name?.takeIf { it.isNotBlank() } }
+                .sortedDescending()
+                .map { fileName ->
+                    val fullPath = "$folder/$fileName"
+                    AvatarHistoryItem(fileName = fileName, path = fullPath, url = bucket.publicUrl(fullPath))
+                }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    // Permanently removes one previously-uploaded photo from Storage.
+    suspend fun deleteAvatar(path: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            SupabaseClient.client.storage.from("avatars").delete(path)
             true
         } catch (e: Exception) {
             e.printStackTrace()

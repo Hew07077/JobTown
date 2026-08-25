@@ -28,39 +28,55 @@ import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenMain
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 /**
- * Groups messages chronologically by their calendar date string.
+ * Groups messages chronologically by human-readable calendar dates ("Today", "Yesterday", or "MMMM dd, yyyy").
  */
 fun groupMessagesByDate(messages: List<ChatMessage>): Map<String, List<ChatMessage>> {
-    val formatter = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
+    val fullFormatter = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
+    val todayCal = Calendar.getInstance()
+    val msgCal = Calendar.getInstance()
+
     return messages.groupBy { message ->
-        formatter.format(Date(message.timestamp))
+        msgCal.timeInMillis = message.timestamp
+        val isSameYear = todayCal.get(Calendar.YEAR) == msgCal.get(Calendar.YEAR)
+        val dayDiff = todayCal.get(Calendar.DAY_OF_YEAR) - msgCal.get(Calendar.DAY_OF_YEAR)
+
+        when {
+            isSameYear && dayDiff == 0 -> "Today"
+            isSameYear && dayDiff == 1 -> "Yesterday"
+            else -> fullFormatter.format(Date(message.timestamp))
+        }
     }
 }
 
 /**
- * Initializes and starts the MediaRecorder to capture audio.
+ * Initializes and starts the MediaRecorder to capture audio using AAC formatting for universal playback compatibility.
  */
 fun startVoiceRecording(
     context: Context,
     onStart: (MediaRecorder, File) -> Unit
 ) {
+    var audioFile: File? = null
+    var recorder: MediaRecorder? = null
     try {
         val outputDir = context.cacheDir
-        val audioFile = File.createTempFile("voice_note_", ".3gp", outputDir)
+        audioFile = File.createTempFile("voice_note_", ".m4a", outputDir)
 
-        val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             MediaRecorder(context)
         } else {
             @Suppress("DEPRECATION")
             MediaRecorder()
         }.apply {
             setAudioSource(MediaRecorder.AudioSource.MIC)
-            setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            setAudioEncodingBitRate(128000)
+            setAudioSamplingRate(44100)
             setOutputFile(audioFile.absolutePath)
             prepare()
             start()
@@ -69,22 +85,88 @@ fun startVoiceRecording(
         onStart(recorder, audioFile)
     } catch (e: Exception) {
         Log.e("ChatUtils", "Failed to start voice recording", e)
+        recorder?.release()
+        if (audioFile?.exists() == true) {
+            audioFile.delete()
+        }
     }
 }
 
 /**
- * Dialog preview component for images before they are sent.
+ * Safely stops and releases the MediaRecorder, returning the recorded audio File.
+ */
+fun stopVoiceRecording(
+    recorder: MediaRecorder?,
+    audioFile: File?
+): File? {
+    return try {
+        recorder?.apply {
+            stop()
+            release()
+        }
+        if (audioFile != null && audioFile.exists() && audioFile.length() > 0) {
+            audioFile
+        } else {
+            Log.e("ChatUtils", "Audio file is missing or empty")
+            audioFile?.delete()
+            null
+        }
+    } catch (e: Exception) {
+        Log.e("ChatUtils", "Failed to stop voice recording cleanly", e)
+        try {
+            recorder?.release()
+        } catch (releaseEx: Exception) {
+            Log.e("ChatUtils", "Error releasing recorder", releaseEx)
+        }
+        audioFile?.delete()
+        null
+    }
+}
+
+/**
+ * Copies a content URI (e.g., from Gallery or File Picker) to a local cache file.
+ */
+fun getFileFromContentUri(context: Context, uri: Uri, fileExtension: String = ".jpg"): File? {
+    return try {
+        val contentResolver = context.contentResolver
+        val inputStream = contentResolver.openInputStream(uri) ?: return null
+        val outputDir = context.cacheDir
+        val outputFile = File.createTempFile("upload_", fileExtension, outputDir)
+
+        inputStream.use { input ->
+            outputFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        if (outputFile.exists() && outputFile.length() > 0) {
+            outputFile
+        } else {
+            Log.e("ChatUtils", "Copied file is empty or missing")
+            outputFile.delete()
+            null
+        }
+    } catch (e: Exception) {
+        Log.e("ChatUtils", "Error copying content URI to local file", e)
+        null
+    }
+}
+
+/**
+ * Dialog preview component for images before they are sent, with built-in URI validation and loading protection.
  */
 @Composable
 fun PhotoPreviewDialog(
+    context: Context,
     imageUri: Uri,
     onDismiss: () -> Unit,
-    onSend: (caption: String) -> Unit
+    onSend: (file: File, caption: String) -> Unit
 ) {
     var captionText by remember { mutableStateOf("") }
+    var isSending by remember { mutableStateOf(false) }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSending) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
@@ -101,8 +183,16 @@ fun PhotoPreviewDialog(
                     contentScale = ContentScale.Fit
                 )
 
+                if (isSending) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = SageGreenMain
+                    )
+                }
+
                 IconButton(
                     onClick = onDismiss,
+                    enabled = !isSending,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(16.dp)
@@ -134,6 +224,7 @@ fun PhotoPreviewDialog(
                             placeholder = { Text("Add a caption...", color = Color.White.copy(alpha = 0.6f)) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(24.dp),
+                            enabled = !isSending,
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.DarkGray,
                                 unfocusedContainerColor = Color.DarkGray,
@@ -148,7 +239,17 @@ fun PhotoPreviewDialog(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         IconButton(
-                            onClick = { onSend(captionText) },
+                            onClick = {
+                                isSending = true
+                                val preparedFile = getFileFromContentUri(context, imageUri)
+                                if (preparedFile != null) {
+                                    onSend(preparedFile, captionText)
+                                } else {
+                                    Log.e("PhotoPreview", "Failed to resolve local file from URI")
+                                    isSending = false
+                                }
+                            },
+                            enabled = !isSending,
                             modifier = Modifier
                                 .size(44.dp)
                                 .clip(CircleShape)

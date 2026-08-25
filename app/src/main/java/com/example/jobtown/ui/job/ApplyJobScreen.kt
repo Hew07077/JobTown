@@ -1,9 +1,11 @@
 package com.example.jobtown.ui.job
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -22,10 +24,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -44,11 +46,9 @@ fun ApplyJobScreen(
     onApplySubmit: (JobApplication) -> Unit,
     onViewCompanyDetails: (String) -> Unit = {}
 ) {
-    // Stage state: false = viewing Job Details, true = performing multi-step application
     var isApplying by remember { mutableStateOf(false) }
 
     if (!isApplying) {
-        // Overview Screen before committing to apply
         JobDetailsOverviewScreen(
             job = job,
             onBackToHome = { navController.popBackStack() },
@@ -56,7 +56,6 @@ fun ApplyJobScreen(
             onViewCompanyDetails = onViewCompanyDetails
         )
     } else {
-        // Multi-step application wizard
         ApplicationFlowScreen(
             navController = navController,
             job = job,
@@ -110,7 +109,7 @@ private fun JobDetailsOverviewScreen(
         },
         bottomBar = {
             Surface(
-                shadowElevation = 8.dp,
+                shadowElevation = 16.dp,
                 color = Color.White
             ) {
                 Row(
@@ -123,18 +122,19 @@ private fun JobDetailsOverviewScreen(
                         onClick = onBackToHome,
                         modifier = Modifier
                             .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.4f))
                     ) {
-                        Text("Not Interested", fontSize = 14.sp, color = TextDark)
+                        Text("Not Interested", fontSize = 14.sp, color = TextDark, fontWeight = FontWeight.Medium)
                     }
 
                     Button(
                         onClick = onStartApplication,
                         modifier = Modifier
                             .weight(1.2f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
                     ) {
                         Text("Apply Now", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -158,10 +158,9 @@ private fun JobDetailsOverviewScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Main Overview Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
@@ -173,37 +172,36 @@ private fun JobDetailsOverviewScreen(
                         color = TextDark
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Interactive Company Profile Card
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = SageGreenLight.copy(alpha = 0.5f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(14.dp),
+                        color = SageGreenLight.copy(alpha = 0.4f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.15f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onViewCompanyDetails(job.employerId ?: displayCompany) }
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 Surface(
                                     shape = CircleShape,
                                     color = DeepGreenDark,
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(44.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
                                             imageVector = Icons.Filled.Business,
                                             contentDescription = null,
                                             tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(22.dp)
                                         )
                                     }
                                 }
@@ -215,7 +213,7 @@ private fun JobDetailsOverviewScreen(
                                         color = DeepGreenDark
                                     )
                                     Text(
-                                        text = "Tap to view company profile & jobs",
+                                        text = "View company profile & active roles",
                                         fontSize = 11.sp,
                                         color = SageGreenDark,
                                         fontWeight = FontWeight.Medium
@@ -241,17 +239,17 @@ private fun JobDetailsOverviewScreen(
                         InfoBadge(icon = Icons.Filled.Work, text = displayType)
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = DeepGreenDark.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = DeepGreenDark.copy(alpha = 0.06f),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.AttachMoney,
@@ -270,10 +268,9 @@ private fun JobDetailsOverviewScreen(
                 }
             }
 
-            // Job Description & Requirements Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
@@ -292,7 +289,6 @@ private fun JobDetailsOverviewScreen(
                         lineHeight = 20.sp
                     )
 
-                    // Null-safe handling for Requirements
                     if (!job.requirements.isNullOrEmpty()) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
@@ -301,12 +297,12 @@ private fun JobDetailsOverviewScreen(
                             fontWeight = FontWeight.SemiBold,
                             color = TextDark
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         job.requirements.orEmpty().forEach { req ->
                             Row(
-                                modifier = Modifier.padding(vertical = 2.dp),
+                                modifier = Modifier.padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.Top,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text("•", fontSize = 14.sp, color = DeepGreenDark, fontWeight = FontWeight.Bold)
                                 Text(
@@ -318,7 +314,6 @@ private fun JobDetailsOverviewScreen(
                         }
                     }
 
-                    // Null-safe handling for Skills
                     if (!job.skills.isNullOrEmpty()) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
@@ -327,7 +322,7 @@ private fun JobDetailsOverviewScreen(
                             fontWeight = FontWeight.SemiBold,
                             color = TextDark
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -335,12 +330,12 @@ private fun JobDetailsOverviewScreen(
                         ) {
                             job.skills.orEmpty().forEach { skill ->
                                 Surface(
-                                    shape = RoundedCornerShape(6.dp),
+                                    shape = RoundedCornerShape(8.dp),
                                     color = SageGreenLight
                                 ) {
                                     Text(
                                         text = skill,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                         fontSize = 11.sp,
                                         color = DeepGreenDark,
                                         fontWeight = FontWeight.Medium
@@ -367,39 +362,74 @@ private fun ApplicationFlowScreen(
     onCancelApplication: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
 
-    // Form state
-    var coverLetter by remember { mutableStateOf("") }
-    var resumeUrl by remember { mutableStateOf("") }
-    var additionalNotes by remember { mutableStateOf("") }
-    var phoneNumber by remember { mutableStateOf("") }
+    // Form States
+    var phoneNumber by remember { mutableStateOf(currentUser?.phone ?: "") }
     var linkedInUrl by remember { mutableStateOf("") }
-    var expectedSalary by remember { mutableStateOf("") }
-    var startDate by remember { mutableStateOf("") }
 
-    // UI state
+    // Salary Range States (Slider min/max values in thousands e.g., 2000 to 10000)
+    var salaryMin by remember { mutableStateOf(3000f) }
+    var salaryMax by remember { mutableStateOf(6000f) }
+
+    // Start Date States
+    var selectedStartDateOption by remember { mutableStateOf("Immediate") }
+    var customStartDate by remember { mutableStateOf("") }
+
+    var resumeUri by remember { mutableStateOf("") }
+    var resumeName by remember { mutableStateOf("") }
+
+    var coverLetterUri by remember { mutableStateOf("") }
+    var coverLetterName by remember { mutableStateOf("") }
+
+    var additionalNotes by remember { mutableStateOf("") }
+
     var errorMessage by remember { mutableStateOf("") }
     var successMessage by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
     var showValidationErrors by remember { mutableStateOf(false) }
     var currentStep by remember { mutableStateOf(0) }
 
-    // Animation states
+    // File Pickers
+    val resumePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            try {
+                context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {}
+
+            resumeUri = it.toString()
+            resumeName = getFileNameFromUri(context, it)
+            errorMessage = ""
+        }
+    }
+
+    val coverLetterPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            try {
+                context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {}
+
+            coverLetterUri = it.toString()
+            coverLetterName = getFileNameFromUri(context, it)
+            errorMessage = ""
+        }
+    }
+
     val animatedProgress by animateFloatAsState(
         targetValue = (currentStep + 1) / 3f,
         animationSpec = tween(400, easing = FastOutSlowInEasing),
         label = "progress"
     )
 
-    // Job details
     val displayTitle = job.title.ifBlank { "Untitled Position" }
     val displayCompany = job.companyName
 
-    // Validation
-    val isResumeValid = resumeUrl.isNotBlank() &&
-            (resumeUrl.startsWith("http://") || resumeUrl.startsWith("https://"))
-    val isPhoneValid = phoneNumber.isBlank() || phoneNumber.length >= 10
-    val isSalaryValid = expectedSalary.isBlank() || expectedSalary.toIntOrNull() != null
+    val isPhoneValid = phoneNumber.isNotBlank() && phoneNumber.length >= 7
+    val isResumeValid = resumeUri.isNotBlank()
 
     Scaffold(
         containerColor = BackgroundWhite,
@@ -434,11 +464,7 @@ private fun ApplicationFlowScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (currentStep > 0) {
-                            currentStep--
-                        } else {
-                            onCancelApplication()
-                        }
+                        if (currentStep > 0) currentStep-- else onCancelApplication()
                     }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -466,7 +492,7 @@ private fun ApplicationFlowScreen(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
             )
@@ -507,88 +533,71 @@ private fun ApplicationFlowScreen(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Step Title
                 when (currentStep) {
-                    0 -> StepTitle(
-                        icon = Icons.Filled.Person,
-                        title = "Personal Information",
-                        subtitle = "Tell us about yourself"
-                    )
-                    1 -> StepTitle(
-                        icon = Icons.Filled.Description,
-                        title = "Resume & Cover Letter",
-                        subtitle = "Share your qualifications"
-                    )
-                    2 -> StepTitle(
-                        icon = Icons.Filled.CheckCircle,
-                        title = "Review & Submit",
-                        subtitle = "Double-check your application"
-                    )
+                    0 -> StepTitle(icon = Icons.Filled.Person, title = "Personal & Expectations", subtitle = "Set your contact info, salary range & start date")
+                    1 -> StepTitle(icon = Icons.Filled.Description, title = "Documents Upload", subtitle = "Attach your resume & optional cover letter")
+                    2 -> StepTitle(icon = Icons.Filled.CheckCircle, title = "Review Application", subtitle = "Final check before sending your details")
                 }
 
-                // Step Content
                 when (currentStep) {
                     0 -> Step1PersonalInfo(
                         phoneNumber = phoneNumber,
-                        onPhoneNumberChange = { newValue -> phoneNumber = newValue },
+                        onPhoneNumberChange = { phoneNumber = it },
                         linkedInUrl = linkedInUrl,
-                        onLinkedInUrlChange = { newValue -> linkedInUrl = newValue },
-                        expectedSalary = expectedSalary,
-                        onExpectedSalaryChange = { newValue -> expectedSalary = newValue },
-                        startDate = startDate,
-                        onStartDateChange = { newValue -> startDate = newValue },
-                        showValidationErrors = showValidationErrors,
-                        isPhoneValid = isPhoneValid,
-                        isSalaryValid = isSalaryValid,
-                        errorMessage = errorMessage
-                    )
-                    1 -> Step2Resume(
-                        resumeUrl = resumeUrl,
-                        onResumeUrlChange = {
-                            resumeUrl = it
-                            errorMessage = ""
+                        onLinkedInUrlChange = { linkedInUrl = it },
+                        salaryMin = salaryMin,
+                        salaryMax = salaryMax,
+                        onSalaryRangeChange = { min, max ->
+                            salaryMin = min
+                            salaryMax = max
                         },
-                        coverLetter = coverLetter,
-                        onCoverLetterChange = { newValue -> coverLetter = newValue },
-                        additionalNotes = additionalNotes,
-                        onAdditionalNotesChange = { newValue -> additionalNotes = newValue },
+                        selectedStartDateOption = selectedStartDateOption,
+                        onStartDateOptionChange = { selectedStartDateOption = it },
+                        customStartDate = customStartDate,
+                        onCustomStartDateChange = { customStartDate = it },
                         showValidationErrors = showValidationErrors,
+                        isPhoneValid = isPhoneValid
+                    )
+                    1 -> Step2Documents(
+                        resumeFileName = resumeName,
                         isResumeValid = isResumeValid,
-                        errorMessage = errorMessage
+                        onPickResume = { resumePickerLauncher.launch(arrayOf("application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) },
+                        onRemoveResume = { resumeUri = ""; resumeName = "" },
+                        coverLetterFileName = coverLetterName,
+                        onPickCoverLetter = { coverLetterPickerLauncher.launch(arrayOf("application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) },
+                        onRemoveCoverLetter = { coverLetterUri = ""; coverLetterName = "" },
+                        additionalNotes = additionalNotes,
+                        onAdditionalNotesChange = { additionalNotes = it },
+                        showValidationErrors = showValidationErrors
                     )
                     2 -> Step3Review(
                         jobTitle = displayTitle,
                         companyName = displayCompany,
-                        coverLetter = coverLetter,
-                        resumeUrl = resumeUrl,
+                        resumeFileName = resumeName.ifBlank { "No resume attached" },
+                        coverLetterFileName = coverLetterName.ifBlank { "Not attached (Optional)" },
                         additionalNotes = additionalNotes,
                         phoneNumber = phoneNumber,
                         linkedInUrl = linkedInUrl,
-                        expectedSalary = expectedSalary,
-                        startDate = startDate
+                        salaryRangeText = "RM ${salaryMin.toInt()} - RM ${salaryMax.toInt()}",
+                        startDateText = if (selectedStartDateOption == "Custom Date" && customStartDate.isNotBlank()) customStartDate else selectedStartDateOption
                     )
                 }
 
-                // Error Message
                 if (errorMessage.isNotEmpty() && showValidationErrors) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        ),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Error,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
@@ -601,9 +610,25 @@ private fun ApplicationFlowScreen(
                     }
                 }
 
+                if (successMessage.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = SageGreenLight),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(text = successMessage, color = DeepGreenDark, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Navigation Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -612,18 +637,12 @@ private fun ApplicationFlowScreen(
                         onClick = {
                             if (currentStep > 0) currentStep-- else onCancelApplication()
                         },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
+                        modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(if (currentStep > 0) "Back" else "Overview", fontSize = 15.sp)
+                        Text(if (currentStep > 0) "Back" else "Overview", fontSize = 14.sp)
                     }
 
                     Button(
@@ -632,34 +651,37 @@ private fun ApplicationFlowScreen(
                                 when (currentStep) {
                                     0 -> {
                                         showValidationErrors = true
-                                        if (phoneNumber.isNotEmpty() && !isPhoneValid) {
-                                            errorMessage = "Please enter a valid phone number"
-                                        } else if (expectedSalary.isNotEmpty() && !isSalaryValid) {
-                                            errorMessage = "Please enter a valid number for expected salary"
+                                        if (!isPhoneValid) {
+                                            errorMessage = "Please enter a valid phone number."
                                         } else {
                                             errorMessage = ""
+                                            showValidationErrors = false
                                             currentStep++
                                         }
                                     }
                                     1 -> {
                                         showValidationErrors = true
                                         if (!isResumeValid) {
-                                            errorMessage = "Please provide a valid resume URL (must start with http:// or https://)"
+                                            errorMessage = "Please attach your resume document to proceed."
                                         } else {
                                             errorMessage = ""
+                                            showValidationErrors = false
                                             currentStep++
                                         }
                                     }
                                 }
                             } else {
                                 if (!isResumeValid) {
-                                    errorMessage = "Please provide a valid resume URL"
+                                    errorMessage = "Please attach your resume document."
                                     showValidationErrors = true
                                     return@Button
                                 }
 
                                 isSubmitting = true
                                 try {
+                                    val finalStart = if (selectedStartDateOption == "Custom Date" && customStartDate.isNotBlank()) customStartDate else selectedStartDateOption
+                                    val finalSalaryRange = "RM ${salaryMin.toInt()} - RM ${salaryMax.toInt()}"
+
                                     val application = JobApplication(
                                         id = "app_${System.currentTimeMillis()}",
                                         jobId = job.id,
@@ -669,8 +691,8 @@ private fun ApplicationFlowScreen(
                                         employerId = job.employerId ?: job.postedByUserId ?: "",
                                         applicantName = currentUser?.name ?: "Unknown Applicant",
                                         applicantEmail = currentUser?.email ?: "",
-                                        resumeUrl = resumeUrl.trim(),
-                                        coverLetter = coverLetter.trim(),
+                                        resumeUrl = resumeUri,
+                                        coverLetter = coverLetterUri.ifBlank { additionalNotes.trim() },
                                         status = "Pending"
                                     )
                                     onApplySubmit(application)
@@ -686,9 +708,7 @@ private fun ApplicationFlowScreen(
                                 }
                             }
                         },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
+                        modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (currentStep == 2) DeepGreenDark else SageGreenMain
@@ -704,107 +724,15 @@ private fun ApplicationFlowScreen(
                                 )
                             }
                             currentStep == 2 -> {
-                                Icon(
-                                    imageVector = Icons.Filled.Check,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Submit Application",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
+                                Icon(imageVector = Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Submit", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             }
                             else -> {
-                                Text(
-                                    text = "Continue",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
+                                Text("Next", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DeepGreenDark)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(imageVector = Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(16.dp))
                             }
-                        }
-                    }
-                }
-            }
-
-            // Success Overlay
-            if (successMessage.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .clickable(enabled = false) { },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(80.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        brush = Brush.radialGradient(
-                                            colors = listOf(
-                                                Color(0xFF4CAF50).copy(alpha = 0.2f),
-                                                Color(0xFF4CAF50).copy(alpha = 0.05f)
-                                            )
-                                        )
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.CheckCircle,
-                                    contentDescription = null,
-                                    tint = Color(0xFF4CAF50),
-                                    modifier = Modifier.size(48.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(20.dp))
-                            Text(
-                                text = "Application Submitted!",
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextDark
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = successMessage,
-                                fontSize = 14.sp,
-                                color = TextDark.copy(alpha = 0.6f),
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(20.dp))
-                            LinearProgressIndicator(
-                                modifier = Modifier
-                                    .fillMaxWidth(0.6f)
-                                    .height(3.dp)
-                                    .clip(RoundedCornerShape(2.dp)),
-                                color = DeepGreenDark,
-                                trackColor = SageGreenLight
-                            )
                         }
                     }
                 }
@@ -813,22 +741,54 @@ private fun ApplicationFlowScreen(
     }
 }
 
-// ==================== Step Title Component ====================
+// ==================== Component Helpers ====================
+
+private fun getFileNameFromUri(context: android.content.Context, uri: android.net.Uri): String {
+    var name = ""
+    val cursor = context.contentResolver.query(uri, null, null, null, null)
+    cursor?.use { c ->
+        val nameIndex = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+        if (c.moveToFirst() && nameIndex != -1) {
+            name = c.getString(nameIndex)
+        }
+    }
+    if (name.isBlank()) {
+        name = uri.lastPathSegment ?: "Attached Document.pdf"
+    }
+    return name
+}
 
 @Composable
-private fun StepTitle(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String
-) {
+private fun InfoBadge(icon: ImageVector, text: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = DeepGreenDark,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = text,
+            fontSize = 13.sp,
+            color = TextDark.copy(alpha = 0.8f),
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun StepTitle(icon: ImageVector, title: String, subtitle: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Surface(
-            shape = CircleShape,
-            color = SageGreenLight,
-            modifier = Modifier.size(40.dp)
+            shape = RoundedCornerShape(12.dp),
+            color = SageGreenMain.copy(alpha = 0.35f),
+            modifier = Modifier.size(44.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -848,389 +808,417 @@ private fun StepTitle(
             )
             Text(
                 text = subtitle,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 color = TextDark.copy(alpha = 0.6f)
             )
         }
     }
 }
 
-// ==================== Info Badge ====================
-
-@Composable
-private fun InfoBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = SageGreenDark,
-            modifier = Modifier.size(16.dp)
-        )
-        Text(
-            text = text,
-            fontSize = 13.sp,
-            color = TextDark.copy(alpha = 0.7f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-// ==================== Step 1: Personal Info ====================
-
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Step1PersonalInfo(
     phoneNumber: String,
     onPhoneNumberChange: (String) -> Unit,
     linkedInUrl: String,
     onLinkedInUrlChange: (String) -> Unit,
-    expectedSalary: String,
-    onExpectedSalaryChange: (String) -> Unit,
-    startDate: String,
-    onStartDateChange: (String) -> Unit,
+    salaryMin: Float,
+    salaryMax: Float,
+    onSalaryRangeChange: (Float, Float) -> Unit,
+    selectedStartDateOption: String,
+    onStartDateOptionChange: (String) -> Unit,
+    customStartDate: String,
+    onCustomStartDateChange: (String) -> Unit,
     showValidationErrors: Boolean,
-    isPhoneValid: Boolean,
-    isSalaryValid: Boolean,
-    errorMessage: String
+    isPhoneValid: Boolean
 ) {
+    val startDateOptions = listOf("Immediate", "Within 2 Weeks", "Within 1 Month", "Custom Date")
+
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        OutlinedTextField(
+            value = phoneNumber,
+            onValueChange = onPhoneNumberChange,
+            label = { Text("Phone Number *") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            isError = showValidationErrors && !isPhoneValid,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp)
+        )
+
+        OutlinedTextField(
+            value = linkedInUrl,
+            onValueChange = onLinkedInUrlChange,
+            label = { Text("LinkedIn Profile / Portfolio URL (Optional)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp)
+        )
+
+        // Salary Range Selection Card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.2f))
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Contact Information",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextDark
-                )
-
-                OutlinedTextField(
-                    value = phoneNumber,
-                    onValueChange = { input ->
-                        onPhoneNumberChange(input.filter { c -> c.isDigit() || c == '+' || c == '-' })
-                    },
-                    label = { Text("Phone Number") },
-                    placeholder = { Text("+1 234 567 8900") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.Phone,
-                            contentDescription = null,
-                            tint = SageGreenDark
-                        )
-                    },
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    isError = showValidationErrors && !isPhoneValid && phoneNumber.isNotEmpty(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = SageGreenDark,
-                        unfocusedBorderColor = SageGreenMain.copy(alpha = 0.6f),
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Expected Monthly Salary Range",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = DeepGreenDark
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = SageGreenLight
+                    ) {
+                        Text(
+                            text = "RM ${salaryMin.toInt()} - RM ${salaryMax.toInt()}",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = DeepGreenDark
+                        )
+                    }
+                }
+
+                // Simplified Single-slider proxy or dual visual slider representation
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Minimum Expected (RM ${salaryMin.toInt()})",
+                    fontSize = 11.sp,
+                    color = TextDark.copy(alpha = 0.6f)
+                )
+                Slider(
+                    value = salaryMin,
+                    onValueChange = { newVal ->
+                        if (newVal <= salaryMax) {
+                            onSalaryRangeChange(newVal, salaryMax)
+                        }
+                    },
+                    valueRange = 1500f..15000f,
+                    steps = 26,
+                    colors = SliderDefaults.colors(
+                        thumbColor = DeepGreenDark,
+                        activeTrackColor = DeepGreenDark,
+                        inactiveTrackColor = SageGreenLight
                     )
                 )
 
-                OutlinedTextField(
-                    value = linkedInUrl,
-                    onValueChange = onLinkedInUrlChange,
-                    label = { Text("LinkedIn Profile (Optional)") },
-                    placeholder = { Text("https://linkedin.com/in/your-profile") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.Person,
-                            contentDescription = null,
-                            tint = SageGreenDark
-                        )
+                Text(
+                    text = "Maximum Expected (RM ${salaryMax.toInt()})",
+                    fontSize = 11.sp,
+                    color = TextDark.copy(alpha = 0.6f)
+                )
+                Slider(
+                    value = salaryMax,
+                    onValueChange = { newVal ->
+                        if (newVal >= salaryMin) {
+                            onSalaryRangeChange(salaryMin, newVal)
+                        }
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = SageGreenDark,
-                        unfocusedBorderColor = SageGreenMain.copy(alpha = 0.6f),
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White
+                    valueRange = 1500f..15000f,
+                    steps = 26,
+                    colors = SliderDefaults.colors(
+                        thumbColor = DeepGreenDark,
+                        activeTrackColor = DeepGreenDark,
+                        inactiveTrackColor = SageGreenLight
                     )
                 )
             }
         }
 
+        // Start Date Selection Card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.2f))
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "Preferences",
-                    fontSize = 16.sp,
+                    text = "Available Start Date",
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextDark
+                    color = DeepGreenDark
                 )
 
-                OutlinedTextField(
-                    value = expectedSalary,
-                    onValueChange = { input ->
-                        onExpectedSalaryChange(input.filter { it.isDigit() })
-                    },
-                    label = { Text("Expected Annual Salary (Optional)") },
-                    placeholder = { Text("e.g. 75000") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.AttachMoney,
-                            contentDescription = null,
-                            tint = SageGreenDark
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    isError = showValidationErrors && !isSalaryValid && expectedSalary.isNotEmpty(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = SageGreenDark,
-                        unfocusedBorderColor = SageGreenMain.copy(alpha = 0.6f),
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White
-                    )
-                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    startDateOptions.forEach { option ->
+                        val isSelected = selectedStartDateOption == option
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) DeepGreenDark else SageGreenLight.copy(alpha = 0.4f),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = 1.dp,
+                                color = if (isSelected) DeepGreenDark else SageGreenDark.copy(alpha = 0.2f)
+                            ),
+                            modifier = Modifier.clickable { onStartDateOptionChange(option) }
+                        ) {
+                            Text(
+                                text = option,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color.White else DeepGreenDark
+                            )
+                        }
+                    }
+                }
 
-                OutlinedTextField(
-                    value = startDate,
-                    onValueChange = onStartDateChange,
-                    label = { Text("Earliest Start Date (Optional)") },
-                    placeholder = { Text("e.g. Immediate, 2 weeks notice, MM/YYYY") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.DateRange,
-                            contentDescription = null,
-                            tint = SageGreenDark
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = SageGreenDark,
-                        unfocusedBorderColor = SageGreenMain.copy(alpha = 0.6f),
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White
+                if (selectedStartDateOption == "Custom Date") {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = customStartDate,
+                        onValueChange = onCustomStartDateChange,
+                        label = { Text("Specify Date (e.g., 15 Sept 2026)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
                     )
-                )
+                }
             }
         }
     }
 }
-
-// ==================== Step 2: Resume & Cover Letter ====================
 
 @Composable
-private fun Step2Resume(
-    resumeUrl: String,
-    onResumeUrlChange: (String) -> Unit,
-    coverLetter: String,
-    onCoverLetterChange: (String) -> Unit,
+private fun Step2Documents(
+    resumeFileName: String,
+    isResumeValid: Boolean,
+    onPickResume: () -> Unit,
+    onRemoveResume: () -> Unit,
+    coverLetterFileName: String,
+    onPickCoverLetter: () -> Unit,
+    onRemoveCoverLetter: () -> Unit,
     additionalNotes: String,
     onAdditionalNotesChange: (String) -> Unit,
-    showValidationErrors: Boolean,
-    isResumeValid: Boolean,
-    errorMessage: String
+    showValidationErrors: Boolean
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Resume Link *",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextDark
-                )
+        // Resume Section (Required)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = "Resume Document *",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (showValidationErrors && !isResumeValid) MaterialTheme.colorScheme.error else DeepGreenDark
+            )
 
-                OutlinedTextField(
-                    value = resumeUrl,
-                    onValueChange = onResumeUrlChange,
-                    label = { Text("Resume URL") },
-                    placeholder = { Text("https://drive.google.com/your-resume") },
-                    leadingIcon = {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = if (showValidationErrors && !isResumeValid) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f) else SageGreenLight.copy(alpha = 0.3f),
+                border = androidx.compose.foundation.BorderStroke(
+                    width = 1.dp,
+                    color = if (showValidationErrors && !isResumeValid) MaterialTheme.colorScheme.error else SageGreenDark.copy(alpha = 0.3f)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPickResume() }
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = DeepGreenDark,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isResumeValid) Icons.Filled.Description else Icons.Filled.UploadFile,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isResumeValid) resumeFileName else "Upload Resume (PDF / Doc)",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextDark,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = if (isResumeValid) "Tap to change document" else "Required for application submission",
+                                fontSize = 11.sp,
+                                color = SageGreenDark
+                            )
+                        }
+                    }
+
+                    if (isResumeValid) {
+                        IconButton(onClick = onRemoveResume) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Remove file",
+                                tint = TextDark.copy(alpha = 0.6f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    } else {
                         Icon(
-                            imageVector = Icons.Filled.Link,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = null,
-                            tint = SageGreenDark
+                            tint = DeepGreenDark,
+                            modifier = Modifier.size(16.dp)
                         )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    isError = showValidationErrors && !isResumeValid,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = SageGreenDark,
-                        unfocusedBorderColor = SageGreenMain.copy(alpha = 0.6f),
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White
-                    )
-                )
-
-                Text(
-                    text = "Provide a link to your resume hosted on Google Drive, Dropbox, or a portfolio site.",
-                    fontSize = 12.sp,
-                    color = TextDark.copy(alpha = 0.5f)
-                )
+                    }
+                }
             }
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+        // Cover Letter Section (Optional Attachment)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = "Cover Letter Attachment (Optional)",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = DeepGreenDark
+            )
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = SageGreenLight.copy(alpha = 0.2f),
+                border = androidx.compose.foundation.BorderStroke(width = 1.dp, color = SageGreenDark.copy(alpha = 0.2f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPickCoverLetter() }
             ) {
-                Text(
-                    text = "Cover Letter & Additional Info",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextDark
-                )
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = SageGreenDark,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (coverLetterFileName.isNotBlank()) Icons.Filled.NoteAlt else Icons.Filled.PostAdd,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (coverLetterFileName.isNotBlank()) coverLetterFileName else "Upload Cover Letter Document",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextDark,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = if (coverLetterFileName.isNotBlank()) "Tap to change cover letter file" else "PDF or Doc format (Optional)",
+                                fontSize = 11.sp,
+                                color = SageGreenDark
+                            )
+                        }
+                    }
 
-                OutlinedTextField(
-                    value = coverLetter,
-                    onValueChange = onCoverLetterChange,
-                    label = { Text("Cover Letter (Optional)") },
-                    placeholder = { Text("Explain why you're a great fit for this position...") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 120.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    maxLines = 6,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = SageGreenDark,
-                        unfocusedBorderColor = SageGreenMain.copy(alpha = 0.6f),
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White
-                    )
-                )
-
-                OutlinedTextField(
-                    value = additionalNotes,
-                    onValueChange = onAdditionalNotesChange,
-                    label = { Text("Additional Notes (Optional)") },
-                    placeholder = { Text("Any extra details or portfolio links...") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 80.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    maxLines = 4,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = SageGreenDark,
-                        unfocusedBorderColor = SageGreenMain.copy(alpha = 0.6f),
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White
-                    )
-                )
+                    if (coverLetterFileName.isNotBlank()) {
+                        IconButton(onClick = onRemoveCoverLetter) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Remove file",
+                                tint = TextDark.copy(alpha = 0.6f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = DeepGreenDark,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
             }
         }
+
+        OutlinedTextField(
+            value = additionalNotes,
+            onValueChange = onAdditionalNotesChange,
+            label = { Text("Additional Notes / Remarks (Optional)") },
+            minLines = 3,
+            maxLines = 5,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp)
+        )
     }
 }
-
-// ==================== Step 3: Review ====================
 
 @Composable
 private fun Step3Review(
     jobTitle: String,
     companyName: String,
-    coverLetter: String,
-    resumeUrl: String,
+    resumeFileName: String,
+    coverLetterFileName: String,
     additionalNotes: String,
     phoneNumber: String,
     linkedInUrl: String,
-    expectedSalary: String,
-    startDate: String
+    salaryRangeText: String,
+    startDateText: String
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "Application Summary",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = DeepGreenDark
-            )
-
-            HorizontalDivider(color = SageGreenLight)
-
-            ReviewItem(label = "Applying For", value = "$jobTitle at $companyName")
-            ReviewItem(label = "Resume Link", value = resumeUrl.ifBlank { "Not provided" })
-
-            if (phoneNumber.isNotBlank()) {
-                ReviewItem(label = "Phone Number", value = phoneNumber)
-            }
-            if (linkedInUrl.isNotBlank()) {
-                ReviewItem(label = "LinkedIn Profile", value = linkedInUrl)
-            }
-            if (expectedSalary.isNotBlank()) {
-                ReviewItem(label = "Expected Salary", value = "$$expectedSalary")
-            }
-            if (startDate.isNotBlank()) {
-                ReviewItem(label = "Earliest Start Date", value = startDate)
-            }
-            if (coverLetter.isNotBlank()) {
-                ReviewItem(label = "Cover Letter", value = coverLetter)
-            }
+            Text(text = "Position: $jobTitle", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = DeepGreenDark)
+            Text(text = "Company: $companyName", fontSize = 13.sp, color = TextDark.copy(alpha = 0.8f))
+            HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 1.dp)
+            ReviewRow(label = "Phone Number", value = phoneNumber)
+            ReviewRow(label = "LinkedIn / Portfolio", value = linkedInUrl.ifBlank { "Not provided" })
+            ReviewRow(label = "Expected Salary Range", value = salaryRangeText)
+            ReviewRow(label = "Available Start Date", value = startDateText)
+            ReviewRow(label = "Attached Resume", value = resumeFileName)
+            ReviewRow(label = "Cover Letter Document", value = coverLetterFileName)
             if (additionalNotes.isNotBlank()) {
-                ReviewItem(label = "Additional Notes", value = additionalNotes)
+                ReviewRow(label = "Additional Notes", value = additionalNotes)
             }
         }
     }
 }
 
 @Composable
-private fun ReviewItem(label: String, value: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = SageGreenDark
-        )
-        Text(
-            text = value,
-            fontSize = 14.sp,
-            color = TextDark,
-            maxLines = 4,
-            overflow = TextOverflow.Ellipsis
-        )
+private fun ReviewRow(label: String, value: String) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SageGreenDark)
+        Text(text = value, fontSize = 13.sp, color = TextDark, maxLines = 3)
     }
 }

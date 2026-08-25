@@ -50,7 +50,6 @@ fun MyAppliedScreen(
     onProfileClick: () -> Unit = {},
     onChatWithCompany: (JobApplication) -> Unit
 ) {
-    // Automatically start tracking live application updates when the screen is active and user is available
     LaunchedEffect(user?.id) {
         user?.id?.let { userId ->
             if (!isTrackingLive) {
@@ -252,7 +251,6 @@ fun ApplicationCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Action Button: Direct Chat Trigger
             Button(
                 onClick = onChatWithCompany,
                 enabled = !isChatLoading,

@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,9 +37,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import com.example.jobtown.data.ChatMessage
 import com.example.jobtown.data.MessageType
+import com.example.jobtown.data.ReactionGroup
 import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.SageGreenMain
@@ -48,6 +49,9 @@ import com.example.jobtown.ui.theme.TextDark
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+// Cached outside Composables to prevent unnecessary object allocations on recomposition
+private val chatTimeFormatter by lazy { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
 
 @Composable
 fun DateHeader(dateString: String) {
@@ -82,7 +86,8 @@ fun MessageBubble(
     onEdit: (ChatMessage) -> Unit,
     onDelete: (ChatMessage) -> Unit,
     onReactionSelected: (String) -> Unit = {},
-    onReplyPreviewClick: (messageId: String) -> Unit = {}
+    onReplyPreviewClick: (messageId: String) -> Unit = {},
+    reactions: List<ReactionGroup> = emptyList()
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showFullScreenImage by remember { mutableStateOf(false) }
@@ -124,7 +129,7 @@ fun MessageBubble(
                             sourceMessage = replySourceMessage,
                             isMe = isMe,
                             onClick = {
-                                message.replyToId?.let { onReplyPreviewClick(it) }
+                                onReplyPreviewClick(message.replyToId)
                             }
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -152,52 +157,20 @@ fun MessageBubble(
                             )
                         }
                         message.messageType == MessageType.FILE -> {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .widthIn(max = 240.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        try {
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(message.text))
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            Log.e("MessageBubble", "Error opening file URI", e)
-                                        }
-                                    }
-                                    .background(Color.Black.copy(alpha = 0.04f))
-                                    .padding(8.dp)
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = DeepGreenDark.copy(alpha = 0.1f),
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
-                                            contentDescription = "Document",
-                                            tint = DeepGreenDark,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = displayFileName(message.text),
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = TextDark,
-                                        maxLines = 1
-                                    )
-                                    Text(
-                                        text = "Tap to view document",
-                                        fontSize = 10.sp,
-                                        color = TextDark.copy(alpha = 0.5f)
-                                    )
-                                }
-                            }
+                            AttachmentRow(
+                                icon = Icons.AutoMirrored.Filled.InsertDriveFile,
+                                title = displayFileName(message.text),
+                                subtitle = "Tap to view document",
+                                onClick = { openAttachmentUrl(context, message.text) }
+                            )
+                        }
+                        message.messageType == MessageType.VOICE -> {
+                            AttachmentRow(
+                                icon = Icons.Default.Mic,
+                                title = "Voice message",
+                                subtitle = "Tap to play",
+                                onClick = { openAttachmentUrl(context, message.text) }
+                            )
                         }
                         else -> {
                             Text(
@@ -225,7 +198,7 @@ fun MessageBubble(
                         }
 
                         Text(
-                            text = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(message.timestamp)),
+                            text = chatTimeFormatter.format(Date(message.timestamp)),
                             fontSize = 10.sp,
                             color = TextDark.copy(alpha = 0.5f)
                         )
@@ -306,9 +279,13 @@ fun MessageBubble(
                 }
             }
         }
+
+        ReactionsRow(
+            reactions = reactions,
+            onReactionClick = { emoji -> onReactionSelected(emoji) }
+        )
     }
 
-    // Quick Reaction Emoji Picker Dialog
     if (showReactionPicker) {
         Dialog(onDismissRequest = { showReactionPicker = false }) {
             Surface(
@@ -339,7 +316,6 @@ fun MessageBubble(
         }
     }
 
-    // Full screen interactive photo modal viewer
     if (showFullScreenImage) {
         ImageViewerDialog(
             imageUrl = message.text,
@@ -426,6 +402,7 @@ private fun ReplyPreviewChip(
                     sourceMessage.isDeleted -> "This message was deleted"
                     sourceMessage.messageType == MessageType.IMAGE -> "📷 Photo"
                     sourceMessage.messageType == MessageType.FILE -> "📄 ${displayFileName(sourceMessage.text)}"
+                    sourceMessage.messageType == MessageType.VOICE -> "🎤 Voice message"
                     else -> sourceMessage.text
                 },
                 fontSize = 11.sp,
@@ -440,6 +417,103 @@ private fun displayFileName(url: String): String {
     val rawName = url.substringAfterLast("/")
     val uuidPrefixPattern = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}_")
     return rawName.replaceFirst(uuidPrefixPattern, "").ifBlank { rawName }
+}
+
+private fun openAttachmentUrl(context: android.content.Context, url: String) {
+    try {
+        val intent = Intent(Intent.ACTION_VIEW, url.toUri())
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Log.e("MessageBubble", "Error opening attachment URI", e)
+    }
+}
+
+@Composable
+private fun AttachmentRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .widthIn(max = 240.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .background(Color.Black.copy(alpha = 0.04f))
+            .padding(8.dp)
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = DeepGreenDark.copy(alpha = 0.1f),
+            modifier = Modifier.size(36.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = DeepGreenDark,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextDark,
+                maxLines = 1
+            )
+            Text(
+                text = subtitle,
+                fontSize = 10.sp,
+                color = TextDark.copy(alpha = 0.5f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReactionsRow(
+    reactions: List<ReactionGroup>,
+    onReactionClick: (String) -> Unit
+) {
+    if (reactions.isEmpty()) return
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.padding(top = 3.dp)
+    ) {
+        reactions.forEach { group ->
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (group.reactedByMe) SageGreenMain.copy(alpha = 0.4f) else Color.White,
+                shadowElevation = 0.5.dp,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onReactionClick(group.emoji) }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(text = group.emoji, fontSize = 12.sp)
+                    if (group.count > 1) {
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = group.count.toString(),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextDark.copy(alpha = 0.75f)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -564,9 +638,10 @@ fun ReplyComposerBanner(
                     color = DeepGreenDark
                 )
                 Text(
-                    text = when {
-                        replyTarget.messageType == MessageType.IMAGE -> "📷 Photo"
-                        replyTarget.messageType == MessageType.FILE -> "📄 ${displayFileName(replyTarget.text)}"
+                    text = when (replyTarget.messageType) {
+                        MessageType.IMAGE -> "📷 Photo"
+                        MessageType.FILE -> "📄 ${displayFileName(replyTarget.text)}"
+                        MessageType.VOICE -> "🎤 Voice message"
                         else -> replyTarget.text
                     },
                     fontSize = 12.sp,

@@ -200,7 +200,11 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                     _hasMoreMessages.value = false
                 } else {
                     _hasMoreMessages.value = olderPage.size >= MessageRepository.DEFAULT_PAGE_SIZE
-                    _messagesList.update { current -> olderPage + current }
+                    _messagesList.update { current ->
+                        val existingIds = current.map { it.id }.toSet()
+                        val newUnique = olderPage.filterNot { existingIds.contains(it.id) }
+                        newUnique + current
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading older messages", e)
@@ -344,7 +348,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
 
                 if (success) {
                     loadUserChatRooms(senderId)
-                    loadMessages(roomId, senderId)
                 } else {
                     _eventFlow.emit(ChatUiEvent.ShowToast("Failed to send attachment."))
                 }
@@ -366,17 +369,24 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         if (roomId.isBlank() || messageId.isBlank() || trimmed.isBlank()) return
 
         viewModelScope.launch {
+            val previousList = _messagesList.value
+
+            // Optimistic update
             _messagesList.update { current ->
-                current.map { if (it.id == messageId) it.copy(text = trimmed, isEdited = true) else it }
+                current.map { msg ->
+                    if (msg.id == messageId) {
+                        msg.copy(text = trimmed, isEdited = true)
+                    } else msg
+                }
             }
 
-            try {
-                messageRepository.editMessage(roomId, messageId, trimmed)
+            val success = messageRepository.editMessage(roomId, messageId, trimmed)
+            if (success) {
                 if (currentUserId.isNotBlank()) loadUserChatRooms(currentUserId)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error editing message", e)
-                loadMessages(roomId, currentUserId)
-                _eventFlow.emit(ChatUiEvent.ShowToast("Error updating message."))
+            } else {
+                // Revert on failure
+                _messagesList.value = previousList
+                _eventFlow.emit(ChatUiEvent.ShowToast("Failed to update message."))
             }
         }
     }
@@ -385,29 +395,65 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         if (roomId.isBlank() || messageId.isBlank()) return
 
         viewModelScope.launch {
+            val previousList = _messagesList.value
+
+            // Optimistic update
             _messagesList.update { current ->
-                current.map {
-                    if (it.id == messageId) {
-                        it.copy(text = "This message was deleted", isDeleted = true, isEdited = false)
-                    } else it
+                current.map { msg ->
+                    if (msg.id == messageId) {
+                        msg.copy(text = "This message was deleted", isDeleted = true, isEdited = false)
+                    } else msg
                 }
             }
 
-            try {
-                messageRepository.deleteMessage(roomId, messageId)
+            val success = messageRepository.deleteMessage(roomId, messageId)
+            if (success) {
                 if (currentUserId.isNotBlank()) loadUserChatRooms(currentUserId)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error deleting message", e)
-                loadMessages(roomId, currentUserId)
-                _eventFlow.emit(ChatUiEvent.ShowToast("Error deleting message."))
+            } else {
+                // Revert on failure
+                _messagesList.value = previousList
+                _eventFlow.emit(ChatUiEvent.ShowToast("Failed to delete message."))
             }
         }
     }
 
     fun toggleReaction(roomId: String, messageId: String, userId: String, emoji: String) {
-        if (roomId.isBlank() || messageId.isBlank() || userId.isBlank()) return
+        if (roomId.isBlank() || messageId.isBlank() || userId.isBlank() || emoji.isBlank()) return
+
         viewModelScope.launch {
-            messageRepository.toggleReaction(roomId, messageId, userId, emoji)
+            val previousReactions = _reactionsList.value
+            val existing = previousReactions.firstOrNull {
+                it.messageId == messageId && it.userId == userId && it.emoji == emoji
+            }
+
+            // Optimistic update so the tap feels instant instead of waiting on the
+            // realtime round-trip (same pattern used for edit/delete).
+            _reactionsList.update { current ->
+                if (existing != null) {
+                    current.filterNot { it.id == existing.id }
+                } else {
+                    current + MessageReaction(
+                        id = "temp_reaction_${System.currentTimeMillis()}",
+                        messageId = messageId,
+                        chatRoomId = roomId,
+                        userId = userId,
+                        emoji = emoji,
+                        createdAt = System.currentTimeMillis()
+                    )
+                }
+            }
+
+            try {
+                val success = messageRepository.toggleReaction(roomId, messageId, userId, emoji)
+                if (!success) {
+                    _reactionsList.value = previousReactions
+                    _eventFlow.emit(ChatUiEvent.ShowToast("Failed to update reaction."))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error toggling reaction", e)
+                _reactionsList.value = previousReactions
+                _eventFlow.emit(ChatUiEvent.ShowToast("Failed to update reaction."))
+            }
         }
     }
 
@@ -415,25 +461,25 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
 
     private fun mergeIncomingMessage(incoming: ChatMessage) {
         _messagesList.update { current ->
+            // 1. Check if the exact message ID exists (covers existing message update/delete realtime broadcast)
             val index = current.indexOfFirst { it.id == incoming.id }
             if (index != -1) {
-                val existing = current[index]
-                // Safety check: preserve local edit/delete states if incoming stream lags behind
-                val updated = incoming.copy(
-                    isEdited = incoming.isEdited || existing.isEdited,
-                    isDeleted = incoming.isDeleted || existing.isDeleted
-                )
-                current.toMutableList().apply { set(index, updated) }
+                return@update current.toMutableList().apply {
+                    set(index, incoming)
+                }
+            }
+
+            // 2. Clear out temp messages if real message arrived
+            val filtered = current.filterNot {
+                it.id.startsWith("temp_") && it.senderId == incoming.senderId && it.text == incoming.text
+            }
+
+            // 3. Insert or append based on timestamp order
+            val insertIndex = filtered.indexOfFirst { it.timestamp > incoming.timestamp }
+            if (insertIndex == -1) {
+                filtered + incoming
             } else {
-                val filtered = current.filterNot {
-                    it.id.startsWith("temp_") && it.senderId == incoming.senderId && it.text == incoming.text
-                }
-                val insertIndex = filtered.indexOfFirst { it.timestamp > incoming.timestamp }
-                if (insertIndex == -1) {
-                    filtered + incoming
-                } else {
-                    filtered.toMutableList().apply { add(insertIndex, incoming) }
-                }
+                filtered.toMutableList().apply { add(insertIndex, incoming) }
             }
         }
     }
