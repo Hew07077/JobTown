@@ -34,6 +34,7 @@ import com.example.jobtown.data.Job
 import com.example.jobtown.data.User
 import com.example.jobtown.data.UserRole
 import com.example.jobtown.ui.components.JobCard
+import com.example.jobtown.utils.JobMatchResult
 import com.example.jobtown.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -50,6 +51,7 @@ fun HomeScreen(
     onProfileClick: () -> Unit,
     onRefresh: () -> Unit = {},
     matchScores: Map<String, Int> = emptyMap(),
+    matchResults: Map<String, JobMatchResult> = emptyMap(),
     sortMode: JobSortMode = JobSortMode.NEWEST,
     onSortModeChange: (JobSortMode) -> Unit = {},
     hasMatchProfile: Boolean = false,
@@ -515,7 +517,8 @@ fun HomeScreen(
                                     job = job,
                                     onClick = {
                                         onJobClick(job)
-                                    }
+                                    },
+                                    matchResult = if (!isEmployer) matchResults[job.id] else null
                                 )
                             }
                         }

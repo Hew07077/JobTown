@@ -13,6 +13,7 @@ import com.example.jobtown.data.repository.JobListingEvent
 import com.example.jobtown.data.repository.JobRepository
 import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.utils.JobMatchUtils
+import com.example.jobtown.utils.JobMatchResult
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -44,6 +45,9 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
         private set
 
     var matchScores by mutableStateOf<Map<String, Int>>(emptyMap())
+        private set
+
+    var matchResults by mutableStateOf<Map<String, JobMatchResult>>(emptyMap())
         private set
 
     var sortMode by mutableStateOf(JobSortMode.BEST_MATCH)
@@ -105,7 +109,9 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
             try {
                 val profile = UserRepository.fetchUserProfile(userId)
                 seekerProfile = profile
-                matchScores = jobs.associate { it.id to JobMatchUtils.score(it, profile).score }
+                val results = jobs.associate { it.id to JobMatchUtils.score(it, profile) }
+                matchResults = results
+                matchScores = results.mapValues { it.value.score }
             } catch (e: Exception) {
                 Log.e("HomeViewModel", "Error computing job match scores", e)
             }
@@ -151,7 +157,9 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
         if (alreadyKnown) {
             jobsList = jobsList.map { if (it.id == job.id) job else it }
             pendingNewJobs = pendingNewJobs.map { if (it.id == job.id) job else it }
-            matchScores = matchScores + (job.id to JobMatchUtils.score(job, seekerProfile).score)
+            val result = JobMatchUtils.score(job, seekerProfile)
+            matchResults = matchResults + (job.id to result)
+            matchScores = matchScores + (job.id to result.score)
         } else {
             pendingNewJobs = listOf(job) + pendingNewJobs
             newListingsAvailable = pendingNewJobs.size
@@ -198,8 +206,9 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
                     myPostedJobs = listOf(inserted) + myPostedJobs.filter { it.id != inserted.id }
 
                     seekerProfile?.let { profile ->
-                        val score = JobMatchUtils.score(inserted, profile).score
-                        matchScores = matchScores + (inserted.id to score)
+                        val result = JobMatchUtils.score(inserted, profile)
+                        matchResults = matchResults + (inserted.id to result)
+                        matchScores = matchScores + (inserted.id to result.score)
                     }
 
                     onResult(true, null)
@@ -260,8 +269,9 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
                     }
 
                     seekerProfile?.let { profile ->
-                        val score = JobMatchUtils.score(updated, profile).score
-                        matchScores = matchScores + (updated.id to score)
+                        val result = JobMatchUtils.score(updated, profile)
+                        matchResults = matchResults + (updated.id to result)
+                        matchScores = matchScores + (updated.id to result.score)
                     }
 
                     onResult?.invoke(true, null)

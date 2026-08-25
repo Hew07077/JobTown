@@ -7,13 +7,13 @@ import com.example.jobtown.data.ChatRoom
 import com.example.jobtown.data.MessageReaction
 import com.example.jobtown.data.MessageType
 import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.realtime.PostgresAction
+import io.github.jan.supabase.realtime.RealtimeChannel
 import io.github.jan.supabase.realtime.broadcast
 import io.github.jan.supabase.realtime.broadcastFlow
 import io.github.jan.supabase.realtime.channel
-import io.github.jan.supabase.realtime.decodeRecord
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.presenceChangeFlow
 import io.github.jan.supabase.realtime.realtime
@@ -26,61 +26,59 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
-import java.util.UUID
+
+private const val CHAT_ATTACHMENTS_BUCKET = "chat_attachments"
 
 @Serializable
 private data class NewChatRoomPayload(
-    val seeker_id: String,
-    val seeker_name: String,
-    val employer_id: String,
-    val company_name: String,
-    val job_title: String,
-    val last_message: String,
-    val last_message_time: Long
+    @SerialName("application_id") val application_id: String = "",
+    @SerialName("seeker_id") val seeker_id: String,
+    @SerialName("seeker_name") val seeker_name: String,
+    @SerialName("employer_id") val employer_id: String,
+    @SerialName("company_name") val company_name: String,
+    @SerialName("job_title") val job_title: String,
+    @SerialName("last_message") val last_message: String,
+    @SerialName("last_message_time") val last_message_time: Long,
+    @SerialName("unread_count") val unread_count: Int = 0
 )
 
 @Serializable
 private data class NewChatMessagePayload(
-    val chat_room_id: String,
-    val sender_id: String,
-    val text: String,
-    val timestamp: Long,
-    val is_read: Boolean,
-    val message_type: String,
-    val action_type: String,
-    val is_edited: Boolean = false,
-    val is_deleted: Boolean = false,
-    val reply_to_id: String? = null
-)
-
-@Serializable
-private data class ChatRoomLastMessageUpdate(
-    val last_message: String,
-    val last_message_time: Long? = null
+    @SerialName("chat_room_id") val chat_room_id: String,
+    @SerialName("sender_id") val sender_id: String,
+    @SerialName("text") val text: String,
+    @SerialName("timestamp") val timestamp: Long,
+    @SerialName("is_read") val is_read: Boolean = false,
+    @SerialName("message_type") val message_type: String = "TEXT",
+    @SerialName("action_type") val action_type: String = "NONE",
+    @SerialName("is_edited") val is_edited: Boolean = false,
+    @SerialName("is_deleted") val is_deleted: Boolean = false,
+    @SerialName("reply_to_id") val reply_to_id: String? = null
 )
 
 @Serializable
 private data class ReadStatusUpdate(
-    val is_read: Boolean
+    @SerialName("is_read") val is_read: Boolean
 )
 
 @Serializable
 private data class NewReactionPayload(
-    val message_id: String,
-    val chat_room_id: String,
-    val user_id: String,
-    val emoji: String,
-    val created_at: Long
+    @SerialName("message_id") val message_id: String,
+    @SerialName("chat_room_id") val chat_room_id: String,
+    @SerialName("user_id") val user_id: String,
+    @SerialName("emoji") val emoji: String,
+    @SerialName("created_at") val created_at: Long
 )
 
 @Serializable
 private data class TypingBroadcast(
-    val user_id: String,
-    val is_typing: Boolean
+    @SerialName("user_id") val user_id: String,
+    @SerialName("is_typing") val is_typing: Boolean
 )
 
 data class RoomPresence(
@@ -91,8 +89,13 @@ data class RoomPresence(
 class MessageRepository(private val supabase: SupabaseClient) {
 
     private val json = Json { ignoreUnknownKeys = true }
+    private val activePresenceChannels = mutableMapOf<String, RealtimeChannel>()
 
-    // --- ATTACHMENT UPLOAD ---
+    companion object {
+        const val DEFAULT_PAGE_SIZE = 30
+        private const val TAG = "MessageRepository"
+    }
+
     suspend fun uploadChatAttachment(
         roomId: String,
         fileName: String,
@@ -104,42 +107,21 @@ class MessageRepository(private val supabase: SupabaseClient) {
             val ext = mimeType.substringAfter("/", "").substringBefore(";")
             if (ext.isNotBlank()) safeName = "$safeName.$ext"
         }
-        val path = "$roomId/${UUID.randomUUID()}_$safeName"
+        val path = "$roomId/${java.util.UUID.randomUUID()}_$safeName"
         val bucket = supabase.storage[CHAT_ATTACHMENTS_BUCKET]
 
         try {
-            bucket.upload(
-                path = path,
-                data = bytes,
-                upsert = true
-            )
+            bucket.upload(path = path, data = bytes, upsert = true)
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error uploading chat attachment: ${e.message}", e)
-            throw Exception(describeUploadError(e), e)
+            Log.e(TAG, "Error uploading attachment: ${e.message}", e)
+            throw Exception("Upload failed: ${e.message}", e)
         }
 
         bucket.publicUrl(path)
     }
 
-    /** Translates common Supabase Storage failures into an actionable message. */
-    private fun describeUploadError(e: Exception): String {
-        val msg = e.message ?: return "Upload failed. Check the \"$CHAT_ATTACHMENTS_BUCKET\" bucket exists and its policies allow uploads."
-        return when {
-            msg.contains("Bucket not found", ignoreCase = true) ->
-                "The \"$CHAT_ATTACHMENTS_BUCKET\" storage bucket doesn't exist in this Supabase project."
-            msg.contains("row-level security", ignoreCase = true) || msg.contains("policy", ignoreCase = true) ||
-                    msg.contains("permission", ignoreCase = true) || msg.contains("403", ignoreCase = true) ->
-                "Upload blocked by a Storage policy — add an INSERT policy on \"$CHAT_ATTACHMENTS_BUCKET\" for authenticated users."
-            msg.contains("mime", ignoreCase = true) ->
-                "This file type isn't in the bucket's allowed MIME type list."
-            msg.contains("exceed", ignoreCase = true) || msg.contains("size", ignoreCase = true) ->
-                "The file exceeds the bucket's configured file size limit."
-            else -> "Upload failed: $msg"
-        }
-    }
-
-    // --- ROOM MANAGEMENT ---
     suspend fun getOrCreateChatRoom(
+        applicationId: String = "",
         seekerId: String,
         seekerName: String,
         employerId: String,
@@ -149,12 +131,15 @@ class MessageRepository(private val supabase: SupabaseClient) {
         if (seekerId.isBlank()) return@withContext ""
 
         try {
-            val existingRoom = supabase.postgrest["chat_rooms"]
+            val existingRoom = supabase.from("chat_rooms")
                 .select {
                     filter {
                         eq("seeker_id", seekerId)
                         eq("company_name", companyName)
                         eq("job_title", jobTitle)
+                        if (applicationId.isNotBlank()) {
+                            eq("application_id", applicationId)
+                        }
                     }
                 }
                 .decodeList<ChatRoom>()
@@ -164,27 +149,41 @@ class MessageRepository(private val supabase: SupabaseClient) {
                 return@withContext existingRoom.id
             }
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error looking up existing chat room", e)
+            Log.e(TAG, "Error checking existing room: ${e.localizedMessage}", e)
         }
 
+        val initialText = "Chat started"
+        val now = System.currentTimeMillis()
+
         val newRoomPayload = NewChatRoomPayload(
+            application_id = applicationId,
             seeker_id = seekerId,
             seeker_name = seekerName,
             employer_id = employerId.ifBlank { "employer_default" },
             company_name = companyName,
             job_title = jobTitle,
-            last_message = "Chat started",
-            last_message_time = System.currentTimeMillis()
+            last_message = initialText,
+            last_message_time = now,
+            unread_count = 0
         )
 
         try {
-            val insertedRoom = supabase.postgrest["chat_rooms"]
+            val insertedRoom = supabase.from("chat_rooms")
                 .insert(newRoomPayload) { select() }
                 .decodeSingle<ChatRoom>()
+
+            sendMessage(
+                roomId = insertedRoom.id,
+                senderId = seekerId,
+                content = initialText,
+                type = MessageType.TEXT,
+                actionType = ActionType.NONE
+            )
+
             insertedRoom.id
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error inserting new chat room", e)
-            throw Exception("Insert failed: ${e.message ?: e.toString()}", e)
+            Log.e(TAG, "Error creating chat room: ${e.localizedMessage}", e)
+            ""
         }
     }
 
@@ -192,7 +191,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
         try {
             if (userId.isBlank()) return@withContext emptyList()
 
-            supabase.postgrest["chat_rooms"]
+            val rooms = supabase.from("chat_rooms")
                 .select {
                     filter {
                         or {
@@ -200,16 +199,70 @@ class MessageRepository(private val supabase: SupabaseClient) {
                             eq("employer_id", userId)
                         }
                     }
+                    order("last_message_time", Order.DESCENDING)
                 }
                 .decodeList<ChatRoom>()
-                .sortedByDescending { it.lastMessageTime }
+
+            applyUnreadCounts(rooms, userId).sortedByDescending { it.lastMessageTime }
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error in getChatRoomsForUser", e)
+            Log.e(TAG, "Error in getChatRoomsForUser: ${e.localizedMessage}", e)
             emptyList()
         }
     }
 
-    // --- MESSAGES FETCHING & MUTATIONS ---
+    private suspend fun applyUnreadCounts(rooms: List<ChatRoom>, userId: String): List<ChatRoom> {
+        if (rooms.isEmpty()) return rooms
+        return try {
+            val unreadMessages = supabase.from("chat_messages")
+                .select {
+                    filter {
+                        eq("is_read", false)
+                        neq("sender_id", userId)
+                    }
+                }
+                .decodeList<ChatMessage>()
+
+            val countsByRoom = unreadMessages.groupingBy { it.chatRoomId }.eachCount()
+            rooms.map { room -> room.copy(unreadCount = countsByRoom[room.id] ?: 0) }
+        } catch (e: Exception) {
+            rooms
+        }
+    }
+
+    fun observeUserChatRooms(userId: String): Flow<List<ChatRoom>> = callbackFlow {
+        if (userId.isBlank()) {
+            close()
+            return@callbackFlow
+        }
+
+        suspend fun refresh() {
+            try {
+                trySend(getChatRoomsForUser(userId))
+            } catch (e: Exception) {
+                Log.e(TAG, "Error refetching rooms", e)
+            }
+        }
+
+        val roomsChannel = supabase.channel("user_rooms_all_$userId")
+        val roomsJob = launch {
+            roomsChannel.postgresChangeFlow<PostgresAction>(schema = "public") {
+                table = "chat_rooms"
+            }.collect { refresh() }
+        }
+
+        try { roomsChannel.subscribe() } catch (e: Exception) { Log.e(TAG, "Error subscribing rooms", e) }
+
+        awaitClose {
+            roomsJob.cancel()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    roomsChannel.unsubscribe()
+                    supabase.realtime.removeChannel(roomsChannel)
+                } catch (e: Exception) {}
+            }
+        }
+    }
+
     suspend fun getMessagesForRoom(
         roomId: String,
         limit: Int = DEFAULT_PAGE_SIZE,
@@ -218,12 +271,12 @@ class MessageRepository(private val supabase: SupabaseClient) {
         try {
             if (roomId.isBlank()) return@withContext emptyList()
 
-            supabase.postgrest["chat_messages"]
+            supabase.from("chat_messages")
                 .select {
                     filter {
                         eq("chat_room_id", roomId)
                         if (beforeTimestamp != null) {
-                            lt("timestamp", beforeTimestamp)
+                            lte("timestamp", beforeTimestamp)
                         }
                     }
                     order("timestamp", Order.DESCENDING)
@@ -232,7 +285,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
                 .decodeList<ChatMessage>()
                 .sortedBy { it.timestamp }
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error in getMessagesForRoom", e)
+            Log.e(TAG, "Error fetching messages: ${e.localizedMessage}", e)
             emptyList()
         }
     }
@@ -240,200 +293,118 @@ class MessageRepository(private val supabase: SupabaseClient) {
     suspend fun getMessageById(messageId: String): ChatMessage? = withContext(Dispatchers.IO) {
         try {
             if (messageId.isBlank()) return@withContext null
-            supabase.postgrest["chat_messages"]
+            supabase.from("chat_messages")
                 .select { filter { eq("id", messageId) } }
                 .decodeList<ChatMessage>()
                 .firstOrNull()
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error fetching message by id: $messageId", e)
             null
         }
     }
-
-    suspend fun getLatestMessage(roomId: String): ChatMessage? = withContext(Dispatchers.IO) {
-        try {
-            if (roomId.isBlank()) return@withContext null
-
-            supabase.postgrest["chat_messages"]
-                .select {
-                    filter { eq("chat_room_id", roomId) }
-                    order("timestamp", Order.DESCENDING)
-                    limit(1)
-                }
-                .decodeList<ChatMessage>()
-                .firstOrNull()
-        } catch (e: Exception) {
-            Log.e("MessageRepository", "Error in getLatestMessage", e)
-            null
-        }
-    }
-
-    suspend fun searchMessagesInRoom(roomId: String, query: String): List<ChatMessage> =
-        withContext(Dispatchers.IO) {
-            try {
-                if (roomId.isBlank() || query.isBlank()) return@withContext emptyList()
-
-                supabase.postgrest["chat_messages"]
-                    .select {
-                        filter {
-                            eq("chat_room_id", roomId)
-                            eq("is_deleted", false)
-                            ilike("text", "%$query%")
-                        }
-                        order("timestamp", Order.DESCENDING)
-                        limit(50)
-                    }
-                    .decodeList<ChatMessage>()
-            } catch (e: Exception) {
-                Log.e("MessageRepository", "Error searching messages", e)
-                emptyList()
-            }
-        }
 
     suspend fun sendMessage(
         roomId: String,
         senderId: String,
         content: String,
         type: MessageType = MessageType.TEXT,
+        actionType: ActionType = ActionType.NONE,
         replyToId: String? = null
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): ChatMessage? = withContext(Dispatchers.IO) {
+        if (roomId.isBlank() || content.isBlank()) {
+            Log.e(TAG, "sendMessage aborted: Empty roomId or content")
+            return@withContext null
+        }
+        val now = System.currentTimeMillis()
+
+        val messagePayload = NewChatMessagePayload(
+            chat_room_id = roomId,
+            sender_id = senderId,
+            text = content,
+            timestamp = now,
+            is_read = false,
+            message_type = type.name,
+            action_type = actionType.name,
+            reply_to_id = replyToId?.takeIf { it.isNotBlank() }
+        )
+
         try {
-            if (roomId.isBlank() || content.isBlank()) return@withContext false
-            val now = System.currentTimeMillis()
-
-            val messagePayload = NewChatMessagePayload(
-                chat_room_id = roomId,
-                sender_id = senderId,
-                text = content,
-                timestamp = now,
-                is_read = false,
-                message_type = type.name,
-                action_type = ActionType.NONE.name,
-                reply_to_id = replyToId?.takeIf { it.isNotBlank() }
-            )
-
-            supabase.postgrest["chat_messages"].insert(messagePayload)
+            val inserted = supabase.from("chat_messages")
+                .insert(messagePayload) { select() }
+                .decodeSingle<ChatMessage>()
 
             val snippet = when (type) {
-                MessageType.IMAGE -> "[Image]"
+                MessageType.IMAGE -> "[Photo]"
                 MessageType.FILE -> "[Document]"
-                MessageType.VOICE -> "[Voice Note]"
-                else -> content
+                MessageType.SYSTEM -> content
+                else -> when (actionType) {
+                    ActionType.INTERVIEW_REQUEST -> "📅 Interview Request"
+                    ActionType.RESUME_REQUEST -> "📄 Resume Requested"
+                    ActionType.OFFER_LETTER -> "🎉 Offer Letter"
+                    else -> content
+                }
             }
 
-            supabase.postgrest["chat_rooms"].update(
-                ChatRoomLastMessageUpdate(
-                    last_message = snippet,
-                    last_message_time = now
+            supabase.from("chat_rooms").update(
+                mapOf(
+                    "last_message" to snippet,
+                    "last_message_time" to now
                 )
-            ) {
-                filter { eq("id", roomId) }
-            }
+            ) { filter { eq("id", roomId) } }
 
-            true
+            inserted
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error in sendMessage: ${e.message}", e)
-            false
+            Log.e(TAG, "CRITICAL ERROR SAVING MESSAGE: ${e.localizedMessage}", e)
+            null
         }
     }
 
     suspend fun editMessage(roomId: String, messageId: String, newText: String): Boolean = withContext(Dispatchers.IO) {
         if (messageId.isBlank() || roomId.isBlank() || newText.isBlank()) return@withContext false
-
         try {
-            val updatedRows = supabase.postgrest["chat_messages"].update(
+            supabase.from("chat_messages").update(
+                mapOf("text" to newText, "is_edited" to true)
+            ) { filter { eq("id", messageId); eq("chat_room_id", roomId) } }
+
+            supabase.from("chat_rooms").update(
                 mapOf(
-                    "text" to newText,
-                    "is_edited" to true
+                    "last_message" to newText,
+                    "last_message_time" to System.currentTimeMillis()
                 )
-            ) {
-                filter {
-                    eq("id", messageId)
-                    eq("chat_room_id", roomId)
-                }
-                select()
-            }.decodeList<ChatMessage>()
-
-            if (updatedRows.isEmpty()) {
-                Log.e(
-                    "MessageRepository",
-                    "editMessage FAILED: 0 rows updated for id=$messageId, room=$roomId. Check if messageId exists or if RLS policies block update."
-                )
-                return@withContext false
-            }
-
-            val latest = getLatestMessage(roomId)
-            if (latest != null && latest.id == messageId) {
-                val snippet = when (latest.messageType) {
-                    MessageType.IMAGE -> "[Image]"
-                    MessageType.FILE -> "[Document]"
-                    MessageType.VOICE -> "[Voice Note]"
-                    else -> newText
-                }
-                supabase.postgrest["chat_rooms"].update(
-                    mapOf("last_message" to snippet)
-                ) {
-                    filter { eq("id", roomId) }
-                }
-            }
+            ) { filter { eq("id", roomId) } }
 
             true
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error editing message $messageId: ${e.localizedMessage}", e)
+            Log.e(TAG, "Error editing message: ${e.localizedMessage}", e)
             false
         }
     }
 
     suspend fun deleteMessage(roomId: String, messageId: String): Boolean = withContext(Dispatchers.IO) {
         if (messageId.isBlank() || roomId.isBlank()) return@withContext false
-
         try {
             val deletedText = "This message was deleted"
-            val updatedRows = supabase.postgrest["chat_messages"].update(
+            supabase.from("chat_messages").update(
+                mapOf("text" to deletedText, "is_deleted" to true, "is_edited" to false)
+            ) { filter { eq("id", messageId); eq("chat_room_id", roomId) } }
+
+            supabase.from("chat_rooms").update(
                 mapOf(
-                    "text" to deletedText,
-                    "is_deleted" to true,
-                    "is_edited" to false
+                    "last_message" to deletedText,
+                    "last_message_time" to System.currentTimeMillis()
                 )
-            ) {
-                filter {
-                    eq("id", messageId)
-                    eq("chat_room_id", roomId)
-                }
-                select()
-            }.decodeList<ChatMessage>()
-
-            if (updatedRows.isEmpty()) {
-                Log.e(
-                    "MessageRepository",
-                    "deleteMessage FAILED: 0 rows updated for id=$messageId, room=$roomId. Check if messageId exists or if RLS policies block update."
-                )
-                return@withContext false
-            }
-
-            val latest = getLatestMessage(roomId)
-            if (latest != null && latest.id == messageId) {
-                supabase.postgrest["chat_rooms"].update(
-                    mapOf("last_message" to deletedText)
-                ) {
-                    filter { eq("id", roomId) }
-                }
-            }
+            ) { filter { eq("id", roomId) } }
 
             true
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error deleting message $messageId: ${e.localizedMessage}", e)
+            Log.e(TAG, "Error deleting message: ${e.localizedMessage}", e)
             false
         }
     }
 
     suspend fun markMessagesAsRead(roomId: String, viewerId: String) = withContext(Dispatchers.IO) {
         if (roomId.isBlank() || viewerId.isBlank()) return@withContext
-
         try {
-            supabase.postgrest["chat_messages"].update(
-                ReadStatusUpdate(is_read = true)
-            ) {
+            supabase.from("chat_messages").update(ReadStatusUpdate(is_read = true)) {
                 filter {
                     eq("chat_room_id", roomId)
                     neq("sender_id", viewerId)
@@ -441,20 +412,17 @@ class MessageRepository(private val supabase: SupabaseClient) {
                 }
             }
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error marking messages as read", e)
+            Log.e(TAG, "Error marking read: ${e.localizedMessage}", e)
         }
     }
 
-    // --- REACTION MANAGEMENT ---
     suspend fun getReactionsForRoom(roomId: String): List<MessageReaction> = withContext(Dispatchers.IO) {
         try {
             if (roomId.isBlank()) return@withContext emptyList()
-
-            supabase.postgrest["message_reactions"]
+            supabase.from("message_reactions")
                 .select { filter { eq("chat_room_id", roomId) } }
                 .decodeList<MessageReaction>()
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error fetching reactions", e)
             emptyList()
         }
     }
@@ -465,41 +433,26 @@ class MessageRepository(private val supabase: SupabaseClient) {
         userId: String,
         emoji: String
     ): Boolean = withContext(Dispatchers.IO) {
-        if (roomId.isBlank() || messageId.isBlank() || userId.isBlank() || emoji.isBlank()) {
-            return@withContext false
-        }
-
+        if (roomId.isBlank() || messageId.isBlank() || userId.isBlank() || emoji.isBlank()) return@withContext false
         try {
-            val existing = supabase.postgrest["message_reactions"]
-                .select {
-                    filter {
-                        eq("message_id", messageId)
-                        eq("user_id", userId)
-                        eq("emoji", emoji)
-                    }
+            val existing = supabase.from("message_reactions").select {
+                filter {
+                    eq("message_id", messageId)
+                    eq("user_id", userId)
+                    eq("emoji", emoji)
                 }
-                .decodeList<MessageReaction>()
-                .firstOrNull()
+            }.decodeList<MessageReaction>().firstOrNull()
 
             if (existing != null) {
-                val deletedRows = supabase.postgrest["message_reactions"].delete {
+                supabase.from("message_reactions").delete {
                     filter {
                         eq("message_id", messageId)
                         eq("user_id", userId)
                         eq("emoji", emoji)
                     }
-                    select()
-                }.decodeList<MessageReaction>()
-
-                if (deletedRows.isEmpty()) {
-                    Log.e(
-                        "MessageRepository",
-                        "toggleReaction: 0 rows deleted for message=$messageId, user=$userId, emoji=$emoji"
-                    )
-                    return@withContext false
                 }
             } else {
-                val insertedRows = supabase.postgrest["message_reactions"].insert(
+                supabase.from("message_reactions").insert(
                     NewReactionPayload(
                         message_id = messageId,
                         chat_room_id = roomId,
@@ -507,70 +460,37 @@ class MessageRepository(private val supabase: SupabaseClient) {
                         emoji = emoji,
                         created_at = System.currentTimeMillis()
                     )
-                ) { select() }.decodeList<MessageReaction>()
-
-                if (insertedRows.isEmpty()) {
-                    Log.e(
-                        "MessageRepository",
-                        "toggleReaction: insert returned 0 rows — check RLS INSERT policy on message_reactions."
-                    )
-                    return@withContext false
-                }
+                )
             }
             true
         } catch (e: Exception) {
-            Log.e("MessageRepository", "Error toggling reaction: ${e.localizedMessage}", e)
             false
         }
     }
 
     fun observeReactions(roomId: String): Flow<List<MessageReaction>> = callbackFlow {
-        if (roomId.isBlank()) {
-            close()
-            return@callbackFlow
-        }
-
+        if (roomId.isBlank()) { close(); return@callbackFlow }
         val channel = supabase.channel("chat_reactions_${roomId}_${System.currentTimeMillis()}")
-        val collectJob = launch {
+        val job = launch {
             channel.postgresChangeFlow<PostgresAction>(schema = "public") {
                 table = "message_reactions"
                 filter = "chat_room_id=eq.$roomId"
-            }.collect {
-                try {
-                    trySend(getReactionsForRoom(roomId))
-                } catch (e: Exception) {
-                    Log.e("MessageRepository", "Error refetching reactions", e)
-                }
-            }
+            }.collect { trySend(getReactionsForRoom(roomId)) }
         }
-
-        try {
-            channel.subscribe()
-        } catch (e: Exception) {
-            Log.e("MessageRepository", "Error subscribing to reactions channel", e)
-        }
-
+        try { channel.subscribe() } catch (e: Exception) {}
         awaitClose {
-            collectJob.cancel()
+            job.cancel()
             CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    channel.unsubscribe()
-                    supabase.realtime.removeChannel(channel)
-                } catch (e: Exception) {
-                    Log.e("MessageRepository", "Error tearing down reactions channel", e)
-                }
+                try { channel.unsubscribe(); supabase.realtime.removeChannel(channel) } catch (e: Exception) {}
             }
         }
     }
 
-    // --- REALTIME PRESENCE & MESSAGES ---
     fun observeRoomPresence(roomId: String, selfUserId: String): Flow<RoomPresence> = callbackFlow {
-        if (roomId.isBlank() || selfUserId.isBlank()) {
-            close()
-            return@callbackFlow
-        }
+        if (roomId.isBlank() || selfUserId.isBlank()) { close(); return@callbackFlow }
 
         val channel = supabase.channel("presence_room_$roomId")
+        activePresenceChannels[roomId] = channel
         val onlineUsers = mutableSetOf<String>()
         val typingUsers = mutableSetOf<String>()
 
@@ -585,9 +505,7 @@ class MessageRepository(private val supabase: SupabaseClient) {
                     change.leaves.keys.forEach { onlineUsers.remove(it) }
                     emitPresence()
                 }
-            } catch (e: Exception) {
-                Log.e("MessageRepository", "Error in presence flow", e)
-            }
+            } catch (e: Exception) {}
         }
 
         val typingJob = launch {
@@ -598,53 +516,36 @@ class MessageRepository(private val supabase: SupabaseClient) {
                     else typingUsers.remove(payload.user_id)
                     emitPresence()
                 }
-            } catch (e: Exception) {
-                Log.e("MessageRepository", "Error in typing broadcast flow", e)
-            }
+            } catch (e: Exception) {}
         }
 
         try {
             channel.subscribe(blockUntilSubscribed = false)
             channel.track(mapOf("user_id" to JsonPrimitive(selfUserId) as JsonElement))
-        } catch (e: Exception) {
-            Log.e("MessageRepository", "Error subscribing to presence channel", e)
-        }
+        } catch (e: Exception) {}
 
         awaitClose {
+            if (activePresenceChannels[roomId] === channel) activePresenceChannels.remove(roomId)
             presenceJob.cancel()
             typingJob.cancel()
             CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    channel.unsubscribe()
-                    supabase.realtime.removeChannel(channel)
-                } catch (e: Exception) {
-                    Log.e("MessageRepository", "Error tearing down presence channel", e)
-                }
+                try { channel.unsubscribe(); supabase.realtime.removeChannel(channel) } catch (e: Exception) {}
             }
         }
     }
 
     suspend fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean) = withContext(Dispatchers.IO) {
         if (roomId.isBlank() || userId.isBlank()) return@withContext
+        val channel = activePresenceChannels[roomId] ?: return@withContext
         try {
-            val targetTopic = "presence_room_$roomId"
-            val channel = supabase.realtime.subscriptions.values.firstOrNull {
-                it.topic.contains(targetTopic)
-            } ?: supabase.channel(targetTopic).apply { subscribe(blockUntilSubscribed = false) }
-
             channel.broadcast(event = "typing", TypingBroadcast(user_id = userId, is_typing = isTyping))
-        } catch (e: Exception) {
-            Log.e("MessageRepository", "Error sending typing status", e)
-        }
+        } catch (e: Exception) {}
     }
 
     fun observeNewMessages(roomId: String): Flow<ChatMessage> = callbackFlow {
-        if (roomId.isBlank()) {
-            close()
-            return@callbackFlow
-        }
+        if (roomId.isBlank()) { close(); return@callbackFlow }
 
-        val channel = supabase.channel("chat_messages_${roomId}_${System.currentTimeMillis()}")
+        val channel = supabase.channel("chat_messages_room_$roomId")
         val collectJob = launch {
             channel.postgresChangeFlow<PostgresAction>(schema = "public") {
                 table = "chat_messages"
@@ -653,50 +554,47 @@ class MessageRepository(private val supabase: SupabaseClient) {
                 try {
                     when (action) {
                         is PostgresAction.Insert -> {
-                            val decoded = action.decodeRecord<ChatMessage>()
+                            val decoded = json.decodeFromJsonElement(ChatMessage.serializer(), action.record)
                             trySend(decoded)
                         }
                         is PostgresAction.Update -> {
-                            val decoded = action.decodeRecord<ChatMessage>()
-                            trySend(decoded)
+                            val updatedId = action.record["id"]?.toString()?.trim('"')
+                            if (!updatedId.isNullOrBlank()) {
+                                val freshMessage = getMessageById(updatedId)
+                                if (freshMessage != null) trySend(freshMessage)
+                                else trySend(json.decodeFromJsonElement(ChatMessage.serializer(), action.record))
+                            }
+                        }
+                        is PostgresAction.Delete -> {
+                            val deletedId = action.oldRecord["id"]?.toString()?.trim('"')
+                            if (!deletedId.isNullOrBlank()) {
+                                trySend(
+                                    ChatMessage(
+                                        id = deletedId,
+                                        chatRoomId = roomId,
+                                        senderId = "",
+                                        text = "This message was deleted",
+                                        timestamp = System.currentTimeMillis(),
+                                        isDeleted = true
+                                    )
+                                )
+                            }
                         }
                         else -> {}
                     }
                 } catch (e: Exception) {
-                    Log.e("MessageRepository", "Error decoding realtime message action", e)
-                    val recordId = when (action) {
-                        is PostgresAction.Insert -> action.record["id"]?.toString()?.trim('"')
-                        is PostgresAction.Update -> action.record["id"]?.toString()?.trim('"')
-                        else -> null
-                    }
-                    if (!recordId.isNullOrBlank()) {
-                        getMessageById(recordId)?.let { trySend(it) }
-                    }
+                    Log.e(TAG, "Error processing realtime event", e)
                 }
             }
         }
 
-        try {
-            channel.subscribe()
-        } catch (e: Exception) {
-            Log.e("MessageRepository", "Error subscribing to realtime messages channel", e)
-        }
+        try { channel.subscribe() } catch (e: Exception) {}
 
         awaitClose {
             collectJob.cancel()
             CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    channel.unsubscribe()
-                    supabase.realtime.removeChannel(channel)
-                } catch (e: Exception) {
-                    Log.e("MessageRepository", "Error tearing down realtime channel", e)
-                }
+                try { channel.unsubscribe(); supabase.realtime.removeChannel(channel) } catch (e: Exception) {}
             }
         }
-    }
-
-    companion object {
-        const val CHAT_ATTACHMENTS_BUCKET = "chat-attachments"
-        const val DEFAULT_PAGE_SIZE = 40
     }
 }

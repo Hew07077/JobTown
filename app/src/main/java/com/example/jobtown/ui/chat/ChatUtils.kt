@@ -5,11 +5,14 @@ import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.util.Log
+import android.webkit.MimeTypeMap
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
@@ -37,17 +40,28 @@ import java.util.Locale
  */
 fun groupMessagesByDate(messages: List<ChatMessage>): Map<String, List<ChatMessage>> {
     val fullFormatter = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
-    val todayCal = Calendar.getInstance()
+    val todayCal = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+
     val msgCal = Calendar.getInstance()
 
     return messages.groupBy { message ->
         msgCal.timeInMillis = message.timestamp
-        val isSameYear = todayCal.get(Calendar.YEAR) == msgCal.get(Calendar.YEAR)
-        val dayDiff = todayCal.get(Calendar.DAY_OF_YEAR) - msgCal.get(Calendar.DAY_OF_YEAR)
+        msgCal.set(Calendar.HOUR_OF_DAY, 0)
+        msgCal.set(Calendar.MINUTE, 0)
+        msgCal.set(Calendar.SECOND, 0)
+        msgCal.set(Calendar.MILLISECOND, 0)
 
-        when {
-            isSameYear && dayDiff == 0 -> "Today"
-            isSameYear && dayDiff == 1 -> "Yesterday"
+        val diffInMillis = todayCal.timeInMillis - msgCal.timeInMillis
+        val diffInDays = diffInMillis / (24 * 60 * 60 * 1000)
+
+        when (diffInDays) {
+            0L -> "Today"
+            1L -> "Yesterday"
             else -> fullFormatter.format(Date(message.timestamp))
         }
     }
@@ -124,14 +138,22 @@ fun stopVoiceRecording(
 }
 
 /**
- * Copies a content URI (e.g., from Gallery or File Picker) to a local cache file.
+ * Copies a content URI (e.g., from Gallery or File Picker) to a local cache file securely,
+ * automatically matching the original MIME type extension.
  */
-fun getFileFromContentUri(context: Context, uri: Uri, fileExtension: String = ".jpg"): File? {
+fun getFileFromContentUri(context: Context, uri: Uri, defaultExtension: String = ".jpg"): File? {
     return try {
         val contentResolver = context.contentResolver
+        val mimeType = contentResolver.getType(uri)
+        val extension = if (mimeType != null) {
+            MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)?.let { ".$it" } ?: defaultExtension
+        } else {
+            defaultExtension
+        }
+
         val inputStream = contentResolver.openInputStream(uri) ?: return null
         val outputDir = context.cacheDir
-        val outputFile = File.createTempFile("upload_", fileExtension, outputDir)
+        val outputFile = File.createTempFile("upload_", extension, outputDir)
 
         inputStream.use { input ->
             outputFile.outputStream().use { output ->
@@ -165,9 +187,18 @@ fun PhotoPreviewDialog(
     var captionText by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
 
+    // System Back Press Handler
+    BackHandler(enabled = !isSending) {
+        onDismiss()
+    }
+
     Dialog(
         onDismissRequest = { if (!isSending) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = !isSending,
+            dismissOnClickOutside = false
+        )
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -190,27 +221,36 @@ fun PhotoPreviewDialog(
                     )
                 }
 
-                IconButton(
-                    onClick = onDismiss,
-                    enabled = !isSending,
+                // Top Bar with Back Action
+                Row(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        .fillMaxWidth()
+                        .align(Alignment.TopStart)
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close Preview",
-                        tint = Color.White
-                    )
+                    IconButton(
+                        onClick = onDismiss,
+                        enabled = !isSending,
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.White
+                        )
+                    }
                 }
 
+                // Bottom Input & Send Row
                 Surface(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .imePadding(),
-                    color = Color.Black.copy(alpha = 0.7f)
+                    color = Color.Black.copy(alpha = 0.75f)
                 ) {
                     Row(
                         modifier = Modifier
@@ -240,13 +280,15 @@ fun PhotoPreviewDialog(
 
                         IconButton(
                             onClick = {
-                                isSending = true
-                                val preparedFile = getFileFromContentUri(context, imageUri)
-                                if (preparedFile != null) {
-                                    onSend(preparedFile, captionText)
-                                } else {
-                                    Log.e("PhotoPreview", "Failed to resolve local file from URI")
-                                    isSending = false
+                                if (!isSending) {
+                                    isSending = true
+                                    val preparedFile = getFileFromContentUri(context, imageUri)
+                                    if (preparedFile != null) {
+                                        onSend(preparedFile, captionText)
+                                    } else {
+                                        Log.e("PhotoPreview", "Failed to resolve local file from URI")
+                                        isSending = false
+                                    }
                                 }
                             },
                             enabled = !isSending,

@@ -1,6 +1,11 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.example.jobtown.ui.chat
 
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -8,6 +13,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,10 +40,10 @@ import com.example.jobtown.data.ChatMessage
 import com.example.jobtown.data.MessageType
 import com.example.jobtown.data.toReactionGroups
 import com.example.jobtown.ui.theme.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatDetailScreen(
     navController: NavController,
@@ -59,7 +65,6 @@ fun ChatDetailScreen(
     var inChatSearchQuery by remember { mutableStateOf("") }
     var hasScrolledToBottomInitially by remember { mutableStateOf(false) }
 
-    // State for photo preview
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
 
     val listState = rememberLazyListState()
@@ -74,6 +79,7 @@ fun ChatDetailScreen(
     val isSendingMessage by chatViewModel.isSendingMessage.collectAsStateWithLifecycle()
     val isUploadingAttachment by chatViewModel.isUploadingAttachment.collectAsStateWithLifecycle()
     val isLoadingOlderMessages by chatViewModel.isLoadingOlderMessages.collectAsStateWithLifecycle()
+    val hasMoreMessages by chatViewModel.hasMoreMessages.collectAsStateWithLifecycle()
 
     val displayCompanyName = companyName.ifBlank { "Company Name" }
     val displayPosition = chatTitle.ifBlank { "Position" }
@@ -94,8 +100,6 @@ fun ChatDetailScreen(
         }
     }
 
-    // Pre-group raw reaction rows into per-message emoji summaries (emoji, count, reactedByMe)
-    // so MessageBubble can render them without redoing this work on every recomposition.
     val reactionsByMessage = remember(reactions, currentUserId) {
         reactions.groupBy { it.messageId }
             .mapValues { (_, messageReactions) -> messageReactions.toReactionGroups(currentUserId) }
@@ -115,9 +119,42 @@ fun ChatDetailScreen(
         Pair(map, currentIndex)
     }
 
-    LaunchedEffect(messageText) {
-        if (roomId.isNotBlank() && currentUserId.isNotBlank()) {
-            chatViewModel.sendTypingStatus(roomId, currentUserId, messageText.isNotBlank())
+    // Pagination: fetch older history once the user scrolls near the top of what's loaded.
+    LaunchedEffect(roomId) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .collect { firstVisible ->
+                if (firstVisible <= 3 &&
+                    hasMoreMessages &&
+                    !isLoadingOlderMessages &&
+                    !isMessagesLoading &&
+                    inChatSearchQuery.isBlank()
+                ) {
+                    chatViewModel.loadOlderMessages(roomId)
+                }
+            }
+    }
+
+    // Typing indicator: debounce keystrokes so we don't broadcast on every character
+    LaunchedEffect(roomId, currentUserId) {
+        if (roomId.isBlank() || currentUserId.isBlank()) return@LaunchedEffect
+        snapshotFlow { messageText }
+            .collectLatest { text ->
+                if (text.isBlank()) {
+                    chatViewModel.sendTypingStatus(roomId, currentUserId, false)
+                } else {
+                    chatViewModel.sendTypingStatus(roomId, currentUserId, true)
+                    delay(3000)
+                    chatViewModel.sendTypingStatus(roomId, currentUserId, false)
+                }
+            }
+    }
+
+    // Clear typing status on screen dispose
+    DisposableEffect(roomId, currentUserId) {
+        onDispose {
+            if (roomId.isNotBlank() && currentUserId.isNotBlank()) {
+                chatViewModel.sendTypingStatus(roomId, currentUserId, false)
+            }
         }
     }
 
@@ -149,7 +186,7 @@ fun ChatDetailScreen(
                     }
                 }
             } catch (e: Exception) {
-                android.util.Log.e("ChatDetailScreen", "Error reading attachment", e)
+                Log.e("ChatDetailScreen", "Error reading attachment", e)
             }
         }
     }
@@ -186,80 +223,78 @@ fun ChatDetailScreen(
 
     Scaffold(
         topBar = {
-            Column {
-                TopAppBar(
-                    title = {
-                        if (isSearchActive) {
-                            TextField(
-                                value = inChatSearchQuery,
-                                onValueChange = { inChatSearchQuery = it },
-                                placeholder = { Text("Search in chat...", fontSize = 14.sp) },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent,
-                                    focusedIndicatorColor = Color.Transparent,
-                                    unfocusedIndicatorColor = Color.Transparent
-                                )
+            TopAppBar(
+                title = {
+                    if (isSearchActive) {
+                        TextField(
+                            value = inChatSearchQuery,
+                            onValueChange = { inChatSearchQuery = it },
+                            placeholder = { Text("Search in chat...", fontSize = 14.sp) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
                             )
-                        } else {
-                            Column {
+                        )
+                    } else {
+                        Column {
+                            Text(
+                                text = displayCompanyName,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextDark
+                            )
+                            val otherTyping = roomPresence.typingUserIds.isNotEmpty()
+                            if (otherTyping) {
                                 Text(
-                                    text = displayCompanyName,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextDark
+                                    text = "typing...",
+                                    fontSize = 12.sp,
+                                    color = DeepGreenDark,
+                                    fontWeight = FontWeight.SemiBold
                                 )
-                                val otherTyping = roomPresence.typingUserIds.isNotEmpty()
-                                if (otherTyping) {
-                                    Text(
-                                        text = "typing...",
-                                        fontSize = 12.sp,
-                                        color = DeepGreenDark,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                } else {
-                                    Text(
-                                        text = displayPosition,
-                                        fontSize = 12.sp,
-                                        color = TextDark.copy(alpha = 0.6f)
-                                    )
-                                }
+                            } else {
+                                Text(
+                                    text = displayPosition,
+                                    fontSize = 12.sp,
+                                    color = TextDark.copy(alpha = 0.6f)
+                                )
                             }
                         }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = TextDark
-                            )
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = {
-                            isSearchActive = !isSearchActive
-                            if (!isSearchActive) inChatSearchQuery = ""
-                        }) {
-                            Icon(
-                                imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
-                                contentDescription = "Toggle Search",
-                                tint = TextDark
-                            )
-                        }
-                        IconButton(onClick = { showInterviewDialog = true }) {
-                            Icon(
-                                imageVector = Icons.Default.CalendarToday,
-                                contentDescription = "View Interview Details",
-                                tint = DeepGreenDark
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
-                )
-            }
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = TextDark
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        isSearchActive = !isSearchActive
+                        if (!isSearchActive) inChatSearchQuery = ""
+                    }) {
+                        Icon(
+                            imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
+                            contentDescription = "Toggle Search",
+                            tint = TextDark
+                        )
+                    }
+                    IconButton(onClick = { showInterviewDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.CalendarToday,
+                            contentDescription = "View Interview Details",
+                            tint = DeepGreenDark
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
+            )
         },
         bottomBar = {
             Surface(
@@ -358,7 +393,7 @@ fun ChatDetailScreen(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        val canSend = messageText.isNotBlank() && !isSendingMessage
+                        val canSend = messageText.isNotBlank()
 
                         IconButton(
                             onClick = {
@@ -366,6 +401,7 @@ fun ChatDetailScreen(
                                     val textToSend = messageText
                                     val currentEdit = editingMessage
                                     val currentReplyId = replyingToMessage?.id
+
                                     messageText = ""
 
                                     if (currentEdit != null) {
@@ -535,12 +571,8 @@ fun ChatDetailScreen(
     if (showAttachmentSheet) {
         AttachmentBottomSheet(
             onDismiss = { showAttachmentSheet = false },
-            onOptionSelected = { option ->
-                when (option) {
-                    "PHOTO" -> imagePickerLauncher.launch("image/*")
-                    "DOCUMENT" -> documentPickerLauncher.launch("application/*")
-                }
-            }
+            onPickImage = { imagePickerLauncher.launch("image/*") },
+            onPickDocument = { documentPickerLauncher.launch("application/*") }
         )
     }
 
@@ -562,7 +594,79 @@ fun ChatDetailScreen(
             companyName = displayCompanyName,
             chatTitle = displayPosition,
             onDismiss = { showInterviewDialog = false },
-            onNavigateToSchedule = onNavigateToSchedule
+            onNavigateToSchedule = {
+                showInterviewDialog = false
+                onNavigateToSchedule()
+            }
         )
     }
+}
+
+// --- Supporting Components ---
+
+@Composable
+fun ReplyComposerBanner(
+    replyTarget: ChatMessage,
+    onCancel: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SageGreenMain.copy(alpha = 0.15f))
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Replying to message",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = DeepGreenDark
+            )
+            Text(
+                text = replyTarget.text,
+                fontSize = 12.sp,
+                color = TextDark.copy(alpha = 0.7f),
+                maxLines = 1
+            )
+        }
+        IconButton(onClick = onCancel, modifier = Modifier.size(24.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Cancel Reply",
+                tint = TextDark
+            )
+        }
+    }
+}
+
+@Composable
+fun InterviewDetailDialog(
+    companyName: String,
+    chatTitle: String,
+    onDismiss: () -> Unit,
+    onNavigateToSchedule: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Interview Details") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = "Company: $companyName", fontWeight = FontWeight.Bold)
+                Text(text = "Position: $chatTitle")
+                Text(text = "Manage your interview scheduling or view booked calendar slots below.")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onNavigateToSchedule) {
+                Text("View Schedule")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }

@@ -50,12 +50,17 @@ fun ChatListScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showUnreadOnly by remember { mutableStateOf(false) }
 
+    val currentUserId = currentUser?.id.orEmpty()
+
     // Calculate total unread count across all rooms
-    val totalUnreadCount by remember(chatRooms) {
-        derivedStateOf { chatRooms.sumOf { it.unreadCount } }
+    val totalUnreadCount by remember(chatRooms, currentUserId) {
+        derivedStateOf {
+            chatRooms.sumOf { room -> room.unreadCount }
+        }
     }
 
-    val filteredRooms by remember(chatRooms, searchQuery, showUnreadOnly, currentUser?.id) {
+    // Dynamic filtering and sorting based on latest message time
+    val filteredRooms by remember(chatRooms, searchQuery, showUnreadOnly, currentUserId) {
         derivedStateOf {
             var rooms = chatRooms
 
@@ -66,7 +71,7 @@ fun ChatListScreen(
             if (searchQuery.isNotBlank()) {
                 val query = searchQuery.trim()
                 rooms = rooms.filter { room ->
-                    val isSeeker = room.seekerId == currentUser?.id
+                    val isSeeker = room.seekerId == currentUserId
                     val otherName = if (isSeeker) room.companyName else room.seekerName
                     val positionName = room.jobTitle
 
@@ -75,6 +80,7 @@ fun ChatListScreen(
                             room.lastMessage.contains(query, ignoreCase = true)
                 }
             }
+            // Always keep the chat room with the most recent message timestamp at the top
             rooms.sortedByDescending { it.lastMessageTime }
         }
     }
@@ -245,7 +251,7 @@ fun ChatListScreen(
                                 items = filteredRooms,
                                 key = { it.id }
                             ) { room ->
-                                val isSeeker = room.seekerId == currentUser?.id
+                                val isSeeker = room.seekerId == currentUserId
                                 val otherName = if (isSeeker) room.companyName else room.seekerName
                                 val positionName = room.jobTitle.ifBlank { "Position" }
 
@@ -275,6 +281,12 @@ private fun ChatRoomItem(
     val formattedTime = remember(room.lastMessageTime) {
         if (room.lastMessageTime > 0L) formatRelativeTime(room.lastMessageTime) else ""
     }
+
+    // Format output text for media or plain last text
+    val displayLastMessage = remember(room.lastMessage) {
+        formatLastMessagePreview(room.lastMessage)
+    }
+
     val unreadCount = room.unreadCount
     val hasUnread = unreadCount > 0
 
@@ -300,7 +312,7 @@ private fun ChatRoomItem(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = otherName.take(1).uppercase(),
+                            text = otherName.take(1).uppercase().ifBlank { "?" },
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = DeepGreenDark
@@ -356,13 +368,13 @@ private fun ChatRoomItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = room.lastMessage.ifBlank { "Tap to start chatting..." },
+                        text = displayLastMessage,
                         fontSize = 13.sp,
                         fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
                         color = when {
                             hasUnread -> TextDark
                             room.lastMessage.isNotBlank() -> TextDark.copy(alpha = 0.7f)
-                            else -> SageGreenDark
+                            else -> TextDark.copy(alpha = 0.4f)
                         },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -429,6 +441,15 @@ private fun EmptyChatState(modifier: Modifier = Modifier) {
             textAlign = TextAlign.Center,
             lineHeight = 18.sp
         )
+    }
+}
+
+private fun formatLastMessagePreview(message: String): String {
+    if (message.isBlank()) return "Tap to start chatting..."
+    return when {
+        message.startsWith("http") && (message.contains(".jpg") || message.contains(".png") || message.contains(".jpeg")) -> "📷 Photo"
+        message.startsWith("http") || message.contains("attachment") -> "📄 Document"
+        else -> message
     }
 }
 

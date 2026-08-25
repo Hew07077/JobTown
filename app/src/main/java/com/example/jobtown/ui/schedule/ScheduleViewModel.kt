@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.jobtown.data.InterviewSchedule
 import com.example.jobtown.data.repository.ScheduleRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -26,12 +28,26 @@ class ScheduleViewModel(
     var schedulePrefill by mutableStateOf(SchedulePrefill())
         private set
 
+    private var realtimeJob: Job? = null
+
     fun loadSchedules(userId: String, isEmployer: Boolean) {
         if (userId.isBlank()) return
+
+        realtimeJob?.cancel()
+
         viewModelScope.launch {
             isLoading = true
             schedulesList = scheduleRepository.getSchedulesForUser(userId, isEmployer)
             isLoading = false
+        }
+
+        // Keep the list live so an employer's new/updated invite (or a seeker's
+        // accept/reject) shows up immediately for the other side, instead of only on
+        // the next manual visit to this tab.
+        realtimeJob = viewModelScope.launch {
+            scheduleRepository.observeSchedulesForUser(userId, isEmployer)
+                .catch { /* Initial load above already covers the non-realtime case. */ }
+                .collect { updated -> schedulesList = updated }
         }
     }
 
@@ -73,5 +89,10 @@ class ScheduleViewModel(
                 onResult(false)
             }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        realtimeJob?.cancel()
     }
 }

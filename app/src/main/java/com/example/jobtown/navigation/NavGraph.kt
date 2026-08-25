@@ -128,6 +128,92 @@ fun AppNavGraph(
         }
     }
 
+    // Kept live at this level (rather than only inside the chat_list route) so the bottom nav
+    // badge and any other chrome can reflect unread messages no matter which screen is open.
+    val chatRoomsForBadge by chatViewModel.chatRooms.collectAsStateWithLifecycle()
+    val totalUnreadChatCount = remember(chatRoomsForBadge) {
+        chatRoomsForBadge.sumOf { it.unreadCount }
+    }
+
+    /**
+     * Single entry point for starting (or reopening) a chat, usable by both seekers and
+     * employers. Looks up/creates the room via [MessageRepository.getOrCreateChatRoom] and
+     * then navigates into it. [progressKey] just needs to be unique per in-flight request
+     * (an application id, a room id, etc.) so simultaneous taps on different rows don't
+     * clobber each other while still guarding against double-taps on the same one.
+     */
+    fun startOrOpenChat(
+        counterpartId: String,
+        counterpartName: String,
+        companyName: String,
+        jobTitle: String,
+        progressKey: String
+    ) {
+        val currentUser = loggedInUser
+        if (currentUser == null) {
+            snackbarMessage = "You need to be logged in to start a chat."
+            return
+        }
+        if (counterpartId.isBlank()) {
+            snackbarMessage = "Couldn't find who to message for this listing."
+            return
+        }
+        if (chatCreationInProgressId != null) return
+        chatCreationInProgressId = progressKey
+
+        val isEmployerViewer = currentUser.role == UserRole.EMPLOYER
+        val seekerId = if (isEmployerViewer) counterpartId else currentUser.id
+        val seekerName = if (isEmployerViewer) {
+            counterpartName.ifBlank { "Applicant" }
+        } else {
+            currentUser.name.ifBlank { currentUser.email }
+        }
+        val employerId = if (isEmployerViewer) currentUser.id else counterpartId.ifBlank { "employer_default" }
+
+        coroutineScope.launch {
+            var caughtErrorText: String? = null
+
+            val roomId = try {
+                messageRepository.getOrCreateChatRoom(
+                    seekerId = seekerId,
+                    seekerName = seekerName,
+                    employerId = employerId,
+                    companyName = companyName.ifBlank { "Company" },
+                    jobTitle = jobTitle.ifBlank { "Position" }
+                )
+            } catch (e: Exception) {
+                Log.e("AppNavGraph", "Error creating chat room", e)
+                caughtErrorText = e.message ?: e.toString()
+                ""
+            }
+
+            chatCreationInProgressId = null
+
+            if (roomId.isNotBlank()) {
+                chatViewModel.loadUserChatRooms(currentUser.id)
+
+                // The header always shows "who you're talking to": the company name for a
+                // seeker, the applicant's name for an employer.
+                val displayName = if (isEmployerViewer) seekerName else companyName.ifBlank { "Company Name" }
+                val encodedName = Uri.encode(displayName.ifBlank { "Chat" })
+                val encodedTitle = Uri.encode(jobTitle.ifBlank { "Position" })
+
+                navController.navigate(Screen.Chat.route) {
+                    popUpTo(Screen.Home.route) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+                navController.navigate("chat_detail/$roomId/$encodedName/$encodedTitle/none")
+            } else {
+                snackbarMessage = if (caughtErrorText != null) {
+                    "Chat error: $caughtErrorText"
+                } else {
+                    "Couldn't start the chat. Please check your connection and try again."
+                }
+            }
+        }
+    }
+
     val bottomBarRoutes = listOf(
         Screen.Home.route,
         Screen.Applied.route,
@@ -144,7 +230,7 @@ fun AppNavGraph(
                 JobTownBottomNavigationBar(
                     navController = navController,
                     currentUser = loggedInUser,
-                    unreadChatCount = 0
+                    unreadChatCount = totalUnreadChatCount
                 )
             }
         }
@@ -240,6 +326,7 @@ fun AppNavGraph(
                     onProfileClick = { navController.navigate("profile") },
                     onRefresh = { homeViewModel.loadJobs(loggedInUser?.id) },
                     matchScores = homeViewModel.matchScores,
+                    matchResults = homeViewModel.matchResults,
                     sortMode = homeViewModel.sortMode,
                     onSortModeChange = { homeViewModel.updateSortMode(it) },
                     hasMatchProfile = homeViewModel.seekerProfile != null,
@@ -270,6 +357,27 @@ fun AppNavGraph(
                     onJobClick = { job -> navController.navigate("employer_job_detail/${job.id}") },
                     onApplicationClick = { applicationId ->
                         navController.navigate(Screen.ApplicationDetail.createRoute(applicationId))
+                    },
+                    onScheduleInterview = { application ->
+                        scheduleViewModel.setPrefill(
+                            SchedulePrefill(
+                                seekerId = application.userId,
+                                seekerName = application.applicantName,
+                                employerId = loggedInUser?.id.orEmpty(),
+                                company = application.companyName,
+                                title = application.jobTitle
+                            )
+                        )
+                        navController.navigate(Screen.Schedule.route)
+                    },
+                    onStartChat = { application ->
+                        startOrOpenChat(
+                            counterpartId = application.userId,
+                            counterpartName = application.applicantName,
+                            companyName = application.companyName,
+                            jobTitle = application.jobTitle,
+                            progressKey = application.id
+                        )
                     },
                     onProfileClick = { navController.navigate("profile") }
                 )
@@ -422,57 +530,13 @@ fun AppNavGraph(
                     onConsumeRecentUpdate = { appliedViewModel.consumeRecentUpdate() },
                     onProfileClick = { navController.navigate("profile") },
                     onChatWithCompany = { application ->
-                        val userId = loggedInUser?.id
-                        if (userId.isNullOrBlank()) {
-                            snackbarMessage = "You need to be logged in to start a chat."
-                            return@MyAppliedScreen
-                        }
-
-                        if (chatCreationInProgressId != null) return@MyAppliedScreen
-
-                        val userName = loggedInUser?.name?.ifBlank { loggedInUser?.email ?: "" } ?: ""
-                        chatCreationInProgressId = application.id
-
-                        coroutineScope.launch {
-                            var caughtErrorText: String? = null
-
-                            val roomId = try {
-                                messageRepository.getOrCreateChatRoom(
-                                    seekerId = userId,
-                                    seekerName = userName,
-                                    employerId = application.employerId.ifBlank { "employer_default" },
-                                    companyName = application.companyName,
-                                    jobTitle = application.jobTitle.ifBlank { "Position" }
-                                )
-                            } catch (e: Exception) {
-                                Log.e("AppNavGraph", "Error creating chat room", e)
-                                caughtErrorText = e.message ?: e.toString()
-                                ""
-                            }
-
-                            chatCreationInProgressId = null
-
-                            if (roomId.isNotBlank()) {
-                                chatViewModel.loadUserChatRooms(userId)
-
-                                val encodedCompany = Uri.encode(application.companyName.ifBlank { "Company Name" })
-                                val encodedTitle = Uri.encode(application.jobTitle.ifBlank { "Position" })
-
-                                navController.navigate(Screen.Chat.route) {
-                                    popUpTo(Screen.Home.route) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-
-                                navController.navigate("chat_detail/$roomId/$encodedCompany/$encodedTitle/none")
-                            } else {
-                                snackbarMessage = if (caughtErrorText != null) {
-                                    "Chat error: $caughtErrorText"
-                                } else {
-                                    "Couldn't start the chat. Please check your connection and try again."
-                                }
-                            }
-                        }
+                        startOrOpenChat(
+                            counterpartId = application.employerId.ifBlank { "employer_default" },
+                            counterpartName = application.companyName,
+                            companyName = application.companyName,
+                            jobTitle = application.jobTitle,
+                            progressKey = application.id
+                        )
                     }
                 )
             }
@@ -489,7 +553,14 @@ fun AppNavGraph(
                     viewModel = appliedViewModel,
                     onBackClick = { navController.popBackStack() },
                     onChatClick = { applicantId, applicantName ->
-                        // Optional handling for chat routing from detail view
+                        val application = appliedViewModel.applicationsList.find { it.id == applicationId }
+                        startOrOpenChat(
+                            counterpartId = applicantId,
+                            counterpartName = applicantName,
+                            companyName = application?.companyName ?: loggedInUser?.companyName.orEmpty(),
+                            jobTitle = application?.jobTitle.orEmpty(),
+                            progressKey = applicationId
+                        )
                     },
                     onScheduleClick = { _, applicantId, applicantName, jobTitle, companyName ->
                         scheduleViewModel.setPrefill(

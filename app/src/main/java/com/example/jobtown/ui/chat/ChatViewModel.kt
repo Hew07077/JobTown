@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.jobtown.data.ActionType
 import com.example.jobtown.data.ChatMessage
 import com.example.jobtown.data.ChatRoom
 import com.example.jobtown.data.MessageReaction
@@ -39,7 +40,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
     private val _roomPresence = MutableStateFlow(RoomPresence())
     val roomPresence: StateFlow<RoomPresence> = _roomPresence.asStateFlow()
 
-    // UI State flags
     private val _isLoadingRooms = MutableStateFlow(false)
     val isLoadingRooms: StateFlow<Boolean> = _isLoadingRooms.asStateFlow()
 
@@ -58,7 +58,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
     private val _hasMoreMessages = MutableStateFlow(true)
     val hasMoreMessages: StateFlow<Boolean> = _hasMoreMessages.asStateFlow()
 
-    // Advanced UI filters & archiving
     private val _pinnedRoomIds = MutableStateFlow<Set<String>>(emptySet())
     val pinnedRoomIds: StateFlow<Set<String>> = _pinnedRoomIds.asStateFlow()
 
@@ -75,23 +74,45 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
     private var roomListenerJob: Job? = null
     private var reactionListenerJob: Job? = null
     private var presenceListenerJob: Job? = null
+    private var roomsListenerJob: Job? = null
 
     private val initialQuestionSentForRooms = mutableSetOf<String>()
 
-    // ==================== Room Management ====================
-
     fun loadUserChatRooms(userId: String) {
         if (userId.isBlank()) return
+
+        roomsListenerJob?.cancel()
+
         viewModelScope.launch {
             _isLoadingRooms.value = true
             try {
                 _chatRooms.value = messageRepository.getChatRoomsForUser(userId)
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading chat rooms", e)
-                _eventFlow.emit(ChatUiEvent.ShowToast("Failed to load chat conversations."))
             } finally {
                 _isLoadingRooms.value = false
             }
+        }
+
+        roomsListenerJob = viewModelScope.launch {
+            messageRepository.observeUserChatRooms(userId)
+                .catch { e -> Log.e(TAG, "Error in rooms stream", e) }
+                .collect { updatedRooms ->
+                    _chatRooms.update { currentRooms ->
+                        if (currentRooms.isEmpty()) {
+                            updatedRooms
+                        } else {
+                            val map = currentRooms.associateBy { it.id }.toMutableMap()
+                            updatedRooms.forEach { room ->
+                                val existing = map[room.id]
+                                if (existing == null || room.lastMessageTime >= existing.lastMessageTime) {
+                                    map[room.id] = room
+                                }
+                            }
+                            map.values.sortedByDescending { it.lastMessageTime }
+                        }
+                    }
+                }
         }
     }
 
@@ -125,10 +146,12 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         }
     }
 
-    // ==================== Message Loading ====================
-
     fun loadMessages(roomId: String, currentUserId: String = "") {
         if (roomId.isBlank()) return
+
+        if (activeRoomId != roomId) {
+            _messagesList.value = emptyList()
+        }
 
         activeRoomId = roomId
         roomListenerJob?.cancel()
@@ -140,16 +163,18 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         roomListenerJob = viewModelScope.launch {
             _isLoadingMessages.value = true
             try {
-                val page = messageRepository.getMessagesForRoom(roomId)
-                _messagesList.value = page
+                val fetchedMessages = messageRepository.getMessagesForRoom(roomId)
+                if (fetchedMessages.isNotEmpty()) {
+                    _messagesList.value = fetchedMessages
+                }
                 _reactionsList.value = messageRepository.getReactionsForRoom(roomId)
-                _hasMoreMessages.value = page.size >= MessageRepository.DEFAULT_PAGE_SIZE
+                _hasMoreMessages.value = fetchedMessages.size >= MessageRepository.DEFAULT_PAGE_SIZE
+
                 if (currentUserId.isNotBlank()) {
                     messageRepository.markMessagesAsRead(roomId, currentUserId)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading initial messages", e)
-                _eventFlow.emit(ChatUiEvent.ShowToast("Failed to load message history."))
+                Log.e(TAG, "Error loading messages", e)
             } finally {
                 _isLoadingMessages.value = false
             }
@@ -159,6 +184,14 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 .collect { incoming ->
                     if (activeRoomId != roomId) return@collect
                     mergeIncomingMessage(incoming)
+
+                    val snippet = when (incoming.messageType) {
+                        MessageType.IMAGE -> "[Photo]"
+                        MessageType.FILE -> "[Document]"
+                        else -> incoming.text
+                    }
+                    updateLocalRoomPreview(roomId, snippet, incoming.timestamp)
+
                     if (currentUserId.isNotBlank() && incoming.senderId != currentUserId) {
                         messageRepository.markMessagesAsRead(roomId, currentUserId)
                     }
@@ -208,7 +241,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading older messages", e)
-                _eventFlow.emit(ChatUiEvent.ShowToast("Failed to load earlier messages."))
             } finally {
                 _isLoadingOlderMessages.value = false
             }
@@ -219,13 +251,12 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         _messageSearchQuery.value = query
     }
 
-    // ==================== Sending Messages ====================
-
     fun sendMessage(
         roomId: String,
         senderId: String,
         content: String,
         type: MessageType = MessageType.TEXT,
+        actionType: ActionType = ActionType.NONE,
         replyToId: String? = null,
         onResult: (Boolean) -> Unit = {}
     ) {
@@ -238,34 +269,88 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         viewModelScope.launch {
             _isSendingMessage.value = true
             val now = System.currentTimeMillis()
+            val tempId = "temp_$now"
+
             val tempMessage = ChatMessage(
-                id = "temp_$now",
+                id = tempId,
                 chatRoomId = roomId,
                 senderId = senderId,
                 text = trimmed,
                 timestamp = now,
                 isRead = false,
                 messageType = type,
-                replyToId = replyToId
+                actionType = actionType,
+                replyToId = replyToId,
+                isFailed = false
             )
 
+            val snippet = when (type) {
+                MessageType.IMAGE -> "[Photo]"
+                MessageType.FILE -> "[Document]"
+                else -> trimmed
+            }
+
             _messagesList.update { it + tempMessage }
+            updateLocalRoomPreview(roomId, snippet, now)
 
             try {
-                val success = messageRepository.sendMessage(roomId, senderId, trimmed, type, replyToId)
-                if (success) {
-                    loadUserChatRooms(senderId)
+                val confirmed = messageRepository.sendMessage(
+                    roomId = roomId,
+                    senderId = senderId,
+                    content = trimmed,
+                    type = type,
+                    actionType = actionType,
+                    replyToId = replyToId
+                )
+                if (confirmed != null) {
+                    replaceTempMessage(tempId, confirmed)
+                    onResult(true)
                 } else {
-                    _messagesList.update { list -> list.filterNot { it.id == tempMessage.id } }
+                    _messagesList.update { current ->
+                        current.map { if (it.id == tempId) it.copy(isFailed = true) else it }
+                    }
+                    _eventFlow.emit(ChatUiEvent.ShowToast("Failed to post message to database"))
+                    onResult(false)
                 }
-                onResult(success)
             } catch (e: Exception) {
                 Log.e(TAG, "Exception while sending message", e)
-                _messagesList.update { list -> list.filterNot { it.id == tempMessage.id } }
-                _eventFlow.emit(ChatUiEvent.ShowToast("Error sending message."))
+                _messagesList.update { current ->
+                    current.map { if (it.id == tempId) it.copy(isFailed = true) else it }
+                }
+                _eventFlow.emit(ChatUiEvent.ShowToast("Error: ${e.localizedMessage}"))
                 onResult(false)
             } finally {
                 _isSendingMessage.value = false
+            }
+        }
+    }
+
+    fun retryMessage(roomId: String, senderId: String, failedMessage: ChatMessage) {
+        if (failedMessage.id.isBlank()) return
+        viewModelScope.launch {
+            _messagesList.update { current ->
+                current.map { if (it.id == failedMessage.id) it.copy(isFailed = false) else it }
+            }
+            try {
+                val confirmed = messageRepository.sendMessage(
+                    roomId = roomId,
+                    senderId = senderId,
+                    content = failedMessage.text,
+                    type = failedMessage.messageType,
+                    actionType = failedMessage.actionType,
+                    replyToId = failedMessage.replyToId
+                )
+                if (confirmed != null) {
+                    replaceTempMessage(failedMessage.id, confirmed)
+                    val snippet = when (failedMessage.messageType) {
+                        MessageType.IMAGE -> "[Photo]"
+                        MessageType.FILE -> "[Document]"
+                        else -> failedMessage.text
+                    }
+                    updateLocalRoomPreview(roomId, snippet, confirmed.timestamp)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception while retrying message", e)
             }
         }
     }
@@ -283,15 +368,16 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                     return@launch
                 }
 
-                val success = messageRepository.sendMessage(
+                val confirmed = messageRepository.sendMessage(
                     roomId = roomId,
                     senderId = userId,
                     content = initialQuestion,
-                    type = MessageType.TEXT
+                    type = MessageType.TEXT,
+                    actionType = ActionType.NONE
                 )
-                if (success) {
+                if (confirmed != null) {
                     initialQuestionSentForRooms.add(key)
-                    loadUserChatRooms(userId)
+                    updateLocalRoomPreview(roomId, initialQuestion, confirmed.timestamp)
                     loadMessages(roomId, userId)
                 }
             } catch (e: Exception) {
@@ -324,37 +410,71 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
 
         viewModelScope.launch {
             _isUploadingAttachment.value = true
+            val now = System.currentTimeMillis()
+            val tempId = "temp_att_$now"
+
+            val tempAttachmentMessage = ChatMessage(
+                id = tempId,
+                chatRoomId = roomId,
+                senderId = senderId,
+                text = "Uploading attachment...",
+                timestamp = now,
+                isRead = false,
+                messageType = type,
+                actionType = ActionType.NONE,
+                replyToId = replyToId,
+                isFailed = false
+            )
+
+            _messagesList.update { it + tempAttachmentMessage }
+
             try {
-                val url = messageRepository.uploadChatAttachment(
+                val publicUrl = messageRepository.uploadChatAttachment(
                     roomId = roomId,
                     fileName = fileName,
                     bytes = bytes,
                     mimeType = mimeType
                 )
 
-                if (url == null) {
-                    _eventFlow.emit(ChatUiEvent.ShowToast("Failed to upload attachment."))
-                    onComplete(false)
-                    return@launch
-                }
+                if (publicUrl.isNotBlank()) {
+                    val confirmed = messageRepository.sendMessage(
+                        roomId = roomId,
+                        senderId = senderId,
+                        content = publicUrl,
+                        type = type,
+                        actionType = ActionType.NONE,
+                        replyToId = replyToId
+                    )
 
-                val success = messageRepository.sendMessage(
-                    roomId = roomId,
-                    senderId = senderId,
-                    content = url,
-                    type = type,
-                    replyToId = replyToId
-                )
+                    val snippet = when (type) {
+                        MessageType.IMAGE -> "[Photo]"
+                        MessageType.FILE -> "[Document]"
+                        else -> "Attachment"
+                    }
 
-                if (success) {
-                    loadUserChatRooms(senderId)
+                    if (confirmed != null) {
+                        replaceTempMessage(tempId, confirmed)
+                        updateLocalRoomPreview(roomId, snippet, confirmed.timestamp)
+                    } else {
+                        _messagesList.update { list ->
+                            list.map {
+                                if (it.id == tempId) {
+                                    it.copy(id = "sent_att_$now", text = publicUrl, messageType = type)
+                                } else it
+                            }
+                        }
+                    }
+                    onComplete(true)
                 } else {
-                    _eventFlow.emit(ChatUiEvent.ShowToast("Failed to send attachment."))
+                    throw IllegalStateException("Failed to obtain public URL for attachment")
                 }
-                onComplete(success)
             } catch (e: Exception) {
-                Log.e(TAG, "Error sending attachment", e)
-                _eventFlow.emit(ChatUiEvent.ShowToast("Error sending attachment."))
+                Log.e(TAG, "Error uploading and sending attachment", e)
+                _messagesList.update { list ->
+                    list.map {
+                        if (it.id == tempId) it.copy(isFailed = true, text = "Failed to send attachment") else it
+                    }
+                }
                 onComplete(false)
             } finally {
                 _isUploadingAttachment.value = false
@@ -362,16 +482,11 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         }
     }
 
-    // ==================== Message Management ====================
-
     fun editMessage(roomId: String, messageId: String, newText: String, currentUserId: String = "") {
         val trimmed = newText.trim()
         if (roomId.isBlank() || messageId.isBlank() || trimmed.isBlank()) return
 
         viewModelScope.launch {
-            val previousList = _messagesList.value
-
-            // Optimistic update
             _messagesList.update { current ->
                 current.map { msg ->
                     if (msg.id == messageId) {
@@ -380,13 +495,12 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 }
             }
 
-            val success = messageRepository.editMessage(roomId, messageId, trimmed)
-            if (success) {
-                if (currentUserId.isNotBlank()) loadUserChatRooms(currentUserId)
-            } else {
-                // Revert on failure
-                _messagesList.value = previousList
-                _eventFlow.emit(ChatUiEvent.ShowToast("Failed to update message."))
+            updateLocalRoomPreview(roomId, trimmed, System.currentTimeMillis())
+
+            try {
+                messageRepository.editMessage(roomId, messageId, trimmed)
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception while editing message", e)
             }
         }
     }
@@ -395,24 +509,21 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         if (roomId.isBlank() || messageId.isBlank()) return
 
         viewModelScope.launch {
-            val previousList = _messagesList.value
-
-            // Optimistic update
+            val deletedText = "This message was deleted"
             _messagesList.update { current ->
                 current.map { msg ->
                     if (msg.id == messageId) {
-                        msg.copy(text = "This message was deleted", isDeleted = true, isEdited = false)
+                        msg.copy(text = deletedText, isDeleted = true, isEdited = false)
                     } else msg
                 }
             }
 
-            val success = messageRepository.deleteMessage(roomId, messageId)
-            if (success) {
-                if (currentUserId.isNotBlank()) loadUserChatRooms(currentUserId)
-            } else {
-                // Revert on failure
-                _messagesList.value = previousList
-                _eventFlow.emit(ChatUiEvent.ShowToast("Failed to delete message."))
+            updateLocalRoomPreview(roomId, deletedText, System.currentTimeMillis())
+
+            try {
+                messageRepository.deleteMessage(roomId, messageId)
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception while deleting message", e)
             }
         }
     }
@@ -426,8 +537,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 it.messageId == messageId && it.userId == userId && it.emoji == emoji
             }
 
-            // Optimistic update so the tap feels instant instead of waiting on the
-            // realtime round-trip (same pattern used for edit/delete).
             _reactionsList.update { current ->
                 if (existing != null) {
                     current.filterNot { it.id == existing.id }
@@ -444,37 +553,58 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
             }
 
             try {
-                val success = messageRepository.toggleReaction(roomId, messageId, userId, emoji)
-                if (!success) {
-                    _reactionsList.value = previousReactions
-                    _eventFlow.emit(ChatUiEvent.ShowToast("Failed to update reaction."))
-                }
+                messageRepository.toggleReaction(roomId, messageId, userId, emoji)
             } catch (e: Exception) {
                 Log.e(TAG, "Error toggling reaction", e)
-                _reactionsList.value = previousReactions
-                _eventFlow.emit(ChatUiEvent.ShowToast("Failed to update reaction."))
             }
         }
     }
 
-    // ==================== Private Helpers ====================
+    private fun updateLocalRoomPreview(roomId: String, snippet: String, timestamp: Long) {
+        _chatRooms.update { rooms ->
+            rooms.map { room ->
+                if (room.id == roomId) {
+                    room.copy(
+                        lastMessage = snippet,
+                        lastMessageTime = timestamp
+                    )
+                } else room
+            }.sortedByDescending { it.lastMessageTime }
+        }
+    }
+
+    private fun replaceTempMessage(tempId: String, confirmed: ChatMessage) {
+        _messagesList.update { current ->
+            val hasConfirmed = current.any { it.id == confirmed.id }
+            val listWithoutTemp = current.filterNot { it.id == tempId }
+            if (hasConfirmed) {
+                listWithoutTemp
+            } else {
+                val index = current.indexOfFirst { it.id == tempId }
+                if (index != -1) {
+                    current.toMutableList().apply { set(index, confirmed) }
+                } else {
+                    current + confirmed
+                }
+            }
+        }
+    }
 
     private fun mergeIncomingMessage(incoming: ChatMessage) {
         _messagesList.update { current ->
-            // 1. Check if the exact message ID exists (covers existing message update/delete realtime broadcast)
             val index = current.indexOfFirst { it.id == incoming.id }
             if (index != -1) {
-                return@update current.toMutableList().apply {
-                    set(index, incoming)
-                }
+                return@update current.toMutableList().apply { set(index, incoming) }
             }
 
-            // 2. Clear out temp messages if real message arrived
             val filtered = current.filterNot {
-                it.id.startsWith("temp_") && it.senderId == incoming.senderId && it.text == incoming.text
+                it.id.startsWith("temp_") &&
+                        it.senderId == incoming.senderId &&
+                        (it.text == incoming.text ||
+                                it.text == "Uploading attachment..." ||
+                                it.messageType == incoming.messageType)
             }
 
-            // 3. Insert or append based on timestamp order
             val insertIndex = filtered.indexOfFirst { it.timestamp > incoming.timestamp }
             if (insertIndex == -1) {
                 filtered + incoming
@@ -484,13 +614,12 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         }
     }
 
-    // ==================== Cleanup ====================
-
     override fun onCleared() {
         super.onCleared()
         roomListenerJob?.cancel()
         reactionListenerJob?.cancel()
         presenceListenerJob?.cancel()
+        roomsListenerJob?.cancel()
     }
 
     companion object {
