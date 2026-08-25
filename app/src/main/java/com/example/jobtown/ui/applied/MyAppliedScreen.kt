@@ -13,24 +13,21 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.example.jobtown.data.JobApplication
 import com.example.jobtown.data.User
-import com.example.jobtown.ui.theme.BackgroundWhite
-import com.example.jobtown.ui.theme.DeepGreenDark
-import com.example.jobtown.ui.theme.SageGreenDark
-import com.example.jobtown.ui.theme.SageGreenLight
-import com.example.jobtown.ui.theme.SageGreenMain
-import com.example.jobtown.ui.theme.TextDark
+import com.example.jobtown.data.repository.UserRepository
+import com.example.jobtown.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -164,6 +161,29 @@ fun ApplicationCard(
     onCardClick: () -> Unit = {},
     onChatWithCompany: () -> Unit
 ) {
+    var employerAvatarUrl by remember { mutableStateOf<String?>(null) }
+    var jobCompanyImageUrl by remember { mutableStateOf<String?>(null) }
+
+    // Fetch employer profile photo and job listing company logo
+    LaunchedEffect(application.employerId, application.jobId) {
+        val employerId = application.employerId
+        if (!employerId.isNullOrBlank()) {
+            val employerUser = UserRepository.fetchUserById(employerId)
+            employerAvatarUrl = employerUser?.avatarUrl
+        }
+
+        val jobId = application.jobId
+        if (!jobId.isNullOrBlank()) {
+            val jobs = UserRepository.fetchAllJobs()
+            val matchedJob = jobs.find { it.id == jobId }
+            jobCompanyImageUrl = matchedJob?.companyImageUrl
+        }
+    }
+
+    // Resolution priority: Job company logo -> Employer profile photo -> Default Icon
+    val activePhotoUrl = jobCompanyImageUrl?.takeIf { it.isNotBlank() }
+        ?: employerAvatarUrl?.takeIf { it.isNotBlank() }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -191,15 +211,26 @@ fun ApplicationCard(
                     Surface(
                         shape = CircleShape,
                         color = SageGreenMain.copy(alpha = 0.3f),
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Business,
-                                contentDescription = null,
-                                tint = DeepGreenDark,
-                                modifier = Modifier.size(20.dp)
+                        if (!activePhotoUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = activePhotoUrl,
+                                contentDescription = "Employer Photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(CircleShape)
                             )
+                        } else {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Business,
+                                    contentDescription = null,
+                                    tint = DeepGreenDark,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.width(12.dp))

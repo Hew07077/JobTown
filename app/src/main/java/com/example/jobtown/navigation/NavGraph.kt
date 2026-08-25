@@ -31,6 +31,7 @@ import com.example.jobtown.data.repository.ScheduleRepository
 import com.example.jobtown.ui.applied.AppliedViewModel
 import com.example.jobtown.ui.applied.MyAppliedScreen
 import com.example.jobtown.ui.applied.ApplicationDetailScreen
+import com.example.jobtown.ui.applied.JobseekerApplicationDetailScreen
 import com.example.jobtown.ui.auth.CompleteProfileScreen
 import com.example.jobtown.ui.auth.LoginScreen
 import com.example.jobtown.ui.auth.SignUpFields
@@ -50,6 +51,7 @@ import com.example.jobtown.ui.postjob.EmployerJobDetailScreen
 import com.example.jobtown.ui.postjob.PostJobScreen
 import com.example.jobtown.ui.profile.ProfileScreen
 import com.example.jobtown.ui.schedule.ScheduleScreen
+import com.example.jobtown.ui.schedule.ScheduleDetailScreen
 import com.example.jobtown.ui.schedule.ScheduleViewModel
 import com.example.jobtown.ui.schedule.SchedulePrefill
 import io.github.jan.supabase.SupabaseClient
@@ -128,20 +130,11 @@ fun AppNavGraph(
         }
     }
 
-    // Kept live at this level (rather than only inside the chat_list route) so the bottom nav
-    // badge and any other chrome can reflect unread messages no matter which screen is open.
     val chatRoomsForBadge by chatViewModel.chatRooms.collectAsStateWithLifecycle()
     val totalUnreadChatCount = remember(chatRoomsForBadge) {
         chatRoomsForBadge.sumOf { it.unreadCount }
     }
 
-    /**
-     * Single entry point for starting (or reopening) a chat, usable by both seekers and
-     * employers. Looks up/creates the room via [MessageRepository.getOrCreateChatRoom] and
-     * then navigates into it. [progressKey] just needs to be unique per in-flight request
-     * (an application id, a room id, etc.) so simultaneous taps on different rows don't
-     * clobber each other while still guarding against double-taps on the same one.
-     */
     fun startOrOpenChat(
         counterpartId: String,
         counterpartName: String,
@@ -192,8 +185,6 @@ fun AppNavGraph(
             if (roomId.isNotBlank()) {
                 chatViewModel.loadUserChatRooms(currentUser.id)
 
-                // The header always shows "who you're talking to": the company name for a
-                // seeker, the applicant's name for an employer.
                 val displayName = if (isEmployerViewer) seekerName else companyName.ifBlank { "Company Name" }
                 val encodedName = Uri.encode(displayName.ifBlank { "Chat" })
                 val encodedTitle = Uri.encode(jobTitle.ifBlank { "Position" })
@@ -548,49 +539,66 @@ fun AppNavGraph(
                 )
             ) { backStackEntry ->
                 val applicationId = backStackEntry.arguments?.getString("applicationId") ?: ""
-                ApplicationDetailScreen(
-                    applicationId = applicationId,
-                    viewModel = appliedViewModel,
-                    onBackClick = { navController.popBackStack() },
-                    onChatClick = { applicantId, applicantName ->
-                        val application = appliedViewModel.applicationsList.find { it.id == applicationId }
-                        startOrOpenChat(
-                            counterpartId = applicantId,
-                            counterpartName = applicantName,
-                            companyName = application?.companyName ?: loggedInUser?.companyName.orEmpty(),
-                            jobTitle = application?.jobTitle.orEmpty(),
-                            progressKey = applicationId
-                        )
-                    },
-                    onScheduleClick = { _, applicantId, applicantName, jobTitle, companyName ->
-                        scheduleViewModel.setPrefill(
-                            SchedulePrefill(
-                                seekerId = applicantId,
-                                seekerName = applicantName,
-                                employerId = loggedInUser?.id.orEmpty(),
-                                company = companyName,
-                                title = jobTitle
+
+                if (loggedInUser?.role == UserRole.EMPLOYER) {
+                    ApplicationDetailScreen(
+                        applicationId = applicationId,
+                        viewModel = appliedViewModel,
+                        onBackClick = { navController.popBackStack() },
+                        onChatClick = { applicantId, applicantName ->
+                            val application = appliedViewModel.applicationsList.find { it.id == applicationId }
+                            startOrOpenChat(
+                                counterpartId = applicantId,
+                                counterpartName = applicantName,
+                                companyName = application?.companyName ?: loggedInUser?.companyName.orEmpty(),
+                                jobTitle = application?.jobTitle.orEmpty(),
+                                progressKey = applicationId
                             )
-                        )
-                        navController.navigate(Screen.Schedule.route)
-                    },
-                    onStatusChange = { targetAppId, newStatus ->
-                        appliedViewModel.updateApplicationStatus(targetAppId, newStatus) { success ->
-                            if (success) {
-                                snackbarMessage = "Application status updated to $newStatus"
-                            } else {
-                                snackbarMessage = "Failed to update application status."
+                        },
+                        onScheduleClick = { _, applicantId, applicantName, jobTitle, companyName ->
+                            scheduleViewModel.setPrefill(
+                                SchedulePrefill(
+                                    seekerId = applicantId,
+                                    seekerName = applicantName,
+                                    employerId = loggedInUser?.id.orEmpty(),
+                                    company = companyName,
+                                    title = jobTitle
+                                )
+                            )
+                            navController.navigate(Screen.Schedule.route)
+                        },
+                        onStatusChange = { targetAppId, newStatus ->
+                            appliedViewModel.updateApplicationStatus(targetAppId, newStatus) { success ->
+                                if (success) {
+                                    snackbarMessage = "Application status updated to $newStatus"
+                                } else {
+                                    snackbarMessage = "Failed to update application status."
+                                }
                             }
                         }
-                    }
-                )
+                    )
+                } else {
+                    JobseekerApplicationDetailScreen(
+                        applicationId = applicationId,
+                        viewModel = appliedViewModel,
+                        onBackClick = { navController.popBackStack() },
+                        onChatWithEmployerClick = { application ->
+                            startOrOpenChat(
+                                counterpartId = application.employerId.ifBlank { "employer_default" },
+                                counterpartName = application.companyName,
+                                companyName = application.companyName,
+                                jobTitle = application.jobTitle,
+                                progressKey = application.id
+                            )
+                        }
+                    )
+                }
             }
 
             composable(Screen.Schedule.route) {
                 val currentUserId = loggedInUser?.id.orEmpty()
                 val isEmployer = loggedInUser?.role == UserRole.EMPLOYER
 
-                // Automatically fetch or refresh remote schedules when opening schedule screen
                 LaunchedEffect(currentUserId) {
                     if (currentUserId.isNotBlank()) {
                         scheduleViewModel.loadSchedules(currentUserId, isEmployer)
@@ -631,6 +639,42 @@ fun AppNavGraph(
                         }
                     },
                     onProfileClick = { navController.navigate("profile") }
+                )
+            }
+
+            composable(
+                route = Screen.ScheduleDetail.route,
+                arguments = listOf(navArgument("scheduleId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val scheduleId = backStackEntry.arguments?.getString("scheduleId") ?: ""
+                val schedule = scheduleViewModel.schedulesList.find { it.id == scheduleId }
+                val currentUserId = loggedInUser?.id.orEmpty()
+                val isEmployer = loggedInUser?.role == UserRole.EMPLOYER
+
+                ScheduleDetailScreen(
+                    schedule = schedule,
+                    isEmployer = isEmployer,
+                    onBackClick = { navController.popBackStack() },
+                    onUpdateStatus = { targetId, status ->
+                        scheduleViewModel.updateScheduleStatus(targetId, status, currentUserId, isEmployer) { success ->
+                            if (success) {
+                                snackbarMessage = "Schedule status updated to $status."
+                                navController.popBackStack()
+                            } else {
+                                snackbarMessage = "Failed to update schedule status."
+                            }
+                        }
+                    },
+                    onRespondInvite = { targetId, status ->
+                        scheduleViewModel.updateScheduleStatus(targetId, status, currentUserId, isEmployer) { success ->
+                            if (success) {
+                                snackbarMessage = "Interview invitation $status successfully."
+                                navController.popBackStack()
+                            } else {
+                                snackbarMessage = "Failed to update interview invitation response."
+                            }
+                        }
+                    }
                 )
             }
 

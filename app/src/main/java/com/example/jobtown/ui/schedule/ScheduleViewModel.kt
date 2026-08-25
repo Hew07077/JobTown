@@ -42,8 +42,7 @@ class ScheduleViewModel(
         }
 
         // Keep the list live so an employer's new/updated invite (or a seeker's
-        // accept/reject) shows up immediately for the other side, instead of only on
-        // the next manual visit to this tab.
+        // accept/reject) shows up immediately for the other side.
         realtimeJob = viewModelScope.launch {
             scheduleRepository.observeSchedulesForUser(userId, isEmployer)
                 .catch { /* Initial load above already covers the non-realtime case. */ }
@@ -59,16 +58,20 @@ class ScheduleViewModel(
         schedulePrefill = SchedulePrefill()
     }
 
-    fun createSchedule(newSchedule: InterviewSchedule, currentUserId: String, isEmployer: Boolean, onResult: (Boolean, String?) -> Unit) {
+    fun createSchedule(
+        newSchedule: InterviewSchedule,
+        currentUserId: String,
+        isEmployer: Boolean,
+        onResult: (Boolean, String?) -> Unit
+    ) {
         viewModelScope.launch {
             isSaving = true
             val scheduleWithId = newSchedule.copy(id = UUID.randomUUID().toString())
 
-            // Strictly push to Supabase backend database
+            // Push to Supabase backend database
             val success = scheduleRepository.createSchedule(scheduleWithId)
 
             if (success) {
-                // Refresh list directly from remote source to keep seeker & employer in sync
                 schedulesList = scheduleRepository.getSchedulesForUser(currentUserId, isEmployer)
                 clearPrefill()
                 onResult(true, "Interview successfully scheduled and sent to candidate!")
@@ -79,7 +82,13 @@ class ScheduleViewModel(
         }
     }
 
-    fun updateScheduleStatus(scheduleId: String, status: String, currentUserId: String, isEmployer: Boolean, onResult: (Boolean) -> Unit) {
+    fun updateScheduleStatus(
+        scheduleId: String,
+        status: String,
+        currentUserId: String,
+        isEmployer: Boolean,
+        onResult: (Boolean) -> Unit
+    ) {
         viewModelScope.launch {
             val success = scheduleRepository.updateScheduleStatus(scheduleId, status)
             if (success) {
@@ -88,6 +97,25 @@ class ScheduleViewModel(
             } else {
                 onResult(false)
             }
+        }
+    }
+
+    fun updateSchedule(
+        updatedSchedule: InterviewSchedule,
+        currentUserId: String,
+        isEmployer: Boolean,
+        onResult: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            isSaving = true
+            val success = scheduleRepository.updateSchedule(updatedSchedule)
+            if (success) {
+                schedulesList = scheduleRepository.getSchedulesForUser(currentUserId, isEmployer)
+                onResult(true)
+            } else {
+                onResult(false)
+            }
+            isSaving = false
         }
     }
 

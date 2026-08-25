@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.jobtown.data.Job
+import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.utils.JobMatchResult
 import com.example.jobtown.ui.theme.*
 
@@ -36,15 +38,20 @@ fun JobCard(
     showMatchInsights: Boolean = true
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var employerAvatarUrl by remember { mutableStateOf<String?>(null) }
 
-    // 1. Resolve image URL with fallback generation if empty
-    val rawImageUrl = avatarUrl?.takeIf { it.isNotBlank() } ?: job.companyImageUrl
-
-    // GUARANTEE LOGO APPEARANCE: If the URL is blank, generate an automatic initials avatar badge using the company name!
-    val targetImageUrl = rawImageUrl?.takeIf { it.isNotBlank() } ?: run {
-        val companySafeName = job.companyName.ifBlank { "Company" }.trim()
-        "https://ui-avatars.com/api/?name=${java.net.URLEncoder.encode(companySafeName, "UTF-8")}&background=E8F5E9&color=1B5E20&bold=true"
+    // Fetch the employer's user profile photo from Supabase using job.employerId
+    LaunchedEffect(job.employerId) {
+        if (!job.employerId.isNullOrBlank()) {
+            val employerUser = UserRepository.fetchUserById(job.employerId)
+            employerAvatarUrl = employerUser?.avatarUrl
+        }
     }
+
+    // Resolution priority: explicit avatarUrl parameter -> job.companyImageUrl -> employer's avatarUrl from database
+    val activePhotoUrl = avatarUrl?.takeIf { it.isNotBlank() }
+        ?: job.companyImageUrl?.takeIf { it.isNotBlank() }
+        ?: employerAvatarUrl?.takeIf { it.isNotBlank() }
 
     Card(
         onClick = onClick,
@@ -65,9 +72,7 @@ fun JobCard(
                 Color(0xFFE0E0E0)
             }
         ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 1.dp
-        )
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
@@ -78,51 +83,44 @@ fun JobCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top
             ) {
-
-                // =========================================================
-                // COMPANY LOGO CONTAINER
-                // =========================================================
+                // LOGO / AVATAR CONTAINER
                 Surface(
                     modifier = Modifier.size(42.dp),
-                    shape = RoundedCornerShape(6.dp),
-                    color = SageGreenMain.copy(alpha = 0.3f),
-                    border = BorderStroke(
-                        0.5.dp,
-                        DeepGreenDark.copy(alpha = 0.2f)
-                    )
+                    shape = CircleShape,
+                    color = Color.White,
+                    shadowElevation = 2.dp,
+                    border = BorderStroke(0.5.dp, SageGreenDark.copy(alpha = 0.3f))
                 ) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        AsyncImage(
-                            model = targetImageUrl,
-                            contentDescription = "Employer Logo",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(6.dp)),
-                            contentScale = ContentScale.Crop,
-                            onError = {
-                                // Logs out if image loading fails for debugging
-                                val error = it.result.throwable
-                                android.util.Log.e("JobCardLogo", "Failed to load image from: $targetImageUrl", error)
-                            }
-                        )
+                        if (!activePhotoUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = activePhotoUrl,
+                                contentDescription = "Company Photo",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Business,
+                                contentDescription = "Company Icon",
+                                tint = DeepGreenDark,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // =========================================================
                 // JOB DETAILS
-                // =========================================================
                 Column(
                     modifier = Modifier.weight(1f)
                 ) {
-
-                    // -----------------------------------------------------
-                    // TITLE + BADGES (Match Score & Featured)
-                    // -----------------------------------------------------
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -140,7 +138,6 @@ fun JobCard(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Match Score Badge
                             if (matchResult != null) {
                                 val matchColor = when {
                                     matchResult.score >= 85 -> DeepGreenDark
@@ -164,7 +161,6 @@ fun JobCard(
                                 }
                             }
 
-                            // Featured Badge
                             if (job.isFeatured == true) {
                                 Surface(
                                     color = DeepGreenDark,
@@ -195,9 +191,6 @@ fun JobCard(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
-                    // -----------------------------------------------------
-                    // COMPANY + LOCATION
-                    // -----------------------------------------------------
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
@@ -238,9 +231,6 @@ fun JobCard(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // -----------------------------------------------------
-                    // JOB TYPE & SALARY CHIPS
-                    // -----------------------------------------------------
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -276,9 +266,6 @@ fun JobCard(
                         }
                     }
 
-                    // -----------------------------------------------------
-                    // DESCRIPTION
-                    // -----------------------------------------------------
                     if (job.description.isNotBlank()) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -291,9 +278,6 @@ fun JobCard(
                 }
             }
 
-            // =========================================================
-            // MATCH INSIGHTS EXPANDABLE FOOTER
-            // =========================================================
             if (showMatchInsights && matchResult != null && matchResult.reasons.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(6.dp))
                 HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 0.5.dp)

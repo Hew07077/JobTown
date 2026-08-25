@@ -1,5 +1,6 @@
 package com.example.jobtown.data.repository
 
+import android.util.Log
 import com.example.jobtown.data.InterviewSchedule
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
@@ -26,13 +27,11 @@ class ScheduleRepository(private val supabaseClient: SupabaseClient) {
                 }
                 .decodeList<InterviewSchedule>()
         } catch (e: Exception) {
+            Log.e("ScheduleRepository", "Error fetching schedules: ${e.localizedMessage}")
             emptyList()
         }
     }
 
-    /**
-     * Live updates for a user's interview schedules.
-     */
     fun observeSchedulesForUser(userId: String, isEmployer: Boolean): Flow<List<InterviewSchedule>> = callbackFlow {
         if (userId.isBlank()) {
             close()
@@ -43,14 +42,11 @@ class ScheduleRepository(private val supabaseClient: SupabaseClient) {
             trySend(getSchedulesForUser(userId, isEmployer))
         }
 
-        // 1. Emit initial state immediately
         refresh()
 
-        // 2. Create realtime channel using the realtime plugin module
         val realtimePlugin = supabaseClient.realtime
         val channel = realtimePlugin.channel("interview_schedules_$userId")
 
-        // 3. Listen for changes in public.interview_schedules
         val job = launch {
             channel.postgresChangeFlow<PostgresAction>(schema = "public") {
                 table = "interview_schedules"
@@ -59,16 +55,14 @@ class ScheduleRepository(private val supabaseClient: SupabaseClient) {
             }
         }
 
-        // 4. Connect to channel stream
         launch {
             try {
                 channel.subscribe()
             } catch (e: Exception) {
-                // Subscription failure fallback (initial list still emitted)
+                Log.e("ScheduleRepository", "Realtime channel subscription error: ${e.localizedMessage}")
             }
         }
 
-        // 5. Tear down and cleanup on cancellation
         awaitClose {
             job.cancel()
             CoroutineScope(Dispatchers.IO).launch {
@@ -76,7 +70,7 @@ class ScheduleRepository(private val supabaseClient: SupabaseClient) {
                     channel.unsubscribe()
                     realtimePlugin.removeChannel(channel)
                 } catch (e: Exception) {
-                    // Ignore teardown errors
+                    // Cleanup complete
                 }
             }
         }
@@ -87,6 +81,7 @@ class ScheduleRepository(private val supabaseClient: SupabaseClient) {
             supabaseClient.from("interview_schedules").insert(schedule)
             true
         } catch (e: Exception) {
+            Log.e("ScheduleRepository", "Error creating schedule: ${e.localizedMessage}", e)
             false
         }
     }
@@ -101,6 +96,20 @@ class ScheduleRepository(private val supabaseClient: SupabaseClient) {
                 }
             true
         } catch (e: Exception) {
+            Log.e("ScheduleRepository", "Error updating status: ${e.localizedMessage}", e)
+            false
+        }
+    }
+
+    suspend fun updateSchedule(schedule: InterviewSchedule): Boolean = withContext(Dispatchers.IO) {
+        try {
+            supabaseClient.from("interview_schedules")
+                .update(schedule) {
+                    filter { eq("id", schedule.id) }
+                }
+            true
+        } catch (e: Exception) {
+            Log.e("ScheduleRepository", "Error updating schedule: ${e.localizedMessage}", e)
             false
         }
     }

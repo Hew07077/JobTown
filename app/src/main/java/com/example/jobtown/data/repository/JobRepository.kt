@@ -44,6 +44,8 @@ private data class NewJobPayload(
     @SerialName("posted_by_user_id") val postedByUserId: String?,
     @SerialName("status") val status: String? = "active",
     @SerialName("expired_at") val expiredAt: String? = null
+
+
 )
 
 @Serializable

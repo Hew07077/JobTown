@@ -55,7 +55,7 @@ import java.util.UUID
 
 private val INDUSTRY_OPTIONS = listOf(
     "Technology / IT",
-    "Finance / BaAnking",
+    "Finance / Banking",
     "Healthcare",
     "Retail / E-commerce",
     "Manufacturing",
@@ -98,7 +98,6 @@ fun ProfileScreen(
         ?.ifBlank { null } ?: "User Name"
     val memberSince = displayedUser?.createdAt?.takeIf { it.isNotBlank() }?.substringBefore("T")
 
-    // Extract lists/URLs directly from dedicated User model fields safely
     val skillsList = remember(displayedUser?.skills) {
         displayedUser?.skills
             ?.split(",")
@@ -135,7 +134,6 @@ fun ProfileScreen(
     val listState = rememberLazyListState()
     val context = LocalContext.current
 
-    // --- Avatar upload -------------------------------------------------
     var isUploadingAvatar by remember { mutableStateOf(false) }
     var avatarError by remember { mutableStateOf<String?>(null) }
 
@@ -182,8 +180,6 @@ fun ProfileScreen(
                     return@launch
                 }
 
-                // Cache-bust so Coil doesn't keep showing the old cached
-                // image at the same URL after a re-upload.
                 val freshUrl = "$uploadedUrl?t=${System.currentTimeMillis()}"
                 val currentUserSafe = displayedUser
                 if (currentUserSafe != null) {
@@ -212,12 +208,6 @@ fun ProfileScreen(
         )
     }
 
-    // --- Avatar manager (only reachable from inside Edit Profile) ------
-    // Replaces the old behaviour where tapping the avatar anywhere on the
-    // screen immediately launched the system photo picker. Now tapping the
-    // avatar while editing opens this in-app sheet, which offers uploading a
-    // brand new photo OR switching back to a previously uploaded one, plus
-    // deleting old ones.
     var showAvatarManager by remember { mutableStateOf(false) }
     var isLoadingAvatarHistory by remember { mutableStateOf(false) }
     var avatarHistory by remember { mutableStateOf<List<AvatarHistoryItem>>(emptyList()) }
@@ -255,9 +245,6 @@ fun ProfileScreen(
                 return@launch
             }
             avatarHistory = avatarHistory.filterNot { it.path == item.path }
-            // If the photo just deleted was the one currently in use, clear
-            // it from the profile too so it doesn't keep pointing at a file
-            // that no longer exists.
             val currentUserSafe = displayedUser
             if (currentUserSafe != null && currentUserSafe.avatarUrl.substringBefore("?") == item.url) {
                 val updatedUser = currentUserSafe.copy(avatarUrl = "")
@@ -769,13 +756,6 @@ fun ProfileScreen(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Bottom sheet shown when tapping the avatar WHILE editing the profile.
-// Lets the user upload a brand new photo, switch back to a previously
-// uploaded one, or permanently delete an old one -- replacing the old
-// behaviour where tapping the avatar anywhere just launched the system photo
-// picker directly.
-// ---------------------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AvatarManagerSheet(

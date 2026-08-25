@@ -21,13 +21,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.jobtown.data.ChatRoom
 import com.example.jobtown.data.User
+import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -52,8 +55,8 @@ fun ChatListScreen(
 
     val currentUserId = currentUser?.id.orEmpty()
 
-    // Calculate total unread count across all rooms
-    val totalUnreadCount by remember(chatRooms, currentUserId) {
+    // Total unread count across all rooms
+    val totalUnreadCount by remember(chatRooms) {
         derivedStateOf {
             chatRooms.sumOf { room -> room.unreadCount }
         }
@@ -80,7 +83,7 @@ fun ChatListScreen(
                             room.lastMessage.contains(query, ignoreCase = true)
                 }
             }
-            // Always keep the chat room with the most recent message timestamp at the top
+            // Keep room with the most recent message timestamp at top
             rooms.sortedByDescending { it.lastMessageTime }
         }
     }
@@ -257,6 +260,7 @@ fun ChatListScreen(
 
                                 ChatRoomItem(
                                     room = room,
+                                    isSeeker = isSeeker,
                                     otherName = otherName,
                                     positionName = positionName,
                                     onClick = { onChatRoomClick(room.id, otherName, positionName) }
@@ -273,16 +277,30 @@ fun ChatListScreen(
 @Composable
 private fun ChatRoomItem(
     room: ChatRoom,
+    isSeeker: Boolean,
     otherName: String,
     positionName: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var fetchedAvatarUrl by remember(room.id) { mutableStateOf<String?>(null) }
+
+    // Safely fetch target user's avatar from repository if not present directly in ChatRoom
+    LaunchedEffect(room.id) {
+        val targetUserId = if (isSeeker) room.employerId else room.seekerId
+        if (!targetUserId.isNullOrBlank()) {
+            val user = UserRepository.fetchUserById(targetUserId)
+            fetchedAvatarUrl = user?.avatarUrl
+        }
+    }
+
+    // Resolves avatar URL safely matching standard ChatRoom / User schema variations
+    val activeAvatarUrl = fetchedAvatarUrl?.takeIf { it.isNotBlank() }
+
     val formattedTime = remember(room.lastMessageTime) {
         if (room.lastMessageTime > 0L) formatRelativeTime(room.lastMessageTime) else ""
     }
 
-    // Format output text for media or plain last text
     val displayLastMessage = remember(room.lastMessage) {
         formatLastMessagePreview(room.lastMessage)
     }
@@ -303,20 +321,27 @@ private fun ChatRoomItem(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box {
-                Surface(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(CircleShape),
-                    color = SageGreenLight
+            // AVATAR CONTAINER
+            Surface(
+                modifier = Modifier.size(50.dp),
+                shape = CircleShape,
+                color = SageGreenLight
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = otherName.take(1).uppercase().ifBlank { "?" },
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = DeepGreenDark
+                    if (!activeAvatarUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = activeAvatarUrl,
+                            contentDescription = "$otherName avatar",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape),
+                            contentScale = ContentScale.Crop
                         )
+                    } else {
+                        InitialsAvatar(name = otherName)
                     }
                 }
             }
@@ -399,6 +424,28 @@ private fun ChatRoomItem(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun InitialsAvatar(
+    name: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(CircleShape),
+        color = SageGreenLight
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = name.take(1).uppercase().ifBlank { "?" },
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = DeepGreenDark
+            )
         }
     }
 }

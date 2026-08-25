@@ -1,6 +1,6 @@
 package com.example.jobtown.ui.postjob
 
-import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -23,26 +23,56 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.jobtown.data.Job
+import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmployerJobDetailScreen(
     job: Job,
     navController: NavController? = null,
+    avatarUrl: String? = null,
     onUpdateJob: (Job) -> Unit = {},
-    onBackClick: () -> Unit = { navController?.popBackStack() },
-    onViewCompanyDetails: (String) -> Unit = {}
+    onBackClick: () -> Unit = { navController?.popBackStack() }
 ) {
     var isEditing by remember { mutableStateOf(false) }
 
-    // Edit Form States matching Job model properties
     var title by remember { mutableStateOf(job.title) }
     var company by remember { mutableStateOf(job.companyName.ifBlank { "Company Name" }) }
     var location by remember { mutableStateOf(job.location) }
 
-    var minSalary by remember { mutableStateOf("") }
-    var maxSalary by remember { mutableStateOf("") }
+    var fetchedAvatarUrl by remember { mutableStateOf<String?>(null) }
+
+    // Fetch employer's avatar dynamically using job.employerId
+    LaunchedEffect(job.employerId) {
+        if (!job.employerId.isNullOrBlank()) {
+            val employerUser = UserRepository.fetchUserById(job.employerId)
+            fetchedAvatarUrl = employerUser?.avatarUrl
+        }
+    }
+
+    // Direct resolution of company avatar URL
+    val displayAvatarUrl = remember(avatarUrl, job.companyImageUrl, fetchedAvatarUrl, company) {
+        avatarUrl?.takeIf { it.isNotBlank() }
+            ?: job.companyImageUrl?.takeIf { it.isNotBlank() }
+            ?: fetchedAvatarUrl?.takeIf { it.isNotBlank() }
+            ?: run {
+                val safeCompany = company.ifBlank { "Company" }.trim()
+                "https://ui-avatars.com/api/?name=${java.net.URLEncoder.encode(safeCompany, "UTF-8")}&background=E8F5E9&color=1B5E20&bold=true"
+            }
+    }
+
+    // Parse initial salary strings to populate edit mode dropdown defaults
+    val initialMinSalary = remember(job.salary) {
+        Regex("""\$([0-9,]+)""").findAll(job.salary).elementAtOrNull(0)?.groupValues?.get(1) ?: ""
+    }
+    val initialMaxSalary = remember(job.salary) {
+        if (job.salary.contains("30,000+")) "30,000+"
+        else Regex("""\$([0-9,]+)""").findAll(job.salary).elementAtOrNull(1)?.groupValues?.get(1) ?: ""
+    }
+
+    var minSalary by remember { mutableStateOf(initialMinSalary) }
+    var maxSalary by remember { mutableStateOf(initialMaxSalary) }
     var minSalaryExpanded by remember { mutableStateOf(false) }
     var maxSalaryExpanded by remember { mutableStateOf(false) }
 
@@ -55,7 +85,6 @@ fun EmployerJobDetailScreen(
 
     var description by remember { mutableStateOf(job.description) }
 
-    // Format list items separated by comma
     var requirements by remember {
         mutableStateOf(job.requirements?.filter { it.isNotBlank() }?.joinToString(", ") ?: "")
     }
@@ -72,6 +101,8 @@ fun EmployerJobDetailScreen(
 
     val formattedSalary = remember(minSalary, maxSalary, job.salary) {
         if (minSalary.isNotBlank() && maxSalary.isNotBlank()) "$$minSalary - $$maxSalary / month"
+        else if (minSalary.isNotBlank()) "From $$minSalary / month"
+        else if (maxSalary.isNotBlank()) "Up to $$maxSalary / month"
         else job.salary
     }
 
@@ -118,7 +149,48 @@ fun EmployerJobDetailScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (isEditing) {
-                // --- EDIT MODE ---
+                // EDIT MODE (Photo editing removed, company photo displayed beside company details)
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = SageGreenLight.copy(alpha = 0.4f),
+                    border = BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.2f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = SageGreenLight,
+                            modifier = Modifier.size(44.dp),
+                            border = BorderStroke(1.dp, SageGreenDark)
+                        ) {
+                            AsyncImage(
+                                model = displayAvatarUrl,
+                                contentDescription = "Company Photo",
+                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+
+                        Column {
+                            Text(
+                                text = company.ifBlank { "Company Name" },
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DeepGreenDark
+                            )
+                            Text(
+                                text = "Company profile photo automatically retrieved",
+                                fontSize = 10.sp,
+                                color = TextDark.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = title, onValueChange = { title = it },
                     label = { Text("Job Title *") }, singleLine = true,
@@ -138,7 +210,6 @@ fun EmployerJobDetailScreen(
                     )
                 }
 
-                // SALARY DROPDOWNS
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     ExposedDropdownMenuBox(
                         expanded = minSalaryExpanded,
@@ -177,7 +248,6 @@ fun EmployerJobDetailScreen(
                     }
                 }
 
-                // JOB TYPE DROPDOWN
                 ExposedDropdownMenuBox(
                     expanded = jobTypeExpanded,
                     onExpandedChange = { jobTypeExpanded = !jobTypeExpanded },
@@ -189,9 +259,7 @@ fun EmployerJobDetailScreen(
                         readOnly = true,
                         label = { Text("Job Type *") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = jobTypeExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
                     ExposedDropdownMenu(
@@ -247,6 +315,7 @@ fun EmployerJobDetailScreen(
                             showError = false
                             val updatedJob = job.copy(
                                 title = title.trim(),
+                                company = company.trim(),
                                 location = location.trim(),
                                 salary = formattedSalary,
                                 salaryRange = formattedSalary,
@@ -266,7 +335,7 @@ fun EmployerJobDetailScreen(
                     Text("Save Changes", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             } else {
-                // --- READ-ONLY DISPLAY MODE ---
+                // READ-ONLY DISPLAY MODE
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
@@ -283,11 +352,11 @@ fun EmployerJobDetailScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Non-clickable Company Profile Surface
+                        // COMPANY PHOTO BESIDE COMPANY NAME IN DETAILS
                         Surface(
                             shape = RoundedCornerShape(10.dp),
                             color = SageGreenLight.copy(alpha = 0.5f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.3f)),
+                            border = BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.3f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -298,27 +367,14 @@ fun EmployerJobDetailScreen(
                                 Surface(
                                     shape = CircleShape,
                                     color = SageGreenLight,
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(40.dp)
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        if (!job.companyImageUrl.isNullOrBlank()) {
-                                            AsyncImage(
-                                                model = job.companyImageUrl,
-                                                contentDescription = "Company Logo",
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .clip(CircleShape),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Filled.Business,
-                                                contentDescription = null,
-                                                tint = DeepGreenDark,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                    }
+                                    AsyncImage(
+                                        model = displayAvatarUrl,
+                                        contentDescription = "Company Photo",
+                                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
                                 }
                                 Column {
                                     Text(
@@ -376,7 +432,6 @@ fun EmployerJobDetailScreen(
                     }
                 }
 
-                // Job Description, Requirements & Skills Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
@@ -398,7 +453,6 @@ fun EmployerJobDetailScreen(
                             lineHeight = 20.sp
                         )
 
-                        // Requirements formatted cleanly as bullet points
                         val filteredRequirements = job.requirements?.flatMap { it.split(",") }?.map { it.trim() }?.filter { it.isNotBlank() }
                         if (!filteredRequirements.isNullOrEmpty()) {
                             Spacer(modifier = Modifier.height(16.dp))
@@ -411,9 +465,7 @@ fun EmployerJobDetailScreen(
                             Spacer(modifier = Modifier.height(6.dp))
                             filteredRequirements.forEach { req ->
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 2.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
                                     Text(
@@ -432,7 +484,6 @@ fun EmployerJobDetailScreen(
                             }
                         }
 
-                        // Skills formatted cleanly as bullet points
                         val filteredSkills = job.skills?.flatMap { it.split(",") }?.map { it.trim() }?.filter { it.isNotBlank() }
                         if (!filteredSkills.isNullOrEmpty()) {
                             Spacer(modifier = Modifier.height(16.dp))
@@ -445,9 +496,7 @@ fun EmployerJobDetailScreen(
                             Spacer(modifier = Modifier.height(6.dp))
                             filteredSkills.forEach { skill ->
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 2.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
                                     Text(
