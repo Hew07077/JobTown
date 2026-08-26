@@ -8,6 +8,8 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -36,6 +38,8 @@ import com.example.jobtown.ui.auth.LoginScreen
 import com.example.jobtown.ui.auth.SignUpFields
 import com.example.jobtown.ui.auth.SignUpScreen
 import com.example.jobtown.ui.auth.StartupScreen
+import com.example.jobtown.ui.chat.ChatDetailScreen
+import com.example.jobtown.ui.chat.ChatListScreen
 import com.example.jobtown.ui.chat.ChatViewModel
 import com.example.jobtown.ui.employer.CompanyDetailScreen
 import com.example.jobtown.ui.employer.ManageJobsScreen
@@ -692,6 +696,59 @@ fun AppNavGraph(
                             }
                         }
                     }
+                )
+            }
+
+            // --- CHAT LIST SCREEN ---
+            composable(Screen.Chat.route) {
+                LaunchedEffect(loggedInUser?.id) {
+                    loggedInUser?.id?.let { userId ->
+                        chatViewModel.loadUserChatRooms(userId)
+                    }
+                }
+
+                val chatRooms by chatViewModel.chatRooms.collectAsStateWithLifecycle()
+
+                ChatListScreen(
+                    currentUser = loggedInUser,
+                    chatRooms = chatRooms,
+                    isLoading = false, // Added missing isLoading parameter
+                    onChatRoomClick = { roomId, otherName, position ->
+                        val encodedName = Uri.encode(otherName.ifBlank { "Chat" })
+                        val encodedTitle = Uri.encode(position.ifBlank { "Position" })
+                        navController.navigate("chat_detail/$roomId/$encodedName/$encodedTitle/none")
+                    },
+
+                    onProfileClick = { navController.navigate("profile") }
+                )
+            }
+
+            // --- CHAT DETAIL SCREEN ---
+            composable(
+                route = "chat_detail/{roomId}/{name}/{title}/{extra}",
+                arguments = listOf(
+                    navArgument("roomId") { type = NavType.StringType },
+                    navArgument("name") { type = NavType.StringType },
+                    navArgument("title") { type = NavType.StringType },
+                    navArgument("extra") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val roomId = backStackEntry.arguments?.getString("roomId").orEmpty()
+                val encodedName = backStackEntry.arguments?.getString("name").orEmpty()
+                val encodedTitle = backStackEntry.arguments?.getString("title").orEmpty()
+
+                val recipientName = Uri.decode(encodedName)
+                val jobTitle = Uri.decode(encodedTitle)
+
+                ChatDetailScreen(
+                    navController = navController,
+                    roomId = roomId,
+                    companyName = recipientName,
+                    chatTitle = jobTitle,
+                    initialQuestion = "",
+                    currentUserId = loggedInUser?.id.orEmpty(),
+                    chatViewModel = chatViewModel,
+                    onNavigateToSchedule = { navController.navigate(Screen.Schedule.route) }
                 )
             }
         }
