@@ -185,12 +185,17 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                     if (activeRoomId != roomId) return@collect
                     mergeIncomingMessage(incoming)
 
-                    val snippet = when (incoming.messageType) {
-                        MessageType.IMAGE -> "[Photo]"
-                        MessageType.FILE -> "[Document]"
-                        else -> incoming.text
+                    // Only refresh the chat-list preview if this message is actually the
+                    // latest one in the room - otherwise an edit/delete on an older message
+                    // would incorrectly overwrite the preview shown in the chat list.
+                    if (isLatestMessageInRoom(incoming.id)) {
+                        val snippet = when (incoming.messageType) {
+                            MessageType.IMAGE -> "[Photo]"
+                            MessageType.FILE -> "[Document]"
+                            else -> incoming.text
+                        }
+                        updateLocalRoomPreview(roomId, snippet, incoming.timestamp)
                     }
-                    updateLocalRoomPreview(roomId, snippet, incoming.timestamp)
 
                     if (currentUserId.isNotBlank() && incoming.senderId != currentUserId) {
                         messageRepository.markMessagesAsRead(roomId, currentUserId)
@@ -487,6 +492,8 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         if (roomId.isBlank() || messageId.isBlank() || trimmed.isBlank()) return
 
         viewModelScope.launch {
+            val wasLatest = isLatestMessageInRoom(messageId)
+
             _messagesList.update { current ->
                 current.map { msg ->
                     if (msg.id == messageId) {
@@ -495,7 +502,9 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 }
             }
 
-            updateLocalRoomPreview(roomId, trimmed, System.currentTimeMillis())
+            if (wasLatest) {
+                updateLocalRoomPreview(roomId, trimmed, System.currentTimeMillis())
+            }
 
             try {
                 messageRepository.editMessage(roomId, messageId, trimmed)
@@ -509,6 +518,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         if (roomId.isBlank() || messageId.isBlank()) return
 
         viewModelScope.launch {
+            val wasLatest = isLatestMessageInRoom(messageId)
             val deletedText = "This message was deleted"
             _messagesList.update { current ->
                 current.map { msg ->
@@ -518,7 +528,9 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 }
             }
 
-            updateLocalRoomPreview(roomId, deletedText, System.currentTimeMillis())
+            if (wasLatest) {
+                updateLocalRoomPreview(roomId, deletedText, System.currentTimeMillis())
+            }
 
             try {
                 messageRepository.deleteMessage(roomId, messageId)
@@ -526,6 +538,14 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 Log.e(TAG, "Exception while deleting message", e)
             }
         }
+    }
+
+    /** True if [messageId] is the chronologically latest message currently loaded for its room. */
+    private fun isLatestMessageInRoom(messageId: String): Boolean {
+        val messages = _messagesList.value
+        val target = messages.firstOrNull { it.id == messageId } ?: return false
+        val latest = messages.maxByOrNull { it.timestamp } ?: return false
+        return latest.id == target.id
     }
 
     fun toggleReaction(roomId: String, messageId: String, userId: String, emoji: String) {

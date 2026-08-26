@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -59,7 +60,10 @@ fun HomeScreen(
     newListingsAvailable: Int = 0,
     onShowNewListings: () -> Unit = {},
     onStartRealtime: () -> Unit = {},
-    onStopRealtime: () -> Unit = {}
+    onStopRealtime: () -> Unit = {},
+    savedJobIds: Set<String> = emptySet(),
+    onToggleSaveJob: (Job) -> Unit = {},
+    onSavedJobsClick: () -> Unit = {}
 ) {
     // Re-fetch data on screen load and manage real-time updates lifecycle
     LaunchedEffect(currentUser?.id) {
@@ -247,29 +251,48 @@ fun HomeScreen(
                             )
                         }
 
-                        // --- PROFILE / COMPANY LOGO BUTTON ---
-                        IconButton(
-                            onClick = onProfileClick,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(SageGreenLight)
-                        ) {
-                            val logoUrl = currentUser?.avatarUrl
+                        // --- SAVED JOBS + PROFILE / COMPANY LOGO BUTTON ---
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (!isEmployer) {
+                                IconButton(
+                                    onClick = onSavedJobsClick,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(SageGreenLight)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Bookmark,
+                                        contentDescription = "Saved jobs",
+                                        tint = DeepGreenDark
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
 
-                            if (!logoUrl.isNullOrBlank()) {
-                                SubcomposeAsyncImage(
-                                    model = logoUrl,
-                                    contentDescription = "Open your profile",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = "Open your profile",
-                                    tint = DeepGreenDark
-                                )
+                            IconButton(
+                                onClick = onProfileClick,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(SageGreenLight)
+                            ) {
+                                val logoUrl = currentUser?.avatarUrl
+
+                                if (!logoUrl.isNullOrBlank()) {
+                                    SubcomposeAsyncImage(
+                                        model = logoUrl,
+                                        contentDescription = "Open your profile",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "Open your profile",
+                                        tint = DeepGreenDark
+                                    )
+                                }
                             }
                         }
                     }
@@ -518,7 +541,11 @@ fun HomeScreen(
                                     onClick = {
                                         onJobClick(job)
                                     },
-                                    matchResult = if (!isEmployer) matchResults[job.id] else null
+                                    matchResult = if (!isEmployer) matchResults[job.id] else null,
+                                    isSaved = !isEmployer && savedJobIds.contains(job.id.orEmpty()),
+                                    onToggleSave = if (!isEmployer) {
+                                        { onToggleSaveJob(job) }
+                                    } else null
                                 )
                             }
                         }

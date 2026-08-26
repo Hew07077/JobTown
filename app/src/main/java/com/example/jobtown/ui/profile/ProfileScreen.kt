@@ -336,19 +336,23 @@ fun ProfileScreen(
                         shape = RoundedCornerShape(14.dp)
                     )
 
-                    OutlinedTextField(
-                        value = editLocation,
-                        onValueChange = {
-                            editLocation = it.take(ValidationUtils.LOCATION_MAX_LENGTH)
+                    Text(
+                        text = if (isEmployer) "Company Location" else "Location",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextDark.copy(alpha = 0.7f),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    com.example.jobtown.ui.components.LocationPicker(
+                        locationString = editLocation,
+                        onLocationStringChange = {
+                            editLocation = it
                             locationError = null
                             saveErrorMessage = ""
                         },
-                        label = { Text(if (isEmployer) "Company Location (City, Country)" else "Location (City, Country)") },
-                        singleLine = true,
-                        isError = locationError != null,
-                        supportingText = { locationError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) } },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
+                        allowMultipleBranches = isEmployer,
+                        errorText = locationError,
+                        modifier = Modifier.fillMaxWidth()
                     )
 
                     if (isEmployer) {

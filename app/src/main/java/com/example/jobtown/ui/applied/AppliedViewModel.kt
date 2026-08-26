@@ -11,13 +11,22 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+enum class ApplicationTab {
+    SAVED, APPLIED, EXPIRED
+}
+
 class AppliedViewModel(
     private val applicationRepository: ApplicationRepository
 ) : ViewModel() {
 
     private val _applicationsList = MutableStateFlow<List<JobApplication>>(emptyList())
+    // Expose both StateFlow and a List property wrapper for legacy compatibility across screens
+    val applicationsListState: StateFlow<List<JobApplication>> = _applicationsList.asStateFlow()
     val applicationsList: List<JobApplication>
         get() = _applicationsList.value
+
+    private val _selectedTab = MutableStateFlow(ApplicationTab.APPLIED)
+    val selectedTab: StateFlow<ApplicationTab> = _selectedTab.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -29,6 +38,10 @@ class AppliedViewModel(
     val recentlyUpdatedApplicationId: StateFlow<String?> = _recentlyUpdatedApplicationId.asStateFlow()
 
     private var trackingJob: Job? = null
+
+    fun switchTab(tab: ApplicationTab) {
+        _selectedTab.value = tab
+    }
 
     fun loadApplications(userId: String, forceRefresh: Boolean = false) {
         if (userId.isBlank()) return
@@ -66,11 +79,23 @@ class AppliedViewModel(
         }
     }
 
+    fun getFilteredApplications(tab: ApplicationTab): List<JobApplication> {
+        return _applicationsList.value.filter { app ->
+            when (tab) {
+                ApplicationTab.SAVED -> app.status.equals("saved", ignoreCase = true)
+                ApplicationTab.APPLIED -> app.status.equals("applied", ignoreCase = true) ||
+                        app.status.equals("pending", ignoreCase = true) ||
+                        app.status.equals("interview", ignoreCase = true)
+                ApplicationTab.EXPIRED -> app.status.equals("expired", ignoreCase = true) ||
+                        app.status.equals("rejected", ignoreCase = true)
+            }
+        }
+    }
+
     fun updateApplicationStatus(applicationId: String, newStatus: String, onResult: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
             val success = applicationRepository.updateApplicationStatus(applicationId, newStatus)
             if (success) {
-                // Update local list instantly for smooth UI responsiveness
                 _applicationsList.value = _applicationsList.value.map { app ->
                     if (app.id == applicationId) app.copy(status = newStatus) else app
                 }

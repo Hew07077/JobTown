@@ -28,6 +28,19 @@ sealed interface JobListingEvent {
 }
 
 @Serializable
+private data class SavedJobRow(
+    @SerialName("id") val id: String = "",
+    @SerialName("user_id") val userId: String = "",
+    @SerialName("job_id") val jobId: String = ""
+)
+
+@Serializable
+private data class NewSavedJobPayload(
+    @SerialName("user_id") val userId: String,
+    @SerialName("job_id") val jobId: String
+)
+
+@Serializable
 private data class NewJobPayload(
     @SerialName("title") val title: String,
     @SerialName("company") val company: String,
@@ -69,6 +82,47 @@ private data class UpsertJobPayload(
 )
 
 class JobRepository(private val supabaseClient: SupabaseClient) {
+
+    suspend fun getSavedJobIds(userId: String): Set<String> = withContext(Dispatchers.IO) {
+        if (userId.isBlank()) return@withContext emptySet()
+        try {
+            supabaseClient.postgrest["saved_jobs"]
+                .select { filter { eq("user_id", userId) } }
+                .decodeList<SavedJobRow>()
+                .map { it.jobId }
+                .toSet()
+        } catch (e: Exception) {
+            Log.e("JobRepository", "Error loading saved jobs: ${e.message}", e)
+            emptySet()
+        }
+    }
+
+    /** Toggles the saved state for a job and returns the new state (true = now saved). */
+    suspend fun toggleSavedJob(userId: String, jobId: String): Boolean = withContext(Dispatchers.IO) {
+        if (userId.isBlank() || jobId.isBlank()) return@withContext false
+        try {
+            val existing = supabaseClient.postgrest["saved_jobs"]
+                .select { filter { eq("user_id", userId); eq("job_id", jobId) } }
+                .decodeList<SavedJobRow>()
+                .firstOrNull()
+
+            if (existing != null) {
+                supabaseClient.postgrest["saved_jobs"].delete {
+                    filter { eq("user_id", userId); eq("job_id", jobId) }
+                }
+                false
+            } else {
+                supabaseClient.postgrest["saved_jobs"].insert(
+                    NewSavedJobPayload(userId = userId, jobId = jobId)
+                )
+                true
+            }
+        } catch (e: Exception) {
+            Log.e("JobRepository", "Error toggling saved job: ${e.message}", e)
+            // Report unchanged state on failure so the UI can revert its optimistic update.
+            throw e
+        }
+    }
 
     suspend fun getAllJobs(): List<Job> = withContext(Dispatchers.IO) {
         try {

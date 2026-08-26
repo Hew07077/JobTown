@@ -360,19 +360,44 @@ class MessageRepository(private val supabase: SupabaseClient) {
         }
     }
 
+    /**
+     * Returns the id of the chronologically latest message in the room, or null if none exist.
+     * Used so edit/delete only overwrite the chat list preview when they touch the message
+     * that is actually shown there - editing/deleting an older message must not clobber the
+     * preview with stale text.
+     */
+    private suspend fun getLatestMessageId(roomId: String): String? = withContext(Dispatchers.IO) {
+        try {
+            supabase.from("chat_messages")
+                .select {
+                    filter { eq("chat_room_id", roomId) }
+                    order("timestamp", Order.DESCENDING)
+                    limit(1)
+                }
+                .decodeList<ChatMessage>()
+                .firstOrNull()?.id
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun editMessage(roomId: String, messageId: String, newText: String): Boolean = withContext(Dispatchers.IO) {
         if (messageId.isBlank() || roomId.isBlank() || newText.isBlank()) return@withContext false
         try {
+            val wasLatest = getLatestMessageId(roomId) == messageId
+
             supabase.from("chat_messages").update(
                 mapOf("text" to newText, "is_edited" to true)
             ) { filter { eq("id", messageId); eq("chat_room_id", roomId) } }
 
-            supabase.from("chat_rooms").update(
-                mapOf(
-                    "last_message" to newText,
-                    "last_message_time" to System.currentTimeMillis()
-                )
-            ) { filter { eq("id", roomId) } }
+            if (wasLatest) {
+                supabase.from("chat_rooms").update(
+                    mapOf(
+                        "last_message" to newText,
+                        "last_message_time" to System.currentTimeMillis()
+                    )
+                ) { filter { eq("id", roomId) } }
+            }
 
             true
         } catch (e: Exception) {
@@ -384,17 +409,21 @@ class MessageRepository(private val supabase: SupabaseClient) {
     suspend fun deleteMessage(roomId: String, messageId: String): Boolean = withContext(Dispatchers.IO) {
         if (messageId.isBlank() || roomId.isBlank()) return@withContext false
         try {
+            val wasLatest = getLatestMessageId(roomId) == messageId
             val deletedText = "This message was deleted"
+
             supabase.from("chat_messages").update(
                 mapOf("text" to deletedText, "is_deleted" to true, "is_edited" to false)
             ) { filter { eq("id", messageId); eq("chat_room_id", roomId) } }
 
-            supabase.from("chat_rooms").update(
-                mapOf(
-                    "last_message" to deletedText,
-                    "last_message_time" to System.currentTimeMillis()
-                )
-            ) { filter { eq("id", roomId) } }
+            if (wasLatest) {
+                supabase.from("chat_rooms").update(
+                    mapOf(
+                        "last_message" to deletedText,
+                        "last_message_time" to System.currentTimeMillis()
+                    )
+                ) { filter { eq("id", roomId) } }
+            }
 
             true
         } catch (e: Exception) {
@@ -570,14 +599,17 @@ class MessageRepository(private val supabase: SupabaseClient) {
                         is PostgresAction.Delete -> {
                             val deletedId = action.oldRecord["id"]?.toString()?.trim('"')
                             if (!deletedId.isNullOrBlank()) {
+                                // Preserve the original message's timestamp/sender/replyTo so it
+                                // doesn't jump to the end of the list or lose its position.
+                                val original = runCatching {
+                                    json.decodeFromJsonElement(ChatMessage.serializer(), action.oldRecord)
+                                }.getOrNull()
+
                                 trySend(
-                                    ChatMessage(
-                                        id = deletedId,
-                                        chatRoomId = roomId,
-                                        senderId = "",
+                                    (original ?: ChatMessage(id = deletedId, chatRoomId = roomId)).copy(
                                         text = "This message was deleted",
-                                        timestamp = System.currentTimeMillis(),
-                                        isDeleted = true
+                                        isDeleted = true,
+                                        isEdited = false
                                     )
                                 )
                             }

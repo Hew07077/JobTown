@@ -288,22 +288,25 @@ fun CompleteProfileScreen(
                 singleLine = true
             )
 
-            // Location Input
-            OutlinedTextField(
-                value = draft.location,
-                onValueChange = {
-                    onDraftChange(draft.copy(location = it.take(ValidationUtils.LOCATION_MAX_LENGTH)))
+            // Location Input - Country + City picker. Employers can add more than one
+            // branch/office address; all are stored together in draft.location.
+            Text(
+                text = if (isEmployer) "Company Location" else "Location",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = TextDark.copy(alpha = 0.7f),
+                modifier = Modifier.fillMaxWidth()
+            )
+            com.example.jobtown.ui.components.LocationPicker(
+                locationString = draft.location,
+                onLocationStringChange = {
+                    onDraftChange(draft.copy(location = it))
                     locationError = null
                     errorMessage = ""
                 },
-                label = { Text(if (isEmployer) "Company Location (City, Country)" else "Location (City, Country)") },
-                isError = locationError != null,
-                supportingText = {
-                    locationError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true
+                allowMultipleBranches = isEmployer,
+                errorText = locationError,
+                modifier = Modifier.fillMaxWidth()
             )
 
             if (isEmployer) {

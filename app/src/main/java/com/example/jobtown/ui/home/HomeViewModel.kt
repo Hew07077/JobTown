@@ -62,6 +62,9 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
     var newListingsAvailable by mutableStateOf(0)
         private set
 
+    var savedJobIds by mutableStateOf<Set<String>>(emptySet())
+        private set
+
     private var realtimeJob: CoroutineJob? = null
     private var currentUserId: String? = null
     private var pendingNewJobs: List<Job> = emptyList()
@@ -91,10 +94,12 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
                         }
                     }
                     refreshMatchScores(currentUserId, fetchedJobs)
+                    loadSavedJobs(currentUserId)
                 } else {
                     myPostedJobs = emptyList()
                     seekerProfile = null
                     matchScores = emptyMap()
+                    savedJobIds = emptySet()
                 }
             } catch (e: Exception) {
                 Log.e("HomeViewModel", "Error loading jobs", e)
@@ -184,6 +189,35 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
         currentUserId?.let { uid -> refreshMatchScores(uid, jobsList) }
         pendingNewJobs = emptyList()
         newListingsAvailable = 0
+    }
+
+    fun loadSavedJobs(userId: String) {
+        if (userId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                savedJobIds = repository.getSavedJobIds(userId)
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "Error loading saved jobs", e)
+            }
+        }
+    }
+
+    fun toggleSaveJob(userId: String, jobId: String) {
+        if (userId.isBlank() || jobId.isBlank()) return
+        val wasSaved = savedJobIds.contains(jobId)
+        // Optimistic update so the bookmark icon responds instantly.
+        savedJobIds = if (wasSaved) savedJobIds - jobId else savedJobIds + jobId
+
+        viewModelScope.launch {
+            try {
+                val nowSaved = repository.toggleSavedJob(userId, jobId)
+                savedJobIds = if (nowSaved) savedJobIds + jobId else savedJobIds - jobId
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "Error toggling saved job", e)
+                // Revert the optimistic update on failure.
+                savedJobIds = if (wasSaved) savedJobIds + jobId else savedJobIds - jobId
+            }
+        }
     }
 
     fun selectJob(job: Job) {

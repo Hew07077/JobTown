@@ -18,7 +18,6 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.jobtown.Screen
@@ -37,8 +36,6 @@ import com.example.jobtown.ui.auth.LoginScreen
 import com.example.jobtown.ui.auth.SignUpFields
 import com.example.jobtown.ui.auth.SignUpScreen
 import com.example.jobtown.ui.auth.StartupScreen
-import com.example.jobtown.ui.chat.ChatDetailScreen
-import com.example.jobtown.ui.chat.ChatListScreen
 import com.example.jobtown.ui.chat.ChatViewModel
 import com.example.jobtown.ui.employer.CompanyDetailScreen
 import com.example.jobtown.ui.employer.ManageJobsScreen
@@ -46,6 +43,7 @@ import com.example.jobtown.ui.components.JobTownBottomNavigationBar
 import com.example.jobtown.ui.home.HomeScreen
 import com.example.jobtown.ui.home.HomeViewModel
 import com.example.jobtown.ui.home.HomeViewModelFactory
+import com.example.jobtown.ui.home.SavedJobsScreen
 import com.example.jobtown.ui.job.ApplyJobScreen
 import com.example.jobtown.ui.postjob.EmployerJobDetailScreen
 import com.example.jobtown.ui.postjob.PostJobScreen
@@ -325,7 +323,34 @@ fun AppNavGraph(
                     newListingsAvailable = homeViewModel.newListingsAvailable,
                     onShowNewListings = { homeViewModel.showPendingListings() },
                     onStartRealtime = { homeViewModel.startRealtimeUpdates() },
-                    onStopRealtime = { homeViewModel.stopRealtimeUpdates() }
+                    onStopRealtime = { homeViewModel.stopRealtimeUpdates() },
+                    savedJobIds = homeViewModel.savedJobIds,
+                    onToggleSaveJob = { job ->
+                        val jobId = job.id.orEmpty()
+                        val userId = loggedInUser?.id.orEmpty()
+                        if (jobId.isNotBlank() && userId.isNotBlank()) {
+                            homeViewModel.toggleSaveJob(userId, jobId)
+                        }
+                    },
+                    onSavedJobsClick = { navController.navigate("saved_jobs") }
+                )
+            }
+
+            composable("saved_jobs") {
+                SavedJobsScreen(
+                    navController = navController,
+                    allJobs = homeViewModel.jobsList,
+                    savedJobIds = homeViewModel.savedJobIds,
+                    onJobClick = { job ->
+                        homeViewModel.selectJob(job)
+                        navController.navigate("apply_job")
+                    },
+                    onToggleSaveJob = { jobId ->
+                        val userId = loggedInUser?.id.orEmpty()
+                        if (userId.isNotBlank()) {
+                            homeViewModel.toggleSaveJob(userId, jobId)
+                        }
+                    }
                 )
             }
 
@@ -503,16 +528,8 @@ fun AppNavGraph(
                 MyAppliedScreen(
                     navController = navController,
                     user = loggedInUser,
-                    applications = appliedViewModel.applicationsList,
+                    viewModel = appliedViewModel,
                     isLoading = isLoading,
-                    onRefresh = {
-                        loggedInUser?.id?.let { userId ->
-                            appliedViewModel.loadApplications(userId, forceRefresh = true)
-                        }
-                    },
-                    onApplicationClick = { applicationId ->
-                        navController.navigate(Screen.ApplicationDetail.createRoute(applicationId))
-                    },
                     chatLoadingApplicationId = chatCreationInProgressId,
                     isTrackingLive = isTrackingLive,
                     recentlyUpdatedApplicationId = recentlyUpdatedId,
@@ -676,62 +693,6 @@ fun AppNavGraph(
                         }
                     }
                 )
-            }
-
-            navigation(
-                startDestination = "chat_list",
-                route = Screen.Chat.route
-            ) {
-                composable("chat_list") {
-                    LaunchedEffect(Unit) {
-                        loggedInUser?.id?.let { userId ->
-                            chatViewModel.loadUserChatRooms(userId)
-                        }
-                    }
-
-                    val chatRooms by chatViewModel.chatRooms.collectAsStateWithLifecycle()
-                    val isLoadingRooms by chatViewModel.isLoadingRooms.collectAsStateWithLifecycle()
-
-                    ChatListScreen(
-                        currentUser = loggedInUser,
-                        chatRooms = chatRooms,
-                        isLoading = isLoadingRooms,
-                        onChatRoomClick = { chatRoomId, companyName, position ->
-                            val encodedCompany = Uri.encode(companyName.ifBlank { "Company Name" })
-                            val encodedPosition = Uri.encode(position.ifBlank { "Position" })
-                            navController.navigate("chat_detail/$chatRoomId/$encodedCompany/$encodedPosition/none")
-                        },
-                        onProfileClick = { navController.navigate("profile") }
-                    )
-                }
-
-                composable(
-                    route = "chat_detail/{chatRoomId}/{company}/{title}/{initialQuestion}",
-                    arguments = listOf(
-                        navArgument("chatRoomId") { type = NavType.StringType },
-                        navArgument("company") { type = NavType.StringType; defaultValue = "Company Name" },
-                        navArgument("title") { type = NavType.StringType; defaultValue = "Position" },
-                        navArgument("initialQuestion") { type = NavType.StringType; defaultValue = "" }
-                    )
-                ) { backStackEntry ->
-                    val roomId = backStackEntry.arguments?.getString("chatRoomId") ?: ""
-                    val company = backStackEntry.arguments?.getString("company") ?: "Company Name"
-                    val title = backStackEntry.arguments?.getString("title") ?: "Position"
-                    val initialQuestion = backStackEntry.arguments?.getString("initialQuestion") ?: ""
-
-                    ChatDetailScreen(
-                        navController = navController,
-                        roomId = roomId,
-                        companyName = company,
-                        chatTitle = title,
-                        initialQuestion = if (initialQuestion == "none") "" else initialQuestion,
-                        currentUserId = loggedInUser?.id ?: "1",
-                        chatViewModel = chatViewModel,
-                        onNavigateToSchedule = {
-                            navController.navigate(Screen.Schedule.route)
-                        }
-                    )
-                }
             }
         }
     }

@@ -247,7 +247,16 @@ fun PostJobScreen(
         }
     }
 
-    var location by remember { mutableStateOf("") }
+    // Addresses the employer already saved on their profile (including branches),
+    // so they can pick one instead of retyping it for every job post.
+    val savedAddresses = remember(currentUser?.location) {
+        com.example.jobtown.utils.LocationOptions.parseAddresses(currentUser?.location.orEmpty())
+            .map { it.display() }
+            .filter { it.isNotBlank() }
+    }
+    var location by remember { mutableStateOf(savedAddresses.firstOrNull() ?: "") }
+    var locationDropdownExpanded by remember { mutableStateOf(false) }
+    var useCustomLocation by remember { mutableStateOf(savedAddresses.isEmpty()) }
     var minSalary by remember { mutableStateOf("") }
     var maxSalary by remember { mutableStateOf("") }
     var minSalaryExpanded by remember { mutableStateOf(false) }
@@ -411,15 +420,56 @@ fun PostJobScreen(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(6.dp)
                 )
-                OutlinedTextField(
-                    value = location,
-                    onValueChange = { location = it },
-                    label = { Text("Location *", fontSize = 10.sp) },
-                    singleLine = true,
-                    enabled = !isSubmitting,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(6.dp)
-                )
+                if (savedAddresses.isNotEmpty() && !useCustomLocation) {
+                    ExposedDropdownMenuBox(
+                        expanded = locationDropdownExpanded && !isSubmitting,
+                        onExpandedChange = { if (!isSubmitting) locationDropdownExpanded = !locationDropdownExpanded },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        OutlinedTextField(
+                            value = location,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Location *", fontSize = 10.sp) },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = locationDropdownExpanded) },
+                            enabled = !isSubmitting,
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            shape = RoundedCornerShape(6.dp)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = locationDropdownExpanded,
+                            onDismissRequest = { locationDropdownExpanded = false }
+                        ) {
+                            savedAddresses.forEach { address ->
+                                DropdownMenuItem(
+                                    text = { Text(address) },
+                                    onClick = {
+                                        location = address
+                                        locationDropdownExpanded = false
+                                    }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Enter a different address...") },
+                                onClick = {
+                                    location = ""
+                                    useCustomLocation = true
+                                    locationDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = location,
+                        onValueChange = { location = it },
+                        label = { Text("Location *", fontSize = 10.sp) },
+                        singleLine = true,
+                        enabled = !isSubmitting,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(6.dp)
+                    )
+                }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
