@@ -47,6 +47,7 @@ fun groupMessagesByDate(messages: List<ChatMessage>): Map<String, List<ChatMessa
         set(Calendar.MILLISECOND, 0)
     }
 
+
     val msgCal = Calendar.getInstance()
 
     return messages.groupBy { message ->

@@ -55,6 +55,7 @@ fun ChatDetailScreen(
     chatViewModel: ChatViewModel,
     onNavigateToSchedule: () -> Unit = {}
 ) {
+
     var messageText by remember { mutableStateOf("") }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var replyingToMessage by remember { mutableStateOf<ChatMessage?>(null) }

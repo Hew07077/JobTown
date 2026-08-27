@@ -17,7 +17,6 @@ object MessageTypeSerializer : KSerializer<MessageType> {
         return runCatching { MessageType.valueOf(decoder.decodeString().uppercase()) }.getOrDefault(MessageType.TEXT)
     }
 }
-
 object ActionTypeSerializer : KSerializer<ActionType> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("ActionType", PrimitiveKind.STRING)
     override fun serialize(encoder: Encoder, value: ActionType) = encoder.encodeString(value.name)

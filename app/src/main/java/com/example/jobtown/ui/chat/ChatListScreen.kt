@@ -50,6 +50,7 @@ fun ChatListScreen(
     onProfileClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+
     var searchQuery by remember { mutableStateOf("") }
     var showUnreadOnly by remember { mutableStateOf(false) }
 

@@ -46,7 +46,6 @@ private data class NewChatRoomPayload(
     @SerialName("last_message_time") val last_message_time: Long,
     @SerialName("unread_count") val unread_count: Int = 0
 
-
 )
 
 @Serializable

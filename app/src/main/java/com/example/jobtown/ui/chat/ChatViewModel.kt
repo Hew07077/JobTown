@@ -25,7 +25,6 @@ import kotlinx.coroutines.launch
 sealed interface ChatUiEvent {
     data class ShowToast(val message: String) : ChatUiEvent
 }
-
 class ChatViewModel(private val messageRepository: MessageRepository) : ViewModel() {
 
     private val _chatRooms = MutableStateFlow<List<ChatRoom>>(emptyList())

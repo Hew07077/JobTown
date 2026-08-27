@@ -8,6 +8,7 @@ data class ChatRoom(
     @SerialName("id")
     val id: String = "",
 
+
     @SerialName("application_id")
     val applicationId: String = "",
 
