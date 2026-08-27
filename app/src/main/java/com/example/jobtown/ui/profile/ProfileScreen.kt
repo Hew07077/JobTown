@@ -261,6 +261,86 @@ fun ProfileScreen(
         scope.launch { listState.animateScrollToItem(index) }
     }
 
+    // --- Resume upload -------------------------------------------------
+    var isUploadingResume by remember { mutableStateOf(false) }
+    var resumeError by remember { mutableStateOf<String?>(null) }
+    var showResumeDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(resumeError) {
+        resumeError?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            resumeError = null
+        }
+    }
+
+    val resumePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val userId = displayedUser?.id
+        if (userId.isNullOrBlank()) {
+            resumeError = "User information is missing."
+            return@rememberLauncherForActivityResult
+        }
+
+        isUploadingResume = true
+        scope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                }
+                if (bytes == null) {
+                    resumeError = "Couldn't read the selected file."
+                    isUploadingResume = false
+                    return@launch
+                }
+
+                val uploadedUrl = UserRepository.uploadResume(userId, bytes)
+                if (uploadedUrl == null) {
+                    resumeError = "Failed to upload resume. Please try again."
+                    isUploadingResume = false
+                    return@launch
+                }
+
+                // Cache-bust so the "uploaded" state and any cached preview
+                // reflect the newest file right away.
+                val freshUrl = "$uploadedUrl?t=${System.currentTimeMillis()}"
+                val currentUserSafe = displayedUser
+                if (currentUserSafe != null) {
+                    val updatedUser = currentUserSafe.copy(resumeUrl = freshUrl)
+                    val isSaved = UserRepository.updateUserInSupabase(updatedUser)
+                    isUploadingResume = false
+                    if (isSaved) {
+                        displayedUser = updatedUser
+                        onProfileUpdated(updatedUser)
+                    } else {
+                        resumeError = "Resume uploaded, but couldn't save it to your profile."
+                    }
+                } else {
+                    isUploadingResume = false
+                }
+            } catch (e: Exception) {
+                isUploadingResume = false
+                resumeError = e.message ?: "An unexpected error occurred."
+            }
+        }
+    }
+
+    fun removeResume() {
+        val currentUserSafe = displayedUser ?: return
+        scope.launch {
+            val updatedUser = currentUserSafe.copy(resumeUrl = "")
+            val isSaved = UserRepository.updateUserInSupabase(updatedUser)
+            if (isSaved) {
+                displayedUser = updatedUser
+                onProfileUpdated(updatedUser)
+                showResumeDialog = false
+            } else {
+                resumeError = "Couldn't remove resume. Please try again."
+            }
+        }
+    }
+
     fun startEditing() {
         editName = if (isEmployer) displayedUser?.companyName ?: "" else displayedUser?.name ?: ""
         editPhone = displayedUser?.phone ?: ""
@@ -723,7 +803,16 @@ fun ProfileScreen(
                     }
                 }
 
-                item { Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 16.dp)) { ProfileAccountActions(isEmployer = false, onLogout = onLogout) } }
+                item {
+                    Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 16.dp)) {
+                        ProfileAccountActions(
+                            isEmployer = false,
+                            resumeUrl = displayedUser?.resumeUrl,
+                            onResumeClick = { showResumeDialog = true },
+                            onLogout = onLogout
+                        )
+                    }
+                }
                 item { Spacer(modifier = Modifier.height(32.dp)) }
             }
         }
@@ -756,6 +845,19 @@ fun ProfileScreen(
             },
             onSelect = ::selectAvatarFromHistory,
             onDelete = ::deleteAvatarFromHistory
+        )
+    }
+
+    if (showResumeDialog) {
+        ResumeDialog(
+            resumeUrl = displayedUser?.resumeUrl,
+            isUploading = isUploadingResume,
+            onDismiss = { showResumeDialog = false },
+            onUploadClick = { resumePickerLauncher.launch("application/pdf") },
+            onViewClick = {
+                displayedUser?.resumeUrl?.takeIf { it.isNotBlank() }?.let { uriHandler.openUri(it) }
+            },
+            onRemoveClick = { removeResume() }
         )
     }
 }
@@ -1181,13 +1283,22 @@ private fun ProfileEntrySection(
 }
 
 @Composable
-private fun ProfileAccountActions(isEmployer: Boolean, onLogout: () -> Unit) {
+private fun ProfileAccountActions(
+    isEmployer: Boolean,
+    resumeUrl: String? = null,
+    onResumeClick: () -> Unit = {},
+    onLogout: () -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Spacer(modifier = Modifier.height(4.dp))
         Text(text = "ACCOUNT", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextDark.copy(alpha = 0.4f))
 
         if (!isEmployer) {
-            ProfileOptionItem(icon = Icons.Default.Description, title = "Resume / CV", onClick = { })
+            ProfileOptionItem(
+                icon = Icons.Default.Description,
+                title = if (!resumeUrl.isNullOrBlank()) "Resume / CV (uploaded)" else "Resume / CV",
+                onClick = onResumeClick
+            )
         }
         ProfileOptionItem(icon = Icons.Default.Notifications, title = "Notifications", onClick = { })
 
@@ -1274,6 +1385,7 @@ private fun AddEntryDialog(category: String, onDismiss: () -> Unit, onSave: (Pro
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun ProfileOptionItem(icon: ImageVector, title: String, onClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1290,4 +1402,79 @@ fun ProfileOptionItem(icon: ImageVector, title: String, onClick: () -> Unit) {
             Icon(imageVector = Icons.Default.ChevronRight, contentDescription = null, tint = SageGreenDark)
         }
     }
+}
+
+@Composable
+private fun ResumeDialog(
+    resumeUrl: String?,
+    isUploading: Boolean,
+    onDismiss: () -> Unit,
+    onUploadClick: () -> Unit,
+    onViewClick: () -> Unit,
+    onRemoveClick: () -> Unit
+) {
+    val hasResume = !resumeUrl.isNullOrBlank()
+
+    AlertDialog(
+        onDismissRequest = { if (!isUploading) onDismiss() },
+        title = { Text("Resume / CV", fontWeight = FontWeight.Bold, color = DeepGreenDark) },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier.size(60.dp).clip(CircleShape).background(SageGreenLight),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isUploading) {
+                        CircularProgressIndicator(color = DeepGreenDark, strokeWidth = 3.dp, modifier = Modifier.size(26.dp))
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Description,
+                            contentDescription = null,
+                            tint = DeepGreenDark,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = when {
+                        isUploading -> "Uploading..."
+                        hasResume -> "Resume uploaded"
+                        else -> "No resume uploaded yet"
+                    },
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextDark
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (hasResume) "PDF" else "Upload a PDF so employers can see your resume.",
+                    fontSize = 12.sp,
+                    color = TextDark.copy(alpha = 0.55f),
+                    textAlign = TextAlign.Center
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onUploadClick, enabled = !isUploading) {
+                Text(if (hasResume) "Replace" else "Upload", color = DeepGreenDark, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            Row {
+                if (hasResume) {
+                    TextButton(onClick = onViewClick, enabled = !isUploading) {
+                        Text("View", color = DeepGreenDark)
+                    }
+                    TextButton(onClick = onRemoveClick, enabled = !isUploading) {
+                        Text("Remove", color = Color.Red)
+                    }
+                } else {
+                    TextButton(onClick = onDismiss, enabled = !isUploading) {
+                        Text("Cancel", color = TextDark.copy(alpha = 0.6f))
+                    }
+                }
+            }
+        }
+    )
 }

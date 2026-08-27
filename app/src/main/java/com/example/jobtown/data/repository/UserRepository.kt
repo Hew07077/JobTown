@@ -142,6 +142,26 @@ object UserRepository {
         }
     }
 
+    // --- RESUME ---
+    // Uploads a PDF to the "resumes" Storage bucket (create it in the
+    // Supabase dashboard, set to Public, before this will work) and returns
+    // its public URL, or null on failure. Path is keyed by userId with
+    // upsert = true, so re-uploading replaces the previous resume in place
+    // rather than accumulating old versions (unlike the avatar history
+    // feature above -- a resume only needs to keep the latest copy).
+    suspend fun uploadResume(userId: String, bytes: ByteArray): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val bucket = SupabaseClient.client.storage.from("resumes")
+                val path = "$userId.pdf"
+                bucket.upload(path, bytes, upsert = true)
+                bucket.publicUrl(path)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+
     // Fetches the profile fields (skills, location, tagline, website, perks, etc.)
     // from the "users" table.
     suspend fun fetchUserProfile(userId: String): UserProfile? = withContext(Dispatchers.IO) {

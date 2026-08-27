@@ -74,6 +74,9 @@ data class User(
     @SerialName("avatar_url")
     val avatarUrl: String = "",
 
+    @SerialName("resume_url")
+    val resumeUrl: String = "",
+
     @SerialName("created_at")
     val createdAt: String = ""
 )
