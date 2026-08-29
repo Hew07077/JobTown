@@ -1,6 +1,7 @@
 package com.example.jobtown.ui.job
 
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -34,6 +35,7 @@ import androidx.navigation.NavController
 import com.example.jobtown.data.Job
 import com.example.jobtown.data.JobApplication
 import com.example.jobtown.data.User
+import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -676,35 +678,68 @@ private fun ApplicationFlowScreen(
                                     showValidationErrors = true
                                     return@Button
                                 }
+                                val applicant = currentUser
+                                if (applicant == null || applicant.id.isBlank()) {
+                                    errorMessage = "You must be signed in to apply."
+                                    showValidationErrors = true
+                                    return@Button
+                                }
 
                                 isSubmitting = true
-                                try {
-                                    val finalStart = if (selectedStartDateOption == "Custom Date" && customStartDate.isNotBlank()) customStartDate else selectedStartDateOption
-                                    val finalSalaryRange = "RM ${salaryMin.toInt()} - RM ${salaryMax.toInt()}"
+                                coroutineScope.launch {
+                                    try {
+                                        // Actually upload the resume file's bytes to Supabase
+                                        // Storage -- resumeUri up to this point is just a local
+                                        // content:// URI, which only exists on this device and
+                                        // means nothing to anyone else (e.g. the employer). We
+                                        // need the real, publicly-reachable URL back before we
+                                        // can save the application.
+                                        val resumeBytes = try {
+                                            context.contentResolver.openInputStream(Uri.parse(resumeUri))?.use { it.readBytes() }
+                                        } catch (e: Exception) {
+                                            null
+                                        }
 
-                                    val application = JobApplication(
-                                        id = "app_${System.currentTimeMillis()}",
-                                        jobId = job.id,
-                                        userId = currentUser?.id ?: "",
-                                        jobTitle = displayTitle,
-                                        companyName = displayCompany,
-                                        employerId = job.employerId ?: job.postedByUserId ?: "",
-                                        applicantName = currentUser?.name ?: "Unknown Applicant",
-                                        applicantEmail = currentUser?.email ?: "",
-                                        resumeUrl = resumeUri,
-                                        coverLetter = coverLetterUri.ifBlank { additionalNotes.trim() },
-                                        status = "Pending"
-                                    )
-                                    onApplySubmit(application)
-                                    successMessage = "Application submitted successfully!"
-                                    coroutineScope.launch {
+                                        if (resumeBytes == null) {
+                                            errorMessage = "Couldn't read the resume file. Please pick it again."
+                                            showValidationErrors = true
+                                            isSubmitting = false
+                                            return@launch
+                                        }
+
+                                        val uploadedResumeUrl = UserRepository.uploadResume(applicant.id, resumeBytes)
+                                        if (uploadedResumeUrl == null) {
+                                            errorMessage = "Failed to upload resume. Please check your connection and try again."
+                                            showValidationErrors = true
+                                            isSubmitting = false
+                                            return@launch
+                                        }
+
+                                        val finalStart = if (selectedStartDateOption == "Custom Date" && customStartDate.isNotBlank()) customStartDate else selectedStartDateOption
+                                        val finalSalaryRange = "RM ${salaryMin.toInt()} - RM ${salaryMax.toInt()}"
+
+                                        val application = JobApplication(
+                                            id = "app_${System.currentTimeMillis()}",
+                                            jobId = job.id,
+                                            userId = applicant.id,
+                                            jobTitle = displayTitle,
+                                            companyName = displayCompany,
+                                            employerId = job.employerId ?: job.postedByUserId ?: "",
+                                            applicantName = applicant.name ?: "Unknown Applicant",
+                                            applicantEmail = applicant.email ?: "",
+                                            resumeUrl = uploadedResumeUrl,
+                                            coverLetter = coverLetterUri.ifBlank { additionalNotes.trim() },
+                                            status = "Pending"
+                                        )
+                                        onApplySubmit(application)
+                                        successMessage = "Application submitted successfully!"
                                         delay(1200)
                                         navController.popBackStack()
+                                    } catch (e: Exception) {
+                                        errorMessage = "Failed to submit: ${e.message}"
+                                        showValidationErrors = true
+                                        isSubmitting = false
                                     }
-                                } catch (e: Exception) {
-                                    errorMessage = "Failed to submit: ${e.message}"
-                                    showValidationErrors = true
-                                    isSubmitting = false
                                 }
                             }
                         },
