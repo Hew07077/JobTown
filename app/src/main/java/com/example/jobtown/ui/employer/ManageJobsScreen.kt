@@ -21,8 +21,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.example.jobtown.data.Job
-import com.example.jobtown.data.JobApplication
+import com.example.jobtown.data.model.Job
+import com.example.jobtown.data.model.JobApplication
 import com.example.jobtown.ui.applied.AppliedViewModel
 import com.example.jobtown.ui.theme.*
 

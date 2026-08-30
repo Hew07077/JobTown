@@ -31,9 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.SubcomposeAsyncImage
-import com.example.jobtown.data.Job
-import com.example.jobtown.data.User
-import com.example.jobtown.data.UserRole
+import com.example.jobtown.data.model.Job
+import com.example.jobtown.data.model.User
+import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.ui.components.JobCard
 import com.example.jobtown.utils.JobMatchResult
 import com.example.jobtown.ui.theme.*

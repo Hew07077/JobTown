@@ -28,8 +28,8 @@ import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.example.jobtown.Screen
-import com.example.jobtown.data.User
-import com.example.jobtown.data.UserRole
+import com.example.jobtown.data.model.User
+import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.ui.theme.*
 
 data class BottomNavItem(
@@ -46,6 +46,7 @@ fun JobTownBottomNavigationBar(
     unreadChatCount: Int = 0
 ) {
     val isEmployer = currentUser?.role == UserRole.EMPLOYER
+    val applicationsTabRoute = if (isEmployer) Screen.ManageJobs.route else Screen.Applied.route
 
     val items = listOf(
         BottomNavItem(
@@ -54,8 +55,8 @@ fun JobTownBottomNavigationBar(
             icon = Icons.Default.Home
         ),
         BottomNavItem(
-            route = Screen.Applied.route,
-            title = if (isEmployer) "Manage Jobs" else "Applied",
+            route = applicationsTabRoute,
+            title = if (isEmployer) "Manage" else "Applied",
             icon = Icons.Default.AssignmentTurnedIn
         ),
         BottomNavItem(

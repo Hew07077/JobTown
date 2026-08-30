@@ -5,7 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.jobtown.data.InterviewSchedule
+import com.example.jobtown.data.model.InterviewSchedule
 import com.example.jobtown.data.repository.ScheduleRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.catch

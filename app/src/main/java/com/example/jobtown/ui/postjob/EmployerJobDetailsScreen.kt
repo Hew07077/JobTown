@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.example.jobtown.data.Job
+import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
 
