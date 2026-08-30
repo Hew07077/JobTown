@@ -26,8 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.example.jobtown.data.JobApplication
-import com.example.jobtown.data.User
+import com.example.jobtown.data.model.JobApplication
+import com.example.jobtown.data.model.User
 import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
 
@@ -51,9 +51,8 @@ fun MyAppliedScreen(
     val selectedTab by viewModel.selectedTab.collectAsState()
     val applications = viewModel.getFilteredApplications(selectedTab)
 
-    val savedCount = viewModel.getFilteredApplications(ApplicationTab.SAVED).size
-    val appliedCount = viewModel.getFilteredApplications(ApplicationTab.APPLIED).size
-    val expiredCount = viewModel.getFilteredApplications(ApplicationTab.EXPIRED).size
+    val activeCount = viewModel.getFilteredApplications(ApplicationTab.ACTIVE).size
+    val closedCount = viewModel.getFilteredApplications(ApplicationTab.CLOSED).size
 
     LaunchedEffect(user?.id) {
         user?.id?.let { userId ->
@@ -109,14 +108,12 @@ fun MyAppliedScreen(
             ) {
                 ApplicationTab.values().forEach { tab ->
                     val count = when (tab) {
-                        ApplicationTab.SAVED -> savedCount
-                        ApplicationTab.APPLIED -> appliedCount
-                        ApplicationTab.EXPIRED -> expiredCount
+                        ApplicationTab.ACTIVE -> activeCount
+                        ApplicationTab.CLOSED -> closedCount
                     }
                     val tabLabel = when (tab) {
-                        ApplicationTab.SAVED -> "Saved"
-                        ApplicationTab.APPLIED -> "Applied"
-                        ApplicationTab.EXPIRED -> "Expired"
+                        ApplicationTab.ACTIVE -> "Active"
+                        ApplicationTab.CLOSED -> "Closed"
                     }
 
                     Tab(
@@ -171,9 +168,8 @@ fun MyAppliedScreen(
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = when (selectedTab) {
-                                        ApplicationTab.SAVED -> "Save interesting listings to review or apply to them later."
-                                        ApplicationTab.APPLIED -> "Explore available listings and send your applications to track them here."
-                                        ApplicationTab.EXPIRED -> "Applications that have expired or been rejected will appear here."
+                                        ApplicationTab.ACTIVE -> "Explore available listings and send your applications to track them here."
+                                        ApplicationTab.CLOSED -> "Applications that have closed, expired, or been rejected will appear here."
                                     },
                                     fontSize = 13.sp,
                                     color = TextDark.copy(alpha = 0.6f)
@@ -192,7 +188,7 @@ fun MyAppliedScreen(
 
                                 ApplicationCard(
                                     application = application,
-                                    isSavedTab = selectedTab == ApplicationTab.SAVED,
+                                    isSavedTab = false,
                                     isChatLoading = chatLoadingApplicationId == application.id,
                                     isHighlighted = isRecentlyUpdated,
                                     onCardClick = { onApplicationClick(application.id) },

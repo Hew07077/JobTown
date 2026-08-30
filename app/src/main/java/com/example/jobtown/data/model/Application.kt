@@ -1,4 +1,6 @@
-package com.example.jobtown.data
+@file:OptIn(kotlinx.serialization.InternalSerializationApi::class)
+
+package com.example.jobtown.data.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

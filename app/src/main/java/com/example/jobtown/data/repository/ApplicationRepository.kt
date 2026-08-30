@@ -1,7 +1,7 @@
 package com.example.jobtown.data.repository
 
 import android.util.Log
-import com.example.jobtown.data.JobApplication
+import com.example.jobtown.data.model.JobApplication
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order

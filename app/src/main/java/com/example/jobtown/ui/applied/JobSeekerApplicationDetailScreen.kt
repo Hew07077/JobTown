@@ -19,7 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.jobtown.data.JobApplication
+import com.example.jobtown.data.model.JobApplication
 import com.example.jobtown.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)

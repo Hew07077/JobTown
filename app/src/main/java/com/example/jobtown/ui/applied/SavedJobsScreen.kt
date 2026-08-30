@@ -19,7 +19,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.example.jobtown.data.Job
+import com.example.jobtown.data.model.Job
 import com.example.jobtown.ui.components.JobCard
 import com.example.jobtown.ui.theme.*
 

@@ -30,9 +30,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.jobtown.data.SupabaseClient
-import com.example.jobtown.data.User
-import com.example.jobtown.data.UserProfile
-import com.example.jobtown.data.UserRole
+import com.example.jobtown.data.model.User
+import com.example.jobtown.data.model.UserProfile
+import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
 import com.example.jobtown.utils.ValidationUtils
@@ -97,6 +97,103 @@ private suspend fun uploadCompanyLogoToSupabase(
     } catch (e: Exception) {
         e.printStackTrace()
         null
+    }
+}
+
+private fun isRateLimited(message: String): Boolean =
+    message.contains("rate limit", ignoreCase = true) ||
+        message.contains("over_email_send_rate_limit", ignoreCase = true)
+
+private fun isAlreadyRegistered(message: String): Boolean =
+    message.contains("already registered", ignoreCase = true) ||
+        message.contains("already exists", ignoreCase = true) ||
+        message.contains("user already", ignoreCase = true)
+
+private fun isEmailNotConfirmed(message: String): Boolean =
+    message.contains("email not confirmed", ignoreCase = true)
+
+private fun friendlyAuthError(error: Throwable): String {
+    val message = error.message.orEmpty()
+    return when {
+        isRateLimited(message) ->
+            "Too many confirmation emails were sent for this address. Wait a few minutes, then tap Save again. If you already have an account, go back and log in."
+        isEmailNotConfirmed(message) ->
+            "Please open the confirmation link we emailed you, then tap Save again."
+        isAlreadyRegistered(message) ->
+            "This email is already registered. Go back and log in."
+        message.contains("invalid login", ignoreCase = true) ||
+            message.contains("invalid credentials", ignoreCase = true) ->
+            "Could not sign in with this email and password. Go back and check your signup details."
+        // Keep short messages we threw ourselves; never dump the raw HTTP request
+        // (it includes API keys and is what showed up as the red wall of text).
+        message.isNotBlank() &&
+            message.length < 220 &&
+            !message.contains("Request:", ignoreCase = true) &&
+            !message.contains("Headers:", ignoreCase = true) ->
+            message
+        else -> "Could not create your account. Please try again."
+    }
+}
+
+/**
+ * Creates or restores the Auth session without sending extra confirmation emails.
+ *
+ * Save used to call signUpWith() on every tap. Each call emails the user, and
+ * after a few taps Supabase returns "email rate limit exceeded". Retrying Save
+ * (or a previous attempt that created Auth but failed later) must sign in first.
+ */
+private suspend fun ensureAuthSession(email: String, password: String) {
+    val current = SupabaseClient.client.auth.currentUserOrNull()
+    if (current != null && current.email.equals(email, ignoreCase = true)) {
+        return
+    }
+
+    try {
+        SupabaseClient.client.auth.signInWith(Email) {
+            this.email = email
+            this.password = password
+        }
+        return
+    } catch (signInError: Exception) {
+        val message = signInError.message.orEmpty()
+        if (isEmailNotConfirmed(message)) {
+            throw Exception(
+                "Please open the confirmation link we emailed you, then tap Save again.",
+                signInError
+            )
+        }
+        // Invalid credentials usually means the account does not exist yet.
+        // Fall through to signup. Do not signup again if the email is confirmed
+        // as already taken — that would send another email.
+        if (isAlreadyRegistered(message) || isRateLimited(message)) {
+            throw signInError
+        }
+    }
+
+    try {
+        SupabaseClient.client.auth.signUpWith(Email) {
+            this.email = email
+            this.password = password
+        }
+    } catch (signUpError: Exception) {
+        val message = signUpError.message.orEmpty()
+        if (!isAlreadyRegistered(message) && !isRateLimited(message)) {
+            throw signUpError
+        }
+        try {
+            SupabaseClient.client.auth.signInWith(Email) {
+                this.email = email
+                this.password = password
+            }
+        } catch (retryError: Exception) {
+            if (isRateLimited(message) || isRateLimited(retryError.message.orEmpty())) {
+                throw Exception(
+                    "Too many confirmation emails were sent for this address. Wait a few minutes, then tap Save again. If you already have an account, go back and log in.",
+                    retryError
+                )
+            }
+            throw retryError
+        }
     }
 }
 
@@ -561,40 +658,27 @@ fun CompleteProfileScreen(
 
                     scope.launch {
                         try {
-                            // 1. Supabase Auth Signup / Signin
-                            try {
-                                SupabaseClient.client.auth.signUpWith(Email) {
-                                    email = user.email
-                                    password = user.password
-                                }
-                            } catch (signUpError: Exception) {
-                                val message = signUpError.message ?: ""
-                                val alreadyRegistered = message.contains("already registered", ignoreCase = true) ||
-                                        message.contains("already exists", ignoreCase = true)
+                            // 1. Sign in if the Auth user already exists (from a previous
+                            // Save tap). Only sign up when there is no account yet — this
+                            // avoids "email rate limit exceeded" from extra confirmation emails.
+                            ensureAuthSession(user.email.trim().lowercase(), user.password)
 
-                                if (alreadyRegistered) {
-                                    SupabaseClient.client.auth.signInWith(Email) {
-                                        email = user.email
-                                        password = user.password
-                                    }
-                                } else {
-                                    throw signUpError
-                                }
+                            val currentAuthUser = SupabaseClient.client.auth.currentUserOrNull()
+                            val finalUserId = currentAuthUser?.id.orEmpty()
+                            if (finalUserId.isBlank()) {
+                                isLoading = false
+                                errorMessage = "Could not create your account session. Please try again, or confirm your email first."
+                                return@launch
                             }
 
-                            // 2. Fetch authenticated user ID
-                            val currentAuthUser = SupabaseClient.client.auth.currentUserOrNull()
-                            val finalUserId = currentAuthUser?.id ?: user.id
-
-                            // 3. Upload Logo to 'avatars' bucket if an image was picked
                             var uploadedLogoUrl: String? = null
                             if (isEmployer && logoUri != null) {
                                 uploadedLogoUrl = uploadCompanyLogoToSupabase(context, finalUserId, logoUri!!)
                             }
 
-                            // 4. Populate User Model with direct columns
                             val newUser = user.copy(
                                 id = finalUserId,
+                                email = user.email.trim().lowercase(),
                                 phone = draft.phone.trim(),
                                 location = draft.location.trim(),
                                 bio = draft.bio.trim(),
@@ -626,19 +710,18 @@ fun CompleteProfileScreen(
 
                             // 6. Persist User and UserProfile data in Database
                             val isUserSaved = UserRepository.saveUserToSupabase(newUser)
-                            val isProfileSaved = UserRepository.updateUserProfile(userProfile)
+                            UserRepository.updateUserProfile(userProfile)
 
                             isLoading = false
-                            if (isUserSaved && isProfileSaved) {
-                                onComplete(newUser)
-                            } else if (isUserSaved) {
+                            if (isUserSaved) {
                                 onComplete(newUser)
                             } else {
-                                errorMessage = "Failed to save profile details. Please check your Supabase database connection."
+                                errorMessage = UserRepository.lastUserSaveError
+                                    ?: "Failed to save profile details. Please try again."
                             }
                         } catch (e: Exception) {
                             isLoading = false
-                            errorMessage = e.message ?: "An unexpected error occurred."
+                            errorMessage = friendlyAuthError(e)
                         }
                     }
                 },

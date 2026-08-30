@@ -7,8 +7,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.jobtown.data.Job
-import com.example.jobtown.data.UserProfile
+import com.example.jobtown.data.model.Job
+import com.example.jobtown.data.model.UserProfile
 import com.example.jobtown.data.repository.JobListingEvent
 import com.example.jobtown.data.repository.JobRepository
 import com.example.jobtown.data.repository.UserRepository

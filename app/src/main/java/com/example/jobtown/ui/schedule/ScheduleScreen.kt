@@ -1,7 +1,5 @@
 package com.example.jobtown.ui.schedule
 
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -25,8 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.jobtown.Screen
-import com.example.jobtown.data.InterviewSchedule
-import com.example.jobtown.data.User
+import com.example.jobtown.data.model.InterviewSchedule
+import com.example.jobtown.data.model.User
 import com.example.jobtown.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date

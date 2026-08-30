@@ -5,7 +5,10 @@ import java.nio.charset.StandardCharsets
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
+    /** Job seeker: applications they submitted. */
     object Applied : Screen("applied")
+    /** Employer: jobs they posted and incoming applications. */
+    object ManageJobs : Screen("manage_jobs")
     object Schedule : Screen("schedule")
     object ScheduleDetail : Screen("schedule_detail/{scheduleId}") {
         fun createRoute(scheduleId: String) = "schedule_detail/$scheduleId"
