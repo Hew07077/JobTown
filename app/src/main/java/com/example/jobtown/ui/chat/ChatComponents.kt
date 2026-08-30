@@ -69,9 +69,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
-import com.example.jobtown.data.ChatMessage
-import com.example.jobtown.data.MessageType
-import com.example.jobtown.data.ReactionGroup
+import com.example.jobtown.data.model.ChatMessage
+import com.example.jobtown.data.model.MessageType
+import com.example.jobtown.data.model.ReactionGroup
 import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.SageGreenMain

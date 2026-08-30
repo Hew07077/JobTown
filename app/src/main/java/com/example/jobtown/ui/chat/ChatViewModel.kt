@@ -4,11 +4,11 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.jobtown.data.ActionType
-import com.example.jobtown.data.ChatMessage
-import com.example.jobtown.data.ChatRoom
-import com.example.jobtown.data.MessageReaction
-import com.example.jobtown.data.MessageType
+import com.example.jobtown.data.model.ActionType
+import com.example.jobtown.data.model.ChatMessage
+import com.example.jobtown.data.model.ChatRoom
+import com.example.jobtown.data.model.MessageReaction
+import com.example.jobtown.data.model.MessageType
 import com.example.jobtown.data.repository.MessageRepository
 import com.example.jobtown.data.repository.RoomPresence
 import kotlinx.coroutines.Job

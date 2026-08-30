@@ -30,7 +30,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.jobtown.R
-import com.example.jobtown.data.UserRole
+import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.ui.theme.*
 import com.example.jobtown.utils.ValidationUtils
 

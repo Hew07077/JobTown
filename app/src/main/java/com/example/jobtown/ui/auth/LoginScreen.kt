@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.jobtown.R
 import com.example.jobtown.data.SupabaseClient
-import com.example.jobtown.data.User
+import com.example.jobtown.data.model.User
 import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
 import com.example.jobtown.utils.ValidationUtils
@@ -170,31 +170,30 @@ fun LoginScreen(
                             errorMessage = ""
                             scope.launch {
                                 try {
-                                    // 1. Authenticate with Supabase
+                                    val cleanEmail = email.trim().lowercase()
+                                    val cleanPassword = password.trim()
+
                                     SupabaseClient.client.auth.signInWith(Email) {
-                                        this.email = email.trim()
-                                        this.password = password.trim()
+                                        this.email = cleanEmail
+                                        this.password = cleanPassword
                                     }
 
-                                    // 2. Fetch authenticated user details safely
                                     val currentAuthUser = SupabaseClient.client.auth.currentUserOrNull()
+                                    val storedUser = UserRepository.resolveUserForSession(
+                                        authUserId = currentAuthUser?.id,
+                                        email = cleanEmail
+                                    )
 
-                                    // 3. Pull the real profile row (name, phone, location, bio,
-                                    //    role, etc.) from the "users" table instead of guessing
-                                    //    one locally -- this is what was previously missing.
-                                    val storedUser = UserRepository.findUserByEmail(email.trim())
+                                    if (storedUser == null) {
+                                        isLoading = false
+                                        errorMessage = "No JobTown profile found for this account. Please sign up as Employer or Job Seeker and complete your profile."
+                                        return@launch
+                                    }
 
-                                    val authenticatedUser = storedUser?.copy(
+                                    val authenticatedUser = storedUser.copy(
                                         id = currentAuthUser?.id ?: storedUser.id,
-                                        password = password
-                                    ) ?: User(
-                                        // Fallback only if no matching row exists yet in the
-                                        // database (e.g. account created outside the normal
-                                        // signup flow).
-                                        id = currentAuthUser?.id ?: "user_${email.hashCode()}",
-                                        name = email.substringBefore("@"),
-                                        email = email.trim(),
-                                        password = password
+                                        email = cleanEmail,
+                                        password = cleanPassword
                                     )
 
                                     isLoading = false
@@ -203,7 +202,6 @@ fun LoginScreen(
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                     isLoading = false
-                                    // 3. User-friendly error message (prevents raw stack traces)
                                     errorMessage = "Invalid email or password. Please try again."
                                 }
                             }

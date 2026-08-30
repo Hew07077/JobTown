@@ -40,49 +40,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.example.jobtown.data.User
-import com.example.jobtown.data.UserRole
+import com.example.jobtown.data.model.ProfileEntry
+import com.example.jobtown.data.model.User
+import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.data.repository.AvatarHistoryItem
-import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
 import com.example.jobtown.utils.ValidationUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.UUID
-
-private val INDUSTRY_OPTIONS = listOf(
-    "Technology / IT",
-    "Finance / Banking",
-    "Healthcare",
-    "Retail / E-commerce",
-    "Manufacturing",
-    "Education",
-    "Hospitality / F&B",
-    "Construction / Real Estate",
-    "Logistics / Transportation",
-    "Media / Marketing",
-    "Other"
-)
-
-private val COMPANY_SIZE_OPTIONS = listOf(
-    "1-10 employees",
-    "11-50 employees",
-    "51-200 employees",
-    "201-500 employees",
-    "501-1000 employees",
-    "1000+ employees"
-)
-
-private data class ProfileEntry(
-    val id: String = UUID.randomUUID().toString(),
-    val title: String,
-    val subtitle: String,
-    val period: String,
-    val description: String
-)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -90,10 +59,15 @@ fun ProfileScreen(
     navController: NavController,
     currentUser: User? = null,
     onLogout: () -> Unit = {},
-    onProfileUpdated: (User) -> Unit = {}
+    onProfileUpdated: (User) -> Unit = {},
+    viewModel: ProfileViewModel = viewModel()
 ) {
-    var displayedUser by remember(currentUser) { mutableStateOf(currentUser) }
-    val isEmployer = displayedUser?.role == UserRole.EMPLOYER
+    LaunchedEffect(currentUser) {
+        viewModel.bind(currentUser)
+    }
+
+    val displayedUser = viewModel.user ?: currentUser
+    val isEmployer = viewModel.isEmployer || displayedUser?.role == UserRole.EMPLOYER
     val displayName = (if (isEmployer) displayedUser?.companyName else displayedUser?.name)
         ?.ifBlank { null } ?: "User Name"
     val memberSince = displayedUser?.createdAt?.takeIf { it.isNotBlank() }?.substringBefore("T")
@@ -109,38 +83,39 @@ fun ProfileScreen(
         if (isEmployer) displayedUser?.websiteUrl.orEmpty() else displayedUser?.portfolioUrl.orEmpty()
     }
 
-    var isEditing by remember { mutableStateOf(false) }
-    var isSaving by remember { mutableStateOf(false) }
-    var saveErrorMessage by remember { mutableStateOf("") }
-
-    var editName by remember { mutableStateOf("") }
-    var editPhone by remember { mutableStateOf(displayedUser?.phone ?: "") }
-    var editLocation by remember { mutableStateOf(displayedUser?.location ?: "") }
-    var editIndustry by remember { mutableStateOf(displayedUser?.industry ?: "") }
-    var editCompanySize by remember { mutableStateOf(displayedUser?.companySize ?: "") }
-
-    var nameError by remember { mutableStateOf<String?>(null) }
-    var phoneError by remember { mutableStateOf<String?>(null) }
-    var locationError by remember { mutableStateOf<String?>(null) }
-
-    var selectedTab by remember { mutableStateOf("Overview") }
-    val experienceEntries = remember { mutableStateListOf<ProfileEntry>() }
-    val educationEntries = remember { mutableStateListOf<ProfileEntry>() }
-    val certificationEntries = remember { mutableStateListOf<ProfileEntry>() }
-    var addEntryDialogFor by remember { mutableStateOf<String?>(null) }
+    val isEditing = viewModel.isEditing
+    val isSaving = viewModel.isSaving
+    val saveErrorMessage = viewModel.saveErrorMessage
+    val selectedTab = viewModel.selectedTab
+    val experienceEntries = viewModel.experienceEntries
+    val educationEntries = viewModel.educationEntries
+    val certificationEntries = viewModel.certificationEntries
+    val isUploadingAvatar = viewModel.isUploadingAvatar
+    val isUploadingResume = viewModel.isUploadingResume
 
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
     val listState = rememberLazyListState()
     val context = LocalContext.current
 
-    var isUploadingAvatar by remember { mutableStateOf(false) }
-    var avatarError by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(avatarError) {
-        avatarError?.let {
+    LaunchedEffect(viewModel.avatarError) {
+        viewModel.avatarError?.let {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
-            avatarError = null
+            viewModel.consumeAvatarError()
+        }
+    }
+
+    LaunchedEffect(viewModel.resumeError) {
+        viewModel.resumeError?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            viewModel.consumeResumeError()
+        }
+    }
+
+    LaunchedEffect(viewModel.certificateError) {
+        viewModel.certificateError?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            viewModel.consumeCertificateError()
         }
     }
 
@@ -148,57 +123,21 @@ fun ProfileScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val userId = displayedUser?.id
-        if (userId.isNullOrBlank()) {
-            avatarError = "User information is missing."
-            return@rememberLauncherForActivityResult
-        }
-
-        isUploadingAvatar = true
         scope.launch {
-            try {
-                val bytes = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                }
-                if (bytes == null) {
-                    avatarError = "Couldn't read the selected image."
-                    isUploadingAvatar = false
-                    return@launch
-                }
-
-                val mimeType = context.contentResolver.getType(uri)
-                val extension = when {
-                    mimeType?.contains("png") == true -> "png"
-                    mimeType?.contains("webp") == true -> "webp"
-                    else -> "jpg"
-                }
-
-                val uploadedUrl = UserRepository.uploadAvatar(userId, bytes, extension)
-                if (uploadedUrl == null) {
-                    avatarError = "Failed to upload photo. Please try again."
-                    isUploadingAvatar = false
-                    return@launch
-                }
-
-                val freshUrl = "$uploadedUrl?t=${System.currentTimeMillis()}"
-                val currentUserSafe = displayedUser
-                if (currentUserSafe != null) {
-                    val updatedUser = currentUserSafe.copy(avatarUrl = freshUrl)
-                    val isSaved = UserRepository.updateUserInSupabase(updatedUser)
-                    isUploadingAvatar = false
-                    if (isSaved) {
-                        displayedUser = updatedUser
-                        onProfileUpdated(updatedUser)
-                    } else {
-                        avatarError = "Photo uploaded, but couldn't save it to your profile."
-                    }
-                } else {
-                    isUploadingAvatar = false
-                }
-            } catch (e: Exception) {
-                isUploadingAvatar = false
-                avatarError = e.message ?: "An unexpected error occurred."
+            val bytes = withContext(Dispatchers.IO) {
+                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             }
+            if (bytes == null) {
+                viewModel.avatarError = "Couldn't read the selected image."
+                return@launch
+            }
+            val mimeType = context.contentResolver.getType(uri)
+            val extension = when {
+                mimeType?.contains("png") == true -> "png"
+                mimeType?.contains("webp") == true -> "webp"
+                else -> "jpg"
+            }
+            viewModel.uploadAvatar(bytes, extension, onProfileUpdated)
         }
     }
 
@@ -208,150 +147,31 @@ fun ProfileScreen(
         )
     }
 
-    var showAvatarManager by remember { mutableStateOf(false) }
-    var isLoadingAvatarHistory by remember { mutableStateOf(false) }
-    var avatarHistory by remember { mutableStateOf<List<AvatarHistoryItem>>(emptyList()) }
-
-    LaunchedEffect(showAvatarManager) {
-        val userId = displayedUser?.id
-        if (showAvatarManager && !userId.isNullOrBlank()) {
-            isLoadingAvatarHistory = true
-            avatarHistory = UserRepository.listAvatarHistory(userId)
-            isLoadingAvatarHistory = false
-        }
-    }
-
-    fun selectAvatarFromHistory(item: AvatarHistoryItem) {
-        val currentUserSafe = displayedUser ?: return
-        scope.launch {
-            val freshUrl = "${item.url}?t=${System.currentTimeMillis()}"
-            val updatedUser = currentUserSafe.copy(avatarUrl = freshUrl)
-            val isSaved = UserRepository.updateUserInSupabase(updatedUser)
-            if (isSaved) {
-                displayedUser = updatedUser
-                onProfileUpdated(updatedUser)
-                showAvatarManager = false
-            } else {
-                avatarError = "Couldn't switch photo. Please try again."
-            }
-        }
-    }
-
-    fun deleteAvatarFromHistory(item: AvatarHistoryItem) {
-        scope.launch {
-            val deleted = UserRepository.deleteAvatar(item.path)
-            if (!deleted) {
-                avatarError = "Couldn't delete photo. Please try again."
-                return@launch
-            }
-            avatarHistory = avatarHistory.filterNot { it.path == item.path }
-            val currentUserSafe = displayedUser
-            if (currentUserSafe != null && currentUserSafe.avatarUrl.substringBefore("?") == item.url) {
-                val updatedUser = currentUserSafe.copy(avatarUrl = "")
-                if (UserRepository.updateUserInSupabase(updatedUser)) {
-                    displayedUser = updatedUser
-                    onProfileUpdated(updatedUser)
-                }
-            }
+    LaunchedEffect(viewModel.showAvatarManager) {
+        if (viewModel.showAvatarManager) {
+            viewModel.loadAvatarHistory()
         }
     }
 
     fun jumpTo(index: Int, tab: String) {
-        selectedTab = tab
+        viewModel.selectedTab = tab
         scope.launch { listState.animateScrollToItem(index) }
-    }
-
-    // --- Resume upload -------------------------------------------------
-    var isUploadingResume by remember { mutableStateOf(false) }
-    var resumeError by remember { mutableStateOf<String?>(null) }
-    var showResumeDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(resumeError) {
-        resumeError?.let {
-            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
-            resumeError = null
-        }
     }
 
     val resumePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val userId = displayedUser?.id
-        if (userId.isNullOrBlank()) {
-            resumeError = "User information is missing."
-            return@rememberLauncherForActivityResult
-        }
-
-        isUploadingResume = true
         scope.launch {
-            try {
-                val bytes = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                }
-                if (bytes == null) {
-                    resumeError = "Couldn't read the selected file."
-                    isUploadingResume = false
-                    return@launch
-                }
-
-                val uploadedUrl = UserRepository.uploadResume(userId, bytes)
-                if (uploadedUrl == null) {
-                    resumeError = "Failed to upload resume. Please try again."
-                    isUploadingResume = false
-                    return@launch
-                }
-
-                // Cache-bust so the "uploaded" state and any cached preview
-                // reflect the newest file right away.
-                val freshUrl = "$uploadedUrl?t=${System.currentTimeMillis()}"
-                val currentUserSafe = displayedUser
-                if (currentUserSafe != null) {
-                    val updatedUser = currentUserSafe.copy(resumeUrl = freshUrl)
-                    val isSaved = UserRepository.updateUserInSupabase(updatedUser)
-                    isUploadingResume = false
-                    if (isSaved) {
-                        displayedUser = updatedUser
-                        onProfileUpdated(updatedUser)
-                    } else {
-                        resumeError = "Resume uploaded, but couldn't save it to your profile."
-                    }
-                } else {
-                    isUploadingResume = false
-                }
-            } catch (e: Exception) {
-                isUploadingResume = false
-                resumeError = e.message ?: "An unexpected error occurred."
+            val bytes = withContext(Dispatchers.IO) {
+                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             }
-        }
-    }
-
-    fun removeResume() {
-        val currentUserSafe = displayedUser ?: return
-        scope.launch {
-            val updatedUser = currentUserSafe.copy(resumeUrl = "")
-            val isSaved = UserRepository.updateUserInSupabase(updatedUser)
-            if (isSaved) {
-                displayedUser = updatedUser
-                onProfileUpdated(updatedUser)
-                showResumeDialog = false
-            } else {
-                resumeError = "Couldn't remove resume. Please try again."
+            if (bytes == null) {
+                viewModel.resumeError = "Couldn't read the selected file."
+                return@launch
             }
+            viewModel.uploadResume(bytes, onProfileUpdated)
         }
-    }
-
-    fun startEditing() {
-        editName = if (isEmployer) displayedUser?.companyName ?: "" else displayedUser?.name ?: ""
-        editPhone = displayedUser?.phone ?: ""
-        editLocation = displayedUser?.location ?: ""
-        editIndustry = displayedUser?.industry ?: ""
-        editCompanySize = displayedUser?.companySize ?: ""
-        nameError = null
-        phoneError = null
-        locationError = null
-        saveErrorMessage = ""
-        isEditing = true
     }
 
     Scaffold(containerColor = BackgroundWhite) { innerPadding ->
@@ -371,7 +191,7 @@ fun ProfileScreen(
                     memberSince = memberSince,
                     avatarUrl = displayedUser?.avatarUrl,
                     isUploadingAvatar = isUploadingAvatar,
-                    onAvatarClick = { showAvatarManager = true },
+                    onAvatarClick = { viewModel.showAvatarManager = true },
                     onEditClick = { }
                 )
 
@@ -379,11 +199,11 @@ fun ProfileScreen(
                     Text(text = "Edit Profile", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DeepGreenDark)
 
                     OutlinedTextField(
-                        value = editName,
+                        value = viewModel.editName,
                         onValueChange = {
-                            editName = if (isEmployer) it.take(ValidationUtils.NAME_MAX_LENGTH) else ValidationUtils.filterNameInput(it)
-                            nameError = null
-                            saveErrorMessage = ""
+                            viewModel.editName = if (isEmployer) it.take(ValidationUtils.NAME_MAX_LENGTH) else ValidationUtils.filterNameInput(it)
+                            viewModel.nameError = null
+                            viewModel.saveErrorMessage = ""
                         },
                         label = { Text(if (isEmployer) "Company Name" else "Full Name") },
                         leadingIcon = {
@@ -394,24 +214,24 @@ fun ProfileScreen(
                             )
                         },
                         singleLine = true,
-                        isError = nameError != null,
-                        supportingText = { nameError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) } },
+                        isError = viewModel.nameError != null,
+                        supportingText = { viewModel.nameError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) } },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
                     )
 
                     OutlinedTextField(
-                        value = editPhone,
+                        value = viewModel.editPhone,
                         onValueChange = {
-                            editPhone = ValidationUtils.filterPhoneInput(it)
-                            phoneError = null
-                            saveErrorMessage = ""
+                            viewModel.editPhone = ValidationUtils.filterPhoneInput(it)
+                            viewModel.phoneError = null
+                            viewModel.saveErrorMessage = ""
                         },
                         label = { Text("Phone Number") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        isError = phoneError != null,
-                        supportingText = { phoneError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) } },
+                        isError = viewModel.phoneError != null,
+                        supportingText = { viewModel.phoneError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) } },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
                     )
@@ -424,63 +244,121 @@ fun ProfileScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     com.example.jobtown.ui.components.LocationPicker(
-                        locationString = editLocation,
+                        locationString = viewModel.editLocation,
                         onLocationStringChange = {
-                            editLocation = it
-                            locationError = null
-                            saveErrorMessage = ""
+                            viewModel.editLocation = it
+                            viewModel.locationError = null
+                            viewModel.saveErrorMessage = ""
                         },
                         allowMultipleBranches = isEmployer,
-                        errorText = locationError,
+                        errorText = viewModel.locationError,
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     if (isEmployer) {
-                        var expandedIndustry by remember { mutableStateOf(false) }
-                        var expandedCompanySize by remember { mutableStateOf(false) }
-
-                        ExposedDropdownMenuBox(
-                            expanded = expandedIndustry,
-                            onExpandedChange = { expandedIndustry = !expandedIndustry },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            OutlinedTextField(
-                                value = editIndustry,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Industry") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedIndustry) },
-                                modifier = Modifier.menuAnchor().fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp)
-                            )
-                            ExposedDropdownMenu(expanded = expandedIndustry, onDismissRequest = { expandedIndustry = false }) {
-                                INDUSTRY_OPTIONS.forEach { option ->
-                                    DropdownMenuItem(text = { Text(option) }, onClick = { editIndustry = option; expandedIndustry = false })
-                                }
+                        ProfileDropdownField(
+                            label = "Industry",
+                            value = viewModel.editIndustry,
+                            options = ProfileOptions.INDUSTRIES,
+                            onSelect = { viewModel.editIndustry = it }
+                        )
+                        ProfileDropdownField(
+                            label = "Company Size",
+                            value = viewModel.editCompanySize,
+                            options = ProfileOptions.COMPANY_SIZES,
+                            onSelect = { viewModel.editCompanySize = it }
+                        )
+                        OutlinedTextField(
+                            value = viewModel.editTagline,
+                            onValueChange = { viewModel.editTagline = it.take(80) },
+                            label = { Text("Tagline") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        OutlinedTextField(
+                            value = viewModel.editWebsiteUrl,
+                            onValueChange = {
+                                viewModel.editWebsiteUrl = it.take(ValidationUtils.URL_MAX_LENGTH)
+                                viewModel.urlError = null
+                            },
+                            label = { Text("Company Website URL") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                            isError = viewModel.urlError != null,
+                            supportingText = { viewModel.urlError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        Text("Perks & Benefits", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextDark.copy(alpha = 0.7f))
+                        ProfileOptions.PERKS.forEach { perk ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.togglePerk(perk) },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = viewModel.editPerks.contains(perk),
+                                    onCheckedChange = { viewModel.togglePerk(perk) },
+                                    colors = CheckboxDefaults.colors(checkedColor = DeepGreenDark)
+                                )
+                                Text(perk, fontSize = 14.sp, color = TextDark)
                             }
                         }
-
-                        ExposedDropdownMenuBox(
-                            expanded = expandedCompanySize,
-                            onExpandedChange = { expandedCompanySize = !expandedCompanySize },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            OutlinedTextField(
-                                value = editCompanySize,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Company Size") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCompanySize) },
-                                modifier = Modifier.menuAnchor().fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp)
-                            )
-                            ExposedDropdownMenu(expanded = expandedCompanySize, onDismissRequest = { expandedCompanySize = false }) {
-                                COMPANY_SIZE_OPTIONS.forEach { option ->
-                                    DropdownMenuItem(text = { Text(option) }, onClick = { editCompanySize = option; expandedCompanySize = false })
-                                }
+                    } else {
+                        Text("Experience Level", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextDark.copy(alpha = 0.7f))
+                        ProfileOptions.EXPERIENCE_LEVELS.forEach { level ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.editExperienceLevel = level },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = viewModel.editExperienceLevel == level,
+                                    onClick = { viewModel.editExperienceLevel = level },
+                                    colors = RadioButtonDefaults.colors(selectedColor = DeepGreenDark)
+                                )
+                                Text(level, fontSize = 14.sp, color = TextDark)
                             }
                         }
+                        OutlinedTextField(
+                            value = viewModel.editSkills,
+                            onValueChange = { viewModel.editSkills = it.take(ValidationUtils.SKILLS_MAX_LENGTH) },
+                            label = { Text("Key Skills (comma separated)") },
+                            supportingText = {
+                                Text("${viewModel.editSkills.length}/${ValidationUtils.SKILLS_MAX_LENGTH}", fontSize = 12.sp)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        OutlinedTextField(
+                            value = viewModel.editPortfolioUrl,
+                            onValueChange = {
+                                viewModel.editPortfolioUrl = it.take(ValidationUtils.URL_MAX_LENGTH)
+                                viewModel.urlError = null
+                            },
+                            label = { Text("Portfolio / LinkedIn / GitHub URL") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                            isError = viewModel.urlError != null,
+                            supportingText = { viewModel.urlError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        )
                     }
+
+                    OutlinedTextField(
+                        value = viewModel.editBio,
+                        onValueChange = { viewModel.editBio = it.take(ValidationUtils.BIO_MAX_LENGTH) },
+                        label = { Text(if (isEmployer) "About the Company" else "Professional Summary") },
+                        supportingText = {
+                            Text("${viewModel.editBio.length}/${ValidationUtils.BIO_MAX_LENGTH}", fontSize = 12.sp)
+                        },
+                        modifier = Modifier.fillMaxWidth().height(120.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    )
 
                     if (saveErrorMessage.isNotBlank()) {
                         Text(text = saveErrorMessage, color = Color.Red, fontSize = 12.sp)
@@ -488,60 +366,14 @@ fun ProfileScreen(
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedButton(
-                            onClick = { isEditing = false },
+                            onClick = { viewModel.cancelEditing() },
                             enabled = !isSaving,
                             modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(14.dp)
                         ) { Text("Cancel", fontWeight = FontWeight.Bold) }
 
                         Button(
-                            onClick = {
-                                val currentUserSafe = displayedUser
-                                if (currentUserSafe == null) {
-                                    saveErrorMessage = "User information is missing."
-                                    return@Button
-                                }
-                                val nameValidation = if (isEmployer) ValidationUtils.validateCompanyName(editName) else ValidationUtils.validateFullName(editName)
-                                val phoneValidation = ValidationUtils.validatePhone(editPhone, required = false)
-                                val locationValidation = ValidationUtils.validateLocation(editLocation, required = false)
-
-                                nameError = nameValidation
-                                phoneError = phoneValidation
-                                locationError = locationValidation
-
-                                if (nameValidation != null || phoneValidation != null || locationValidation != null) {
-                                    saveErrorMessage = "Please fix the highlighted fields before saving."
-                                    return@Button
-                                }
-
-                                isSaving = true
-                                saveErrorMessage = ""
-
-                                scope.launch {
-                                    try {
-                                        val updatedUser = currentUserSafe.copy(
-                                            name = if (isEmployer) currentUserSafe.name else editName.trim(),
-                                            companyName = if (isEmployer) editName.trim() else currentUserSafe.companyName,
-                                            phone = editPhone.trim(),
-                                            location = editLocation.trim(),
-                                            industry = if (isEmployer) editIndustry.trim() else currentUserSafe.industry,
-                                            companySize = if (isEmployer) editCompanySize.trim() else currentUserSafe.companySize
-                                        )
-                                        val isSaved = UserRepository.updateUserInSupabase(updatedUser)
-                                        isSaving = false
-                                        if (isSaved) {
-                                            displayedUser = updatedUser
-                                            onProfileUpdated(updatedUser)
-                                            isEditing = false
-                                        } else {
-                                            saveErrorMessage = "Failed to save profile. Please try again."
-                                        }
-                                    } catch (e: Exception) {
-                                        isSaving = false
-                                        saveErrorMessage = e.message ?: "An unexpected error occurred."
-                                    }
-                                }
-                            },
+                            onClick = { viewModel.saveProfile(onProfileUpdated) },
                             enabled = !isSaving,
                             modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(14.dp),
@@ -555,7 +387,7 @@ fun ProfileScreen(
             }
         } else if (isEmployer) {
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, displayedUser?.avatarUrl, isUploadingAvatar, onEditClick = { startEditing() }) }
+                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, displayedUser?.avatarUrl, isUploadingAvatar, onEditClick = { viewModel.startEditing() }) }
                 item { ContactCard(displayedUser?.phone, displayedUser?.email, displayedUser?.location) }
 
                 stickyHeader {
@@ -678,7 +510,7 @@ fun ProfileScreen(
             }
         } else {
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, displayedUser?.avatarUrl, isUploadingAvatar, onEditClick = { startEditing() }) }
+                item { ProfileHeader(navController, isEmployer, false, displayName, displayedUser?.email, memberSince, displayedUser?.avatarUrl, isUploadingAvatar, onEditClick = { viewModel.startEditing() }) }
                 item { ContactCard(displayedUser?.phone, displayedUser?.email, displayedUser?.location) }
 
                 stickyHeader {
@@ -763,8 +595,8 @@ fun ProfileScreen(
                             emptyText = "Showcase your work history to stand out to employers.",
                             addLabel = "Add Experience",
                             entries = experienceEntries,
-                            onAddClick = { addEntryDialogFor = "Experience" },
-                            onRemove = { experienceEntries.remove(it) }
+                            onAddClick = { viewModel.addEntryDialogFor = "Experience" },
+                            onRemove = { viewModel.removeEntry("Experience", it) }
                         )
                     }
                 }
@@ -780,8 +612,8 @@ fun ProfileScreen(
                             emptyText = "Add your qualifications so employers know your background.",
                             addLabel = "Add Education",
                             entries = educationEntries,
-                            onAddClick = { addEntryDialogFor = "Education" },
-                            onRemove = { educationEntries.remove(it) }
+                            onAddClick = { viewModel.addEntryDialogFor = "Education" },
+                            onRemove = { viewModel.removeEntry("Education", it) }
                         )
                     }
                 }
@@ -797,8 +629,9 @@ fun ProfileScreen(
                             emptyText = "Certifications help you stand out from other candidates.",
                             addLabel = "Add Certification",
                             entries = certificationEntries,
-                            onAddClick = { addEntryDialogFor = "Certification" },
-                            onRemove = { certificationEntries.remove(it) }
+                            onAddClick = { viewModel.addEntryDialogFor = "Certification" },
+                            onRemove = { viewModel.removeEntry("Certification", it) },
+                            onViewFile = { url -> uriHandler.openUri(url) }
                         )
                     }
                 }
@@ -808,7 +641,7 @@ fun ProfileScreen(
                         ProfileAccountActions(
                             isEmployer = false,
                             resumeUrl = displayedUser?.resumeUrl,
-                            onResumeClick = { showResumeDialog = true },
+                            onResumeClick = { viewModel.showResumeDialog = true },
                             onLogout = onLogout
                         )
                     }
@@ -818,46 +651,43 @@ fun ProfileScreen(
         }
     }
 
-    addEntryDialogFor?.let { category ->
+    viewModel.addEntryDialogFor?.let { category ->
         AddEntryDialog(
             category = category,
-            onDismiss = { addEntryDialogFor = null },
-            onSave = { entry ->
-                when (category) {
-                    "Experience" -> experienceEntries.add(entry)
-                    "Education" -> educationEntries.add(entry)
-                    "Certification" -> certificationEntries.add(entry)
-                }
-                addEntryDialogFor = null
+            isUploadingFile = viewModel.isUploadingCertificate,
+            onDismiss = { viewModel.addEntryDialogFor = null },
+            onSave = { entry -> viewModel.addEntry(category, entry) },
+            onUploadCertificate = { bytes, extension, onDone ->
+                viewModel.uploadCertificate(bytes, extension, onDone)
             }
         )
     }
 
-    if (showAvatarManager) {
+    if (viewModel.showAvatarManager) {
         AvatarManagerSheet(
-            isLoadingHistory = isLoadingAvatarHistory,
-            historyItems = avatarHistory,
+            isLoadingHistory = viewModel.isLoadingAvatarHistory,
+            historyItems = viewModel.avatarHistory,
             currentAvatarUrl = displayedUser?.avatarUrl,
-            onDismiss = { showAvatarManager = false },
+            onDismiss = { viewModel.showAvatarManager = false },
             onUploadNewClick = {
-                showAvatarManager = false
+                viewModel.showAvatarManager = false
                 pickAvatar()
             },
-            onSelect = ::selectAvatarFromHistory,
-            onDelete = ::deleteAvatarFromHistory
+            onSelect = { viewModel.selectAvatarFromHistory(it, onProfileUpdated) },
+            onDelete = { viewModel.deleteAvatarFromHistory(it, onProfileUpdated) }
         )
     }
 
-    if (showResumeDialog) {
+    if (viewModel.showResumeDialog) {
         ResumeDialog(
             resumeUrl = displayedUser?.resumeUrl,
             isUploading = isUploadingResume,
-            onDismiss = { showResumeDialog = false },
+            onDismiss = { viewModel.showResumeDialog = false },
             onUploadClick = { resumePickerLauncher.launch("application/pdf") },
             onViewClick = {
                 displayedUser?.resumeUrl?.takeIf { it.isNotBlank() }?.let { uriHandler.openUri(it) }
             },
-            onRemoveClick = { removeResume() }
+            onRemoveClick = { viewModel.removeResume(onProfileUpdated) }
         )
     }
 }
@@ -1218,7 +1048,8 @@ private fun ProfileEntrySection(
     addLabel: String,
     entries: List<ProfileEntry>,
     onAddClick: () -> Unit,
-    onRemove: (ProfileEntry) -> Unit
+    onRemove: (ProfileEntry) -> Unit,
+    onViewFile: ((String) -> Unit)? = null
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (entries.isEmpty()) {
@@ -1264,6 +1095,14 @@ private fun ProfileEntrySection(
                             if (entry.description.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(text = entry.description, fontSize = 13.sp, color = TextDark.copy(alpha = 0.8f), lineHeight = 18.sp)
+                            }
+                            if (entry.fileUrl.isNotBlank() && onViewFile != null) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                TextButton(onClick = { onViewFile(entry.fileUrl) }, contentPadding = PaddingValues(0.dp)) {
+                                    Icon(Icons.Default.AttachFile, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("View certificate", color = DeepGreenDark, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
                             }
                         }
                         IconButton(onClick = { onRemove(entry) }, modifier = Modifier.size(26.dp)) {
@@ -1317,71 +1156,289 @@ private fun ProfileAccountActions(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddEntryDialog(category: String, onDismiss: () -> Unit, onSave: (ProfileEntry) -> Unit) {
+private fun AddEntryDialog(
+    category: String,
+    isUploadingFile: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (ProfileEntry) -> Unit,
+    onUploadCertificate: (ByteArray, String, (String?) -> Unit) -> Unit
+) {
+    val context = LocalContext.current
     var title by remember { mutableStateOf("") }
     var subtitle by remember { mutableStateOf("") }
-    var period by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var titleError by remember { mutableStateOf<String?>(null) }
+    var fileError by remember { mutableStateOf<String?>(null) }
+    var employmentType by remember { mutableStateOf(ProfileOptions.EMPLOYMENT_TYPES.first()) }
+    var educationLevel by remember { mutableStateOf(ProfileOptions.EDUCATION_LEVELS[2]) }
+    var issuer by remember { mutableStateOf(ProfileOptions.CERTIFICATE_ISSUERS.first()) }
+    var customIssuer by remember { mutableStateOf("") }
+    var startYear by remember { mutableStateOf(ProfileOptions.YEARS.getOrElse(1) { "" }) }
+    var endYear by remember { mutableStateOf("Present") }
+    var year by remember { mutableStateOf(ProfileOptions.YEARS.getOrElse(1) { "" }) }
+    var fileUrl by remember { mutableStateOf("") }
+    var fileName by remember { mutableStateOf("") }
 
-    val (titleLabel, subtitleLabel) = when (category) {
-        "Experience" -> "Job Title" to "Company"
-        "Education" -> "Degree / Qualification" to "Institution"
-        else -> "Certification Name" to "Issued By"
+    val certificatePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val mimeType = context.contentResolver.getType(uri).orEmpty()
+        val extension = when {
+            mimeType.contains("pdf") -> "pdf"
+            mimeType.contains("png") -> "png"
+            mimeType.contains("webp") -> "webp"
+            mimeType.contains("jpeg") || mimeType.contains("jpg") -> "jpg"
+            else -> null
+        }
+        if (extension == null) {
+            fileError = "Please upload a PDF or image file."
+            return@rememberLauncherForActivityResult
+        }
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        if (bytes == null) {
+            fileError = "Couldn't read the selected file."
+            return@rememberLauncherForActivityResult
+        }
+        fileError = null
+        onUploadCertificate(bytes, extension) { url ->
+            if (url != null) {
+                fileUrl = url
+                fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "certificate.$extension"
+            } else {
+                fileError = "Failed to upload certificate. Please try again."
+            }
+        }
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isUploadingFile) onDismiss() },
         title = { Text("Add $category", fontWeight = FontWeight.Bold, color = DeepGreenDark) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it.take(100); titleError = null },
-                    label = { Text(titleLabel) },
-                    singleLine = true,
-                    isError = titleError != null,
-                    supportingText = { titleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = subtitle,
-                    onValueChange = { subtitle = it.take(100) },
-                    label = { Text(subtitleLabel) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = period,
-                    onValueChange = { period = it.take(50) },
-                    label = { Text("Period (e.g. 2022 - Present)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it.take(300) },
-                    label = { Text("Description (optional)") },
-                    modifier = Modifier.fillMaxWidth().height(90.dp)
-                )
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                when (category) {
+                    "Experience" -> {
+                        OutlinedTextField(
+                            value = title,
+                            onValueChange = { title = it.take(100); titleError = null },
+                            label = { Text("Job Title") },
+                            singleLine = true,
+                            isError = titleError != null,
+                            supportingText = { titleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = subtitle,
+                            onValueChange = { subtitle = it.take(100) },
+                            label = { Text("Company") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text("Employment type", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextDark.copy(alpha = 0.7f))
+                        ProfileOptions.EMPLOYMENT_TYPES.forEach { type ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable { employmentType = type },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = employmentType == type,
+                                    onClick = { employmentType = type },
+                                    colors = RadioButtonDefaults.colors(selectedColor = DeepGreenDark)
+                                )
+                                Text(type, fontSize = 14.sp, color = TextDark)
+                            }
+                        }
+                        ProfileDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
+                        ProfileDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = { description = it.take(300) },
+                            label = { Text("Description (optional)") },
+                            modifier = Modifier.fillMaxWidth().height(90.dp)
+                        )
+                    }
+                    "Education" -> {
+                        ProfileDropdownField(
+                            label = "Qualification",
+                            value = educationLevel,
+                            options = ProfileOptions.EDUCATION_LEVELS,
+                            onSelect = { educationLevel = it; titleError = null }
+                        )
+                        OutlinedTextField(
+                            value = subtitle,
+                            onValueChange = { subtitle = it.take(100) },
+                            label = { Text("Institution") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        ProfileDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
+                        ProfileDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = { description = it.take(300) },
+                            label = { Text("Field of study (optional)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    else -> {
+                        OutlinedTextField(
+                            value = title,
+                            onValueChange = { title = it.take(100); titleError = null },
+                            label = { Text("Certification name") },
+                            singleLine = true,
+                            isError = titleError != null,
+                            supportingText = { titleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        ProfileDropdownField(
+                            label = "Issued by",
+                            value = issuer,
+                            options = ProfileOptions.CERTIFICATE_ISSUERS,
+                            onSelect = { issuer = it }
+                        )
+                        if (issuer == "Other") {
+                            OutlinedTextField(
+                                value = customIssuer,
+                                onValueChange = { customIssuer = it.take(100) },
+                                label = { Text("Issuer name") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        ProfileDropdownField(
+                            label = "Year",
+                            value = year,
+                            options = ProfileOptions.YEARS.filter { it != "Present" },
+                            onSelect = { year = it }
+                        )
+                        OutlinedButton(
+                            onClick = { certificatePicker.launch(arrayOf("application/pdf", "image/*")) },
+                            enabled = !isUploadingFile,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            if (isUploadingFile) {
+                                CircularProgressIndicator(color = DeepGreenDark, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Uploading...")
+                            } else {
+                                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (fileUrl.isBlank()) "Upload certificate file" else "Replace file")
+                            }
+                        }
+                        if (fileName.isNotBlank()) {
+                            Text(fileName, fontSize = 12.sp, color = DeepGreenDark)
+                        }
+                        fileError?.let { Text(it, color = Color.Red, fontSize = 12.sp) }
+                        Text("PDF or image. Required.", fontSize = 12.sp, color = TextDark.copy(alpha = 0.5f))
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                if (title.trim().isBlank()) {
-                    titleError = "This field is required."
-                    return@TextButton
+            TextButton(
+                enabled = !isUploadingFile,
+                onClick = {
+                    when (category) {
+                        "Experience" -> {
+                            if (title.trim().isBlank()) {
+                                titleError = "This field is required."
+                                return@TextButton
+                            }
+                            onSave(
+                                ProfileEntry(
+                                    title = title.trim(),
+                                    subtitle = subtitle.trim(),
+                                    period = "$startYear - $endYear · $employmentType",
+                                    description = description.trim()
+                                )
+                            )
+                        }
+                        "Education" -> {
+                            onSave(
+                                ProfileEntry(
+                                    title = educationLevel,
+                                    subtitle = subtitle.trim(),
+                                    period = "$startYear - $endYear",
+                                    description = description.trim()
+                                )
+                            )
+                        }
+                        else -> {
+                            if (title.trim().isBlank()) {
+                                titleError = "This field is required."
+                                return@TextButton
+                            }
+                            if (fileUrl.isBlank()) {
+                                fileError = "Please upload a certificate file."
+                                return@TextButton
+                            }
+                            val issuerName = if (issuer == "Other") customIssuer.trim().ifBlank { "Other" } else issuer
+                            onSave(
+                                ProfileEntry(
+                                    title = title.trim(),
+                                    subtitle = issuerName,
+                                    period = year,
+                                    fileUrl = fileUrl
+                                )
+                            )
+                        }
+                    }
                 }
-                onSave(ProfileEntry(title = title.trim(), subtitle = subtitle.trim(), period = period.trim(), description = description.trim()))
-            }) {
+            ) {
                 Text("Add", color = DeepGreenDark, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextDark.copy(alpha = 0.6f)) }
+            TextButton(onClick = onDismiss, enabled = !isUploadingFile) {
+                Text("Cancel", color = TextDark.copy(alpha = 0.6f))
+            }
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileDropdownField(
+    label: String,
+    value: String,
+    options: List<String>,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp)
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onSelect(option)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
 }
 
 @Composable

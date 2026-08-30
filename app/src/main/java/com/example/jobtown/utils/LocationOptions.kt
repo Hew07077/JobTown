@@ -41,12 +41,20 @@ object LocationOptions {
         return combined.split(ADDRESS_DELIMITER)
             .map { it.trim() }
             .filter { it.isNotBlank() }
-            .map { entry ->
-                val parts = entry.split(",", limit = 2).map { it.trim() }
-                if (parts.size == 2) Address(city = parts[0], country = parts[1])
-                else Address(city = entry, country = "")
-            }
+            .map { entry -> parseOneAddress(entry) }
     }
+
+    private fun parseOneAddress(entry: String): Address {
+        val parts = entry.split(",", limit = 2).map { it.trim() }.filter { it.isNotBlank() }
+        return when {
+            parts.size >= 2 -> Address(city = parts[0], country = parts[1])
+            isKnownCountry(parts.first()) -> Address(city = "", country = parts.first())
+            else -> Address(city = parts.first(), country = "")
+        }
+    }
+
+    fun isKnownCountry(value: String): Boolean =
+        COUNTRIES.any { it.equals(value.trim(), ignoreCase = true) }
 
     /** Joins a primary address plus any additional branch addresses into one storable string. */
     fun buildLocationString(primary: Address, branches: List<Address> = emptyList()): String {

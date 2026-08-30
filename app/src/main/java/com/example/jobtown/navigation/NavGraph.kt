@@ -23,8 +23,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.jobtown.Screen
-import com.example.jobtown.data.User
-import com.example.jobtown.data.UserRole
+import com.example.jobtown.data.model.User
+import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.data.repository.ApplicationRepository
 import com.example.jobtown.data.repository.JobRepository
 import com.example.jobtown.data.repository.MessageRepository

@@ -2,8 +2,6 @@
 
 package com.example.jobtown.ui.chat
 
-import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
@@ -13,7 +11,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,9 +33,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import com.example.jobtown.data.ChatMessage
-import com.example.jobtown.data.MessageType
-import com.example.jobtown.data.toReactionGroups
+import com.example.jobtown.data.model.ChatMessage
+import com.example.jobtown.data.model.MessageType
+import com.example.jobtown.data.model.toReactionGroups
 import com.example.jobtown.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest

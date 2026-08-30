@@ -1,7 +1,7 @@
 package com.example.jobtown.utils
 
-import com.example.jobtown.data.Job
-import com.example.jobtown.data.UserProfile
+import com.example.jobtown.data.model.Job
+import com.example.jobtown.data.model.UserProfile
 
 /**
  * Result of scoring a single [Job] against a job seeker's [UserProfile].

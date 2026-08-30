@@ -1,11 +1,13 @@
+@file:OptIn(kotlinx.serialization.InternalSerializationApi::class)
+
 package com.example.jobtown.data.repository
 
 import android.util.Log
-import com.example.jobtown.data.ActionType
-import com.example.jobtown.data.ChatMessage
-import com.example.jobtown.data.ChatRoom
-import com.example.jobtown.data.MessageReaction
-import com.example.jobtown.data.MessageType
+import com.example.jobtown.data.model.ActionType
+import com.example.jobtown.data.model.ChatMessage
+import com.example.jobtown.data.model.ChatRoom
+import com.example.jobtown.data.model.MessageReaction
+import com.example.jobtown.data.model.MessageType
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
