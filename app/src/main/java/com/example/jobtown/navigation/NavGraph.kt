@@ -35,6 +35,7 @@ import com.example.jobtown.ui.applied.ApplicationDetailScreen
 import com.example.jobtown.ui.applied.JobseekerApplicationDetailScreen
 import com.example.jobtown.ui.auth.CompleteProfileScreen
 import com.example.jobtown.ui.auth.LoginScreen
+import com.example.jobtown.ui.auth.ResetPasswordScreen
 import com.example.jobtown.ui.auth.SignUpFields
 import com.example.jobtown.ui.auth.SignUpScreen
 import com.example.jobtown.ui.auth.StartupScreen
@@ -65,7 +66,13 @@ fun AppNavGraph(
     navController: NavHostController = rememberNavController(),
     currentUser: User? = null,
     startDestination: String = "startup",
-    onLogout: () -> Unit = {}
+    onLogout: () -> Unit = {},
+    // Set by MainActivity whenever the Activity is opened/re-opened via a
+    // deep link (currently just the "Forgot Password" email link). We watch
+    // it below and, if it's the reset-password link, navigate there --
+    // regardless of whatever screen happens to be showing at the time.
+    pendingDeepLinkUri: Uri? = null,
+    onDeepLinkHandled: () -> Unit = {}
 ) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -77,6 +84,18 @@ fun AppNavGraph(
 
     var snackbarMessage by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(pendingDeepLinkUri) {
+        val uri = pendingDeepLinkUri
+        // Host must match the intent-filter in AndroidManifest.xml / the
+        // redirectUrl passed to resetPasswordForEmail() in LoginScreen.kt.
+        if (uri != null && uri.host == "reset-password") {
+            navController.navigate("reset_password") {
+                launchSingleTop = true
+            }
+            onDeepLinkHandled()
+        }
+    }
 
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
@@ -266,6 +285,22 @@ fun AppNavGraph(
                     onLoginClick = {
                         signupDraft = SignUpFields()
                         navController.popBackStack()
+                    }
+                )
+            }
+
+            composable("reset_password") {
+                ResetPasswordScreen(
+                    onPasswordUpdated = {
+                        snackbarMessage = "Password updated. Please log in with your new password."
+                        navController.navigate("login") {
+                            popUpTo("reset_password") { inclusive = true }
+                        }
+                    },
+                    onCancel = {
+                        if (!navController.popBackStack()) {
+                            navController.navigate("login")
+                        }
                     }
                 )
             }

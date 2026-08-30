@@ -21,7 +21,7 @@ object ValidationUtils {
 
     const val EMAIL_MAX_LENGTH = 254
 
-    const val PASSWORD_MIN_LENGTH = 6
+    const val PASSWORD_MIN_LENGTH = 8
     const val PASSWORD_MAX_LENGTH = 64
 
     const val PHONE_MIN_DIGITS = 7

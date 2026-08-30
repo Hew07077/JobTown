@@ -2,6 +2,7 @@
 
 package com.example.jobtown.data.repository
 
+import android.util.Log
 import com.example.jobtown.data.SupabaseClient
 import com.example.jobtown.data.model.InterviewSchedule
 import com.example.jobtown.data.model.Job
@@ -42,14 +43,12 @@ object UserRepository {
                 lastUserSaveError = "Could not create your account session. Please try again."
                 return@withContext false
             }
-            persistUserRow(user.toUserWritePayload(), findUserByEmail(user.email) ?: fetchUserById(user.id))
-            if (!upsertUserProfileRow(user.toUserProfile())) {
-                lastUserSaveError = "Account saved, but extra profile details were blocked by the database (RLS on user_profiles)."
-                return@withContext false
-            }
+            
+            // Persist everything into the 'users' table which already has all columns
+            persistUserRow(user.toUserWritePayload())
+            
             true
         } catch (e: Exception) {
-            e.printStackTrace()
             lastUserSaveError = describeDbError(e)
             false
         }
@@ -65,10 +64,10 @@ object UserRepository {
         val cleanId = authUserId?.trim().orEmpty()
         val cleanEmail = email.trim()
         if (cleanId.isNotBlank()) {
-            fetchUserById(cleanId)?.let { return@withContext mergeProfile(it) }
+            fetchUserById(cleanId)?.let { return@withContext it }
         }
         if (cleanEmail.isNotBlank()) {
-            findUserByEmail(cleanEmail)?.let { return@withContext mergeProfile(it) }
+            findUserByEmail(cleanEmail)?.let { return@withContext it }
         }
         null
     }
@@ -76,13 +75,10 @@ object UserRepository {
     suspend fun updateUserInSupabase(user: User): Boolean = withContext(Dispatchers.IO) {
         lastUserSaveError = null
         try {
-            SupabaseClient.client.from("users").update(user.toUserWritePayload()) {
-                filter { eq("id", user.id) }
-            }
-            upsertUserProfileRow(user.toUserProfile())
+            SupabaseClient.client.from("users").upsert(user.toUserWritePayload())
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("UserRepository", "Error updating user", e)
             lastUserSaveError = describeDbError(e)
             false
         }
@@ -115,13 +111,12 @@ object UserRepository {
         )
     }
 
-    private suspend fun persistUserRow(payload: UserWritePayload, existing: User?) {
-        if (existing != null) {
-            SupabaseClient.client.from("users").update(payload) {
-                filter { eq("id", existing.id) }
-            }
-        } else {
-            SupabaseClient.client.from("users").insert(payload)
+    private suspend fun persistUserRow(payload: UserWritePayload) {
+        try {
+            // Using upsert is safer as it handles both insert and update based on the primary key (id)
+            SupabaseClient.client.from("users").upsert(payload)
+        } catch (e: Exception) {
+            throw e
         }
     }
 
@@ -135,25 +130,19 @@ object UserRepository {
     private fun describeDbError(e: Exception): String {
         val message = e.message.orEmpty()
         val firstLine = message.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+        
         return when {
+            message.contains("PGRST301", ignoreCase = true) ->
+                "Database session expired or token invalid. Please try logging in again."
+            message.contains("PGRST204", ignoreCase = true) ->
+                "Schema mismatch: One of the profile fields doesn't exist in the database table."
+            message.contains("42501") || message.contains("row-level security", ignoreCase = true) ->
+                "Permission denied: The database RLS policies are blocking this write."
+            message.contains("23505") || message.contains("duplicate key", ignoreCase = true) ->
+                "An account with this email already has a profile."
             isJwtDecodeError(e) ->
                 "Signed in, but the database could not verify the login token. Try Save again."
-            message.contains("row-level security", ignoreCase = true) || message.contains("42501") ->
-                "Signed in, but saving was blocked by the database (RLS on users)."
-            message.contains("PGRST205", ignoreCase = true) || message.contains("Could not find the table", ignoreCase = true) ->
-                "This Supabase project does not have a users table."
-            message.contains("PGRST204", ignoreCase = true) ||
-                (message.contains("Could not find", ignoreCase = true) && message.contains("column", ignoreCase = true)) ->
-                "A profile field is not in this database schema."
-            message.contains("duplicate key", ignoreCase = true) || message.contains("unique constraint", ignoreCase = true) ->
-                "This email already has a profile. Go back and log in."
-            message.contains("invalid input syntax", ignoreCase = true) ->
-                "A profile value does not match this database column type."
-            firstLine.isNotBlank() &&
-                firstLine.length < 180 &&
-                !firstLine.contains("apikey", ignoreCase = true) &&
-                !firstLine.contains("Request:", ignoreCase = true) &&
-                !firstLine.contains("sb_publishable", ignoreCase = true) ->
+            firstLine.isNotBlank() && firstLine.length < 180 && !firstLine.contains("apikey") ->
                 firstLine
             else -> "Failed to save profile details. Please try again."
         }
@@ -174,7 +163,7 @@ object UserRepository {
             bio = profile.bio
         )
         return try {
-            SupabaseClient.client.from("user_profiles").upsert(core)
+            SupabaseClient.client.from("profiles").upsert(core)
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -184,13 +173,13 @@ object UserRepository {
 
     private suspend fun fetchProfileRow(userId: String): UserProfile? = try {
         if (userId.isBlank()) null
-        else SupabaseClient.client.from("user_profiles")
+        else SupabaseClient.client.from("profiles")
             .select { filter { eq("id", userId) } }
             .decodeSingleOrNull<UserProfile>()
     } catch (e: Exception) {
         e.printStackTrace()
         try {
-            SupabaseClient.client.from("user_profiles")
+            SupabaseClient.client.from("profiles")
                 .select { filter { eq("id", userId) } }
                 .decodeSingleOrNull<UserProfileCore>()
                 ?.let {
@@ -314,22 +303,42 @@ object UserRepository {
     // Fetches extra profile fields from user_profiles, falling back to the users row.
     suspend fun fetchUserProfile(userId: String): UserProfile? = withContext(Dispatchers.IO) {
         if (userId.isBlank()) return@withContext null
-        fetchProfileRow(userId) ?: fetchUserById(userId)?.toUserProfile()
+        // Since everything is in the 'users' table now, fetch the user and convert it
+        fetchUserById(userId)?.toUserProfile()
     }
 
     suspend fun updateUserProfile(profile: UserProfile): Boolean = withContext(Dispatchers.IO) {
-        upsertUserProfileRow(profile)
+        try {
+            // Map UserProfile back to the users table payload if needed, 
+            // but saveUserToSupabase is already doing this.
+            val user = fetchUserById(profile.id) ?: return@withContext false
+            val updatedUser = user.copy(
+                phone = profile.phone ?: user.phone,
+                location = profile.location ?: user.location,
+                tagline = profile.tagline ?: user.tagline,
+                websiteUrl = profile.websiteUrl ?: user.websiteUrl,
+                perks = profile.perks.ifEmpty { user.perks },
+                skills = profile.skills ?: user.skills,
+                experienceLevel = profile.experienceLevel ?: user.experienceLevel,
+                portfolioUrl = profile.portfolioUrl ?: user.portfolioUrl,
+                bio = profile.bio ?: user.bio
+            )
+            saveUserToSupabase(updatedUser)
+        } catch (e: Exception) {
+            Log.e("UserRepository", "Error updating user profile", e)
+            false
+        }
     }
 
     suspend fun fetchUserById(userId: String): User? = withContext(Dispatchers.IO) {
         if (userId.isBlank()) return@withContext null
         try {
-            val row = SupabaseClient.client.from("users")
+            // Directly decode from 'users' table which contains all profile data
+            SupabaseClient.client.from("users")
                 .select { filter { eq("id", userId) } }
                 .decodeSingleOrNull<User>()
-            row?.let { mergeProfile(it) }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("UserRepository", "Error fetching user by ID: $userId", e)
             null
         }
     }
