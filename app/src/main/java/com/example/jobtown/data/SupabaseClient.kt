@@ -10,8 +10,8 @@ import kotlinx.serialization.json.Json
 
 object SupabaseClient {
     val client = createSupabaseClient(
-        supabaseUrl = "https://gkcbjvpvpwycsofrlfbc.supabase.co",
-        supabaseKey = "sb_publishable_o_HrjcNeiyvRp3PM3TgVcg_Z7oM7qpW"
+        supabaseUrl = "https://neyyuqwgqlvcdwabzmut.supabase.co",
+        supabaseKey = "sb_publishable_TSybP_WPy2E4PrAXA9CBBg_V2D8XAKr"
     ) {
         // Configures the JSON serializer to ignore extra or unknown database/metadata fields
         defaultSerializer = KotlinXSerializer(
