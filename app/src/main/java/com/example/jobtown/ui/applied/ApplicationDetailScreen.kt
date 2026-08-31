@@ -9,7 +9,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,8 +30,13 @@ fun ApplicationDetailScreen(
     onScheduleClick: (applicationId: String, applicantId: String, applicantName: String, jobTitle: String, companyName: String) -> Unit = { _, _, _, _, _ -> },
     onStatusChange: (applicationId: String, newStatus: String) -> Unit = { _, _ -> }
 ) {
-    val application = remember(applicationId, viewModel.applicationsList) {
-        viewModel.applicationsList.find { it.id == applicationId }
+    // FIX: viewModel.applicationsList is a plain getter over a private StateFlow,
+    // not Compose State, so using it as a `remember` key did not actually cause
+    // this screen to recompose when the list updated (e.g. after onStatusChange).
+    // Collecting the StateFlow directly fixes that.
+    val applicationsList by viewModel.applicationsListState.collectAsStateWithLifecycle()
+    val application = remember(applicationId, applicationsList) {
+        applicationsList.find { it.id == applicationId }
     }
 
     Scaffold(

@@ -106,6 +106,46 @@ fun EmployerJobDetailScreen(
         else job.salary
     }
 
+    // FIX (job edit bug): this validate+build+persist logic used to live only
+    // inside the bottom "Save Changes" button's onClick. The top app bar icon
+    // showed a Save glyph while editing but only flipped isEditing, silently
+    // discarding whatever the user had typed. Pulling this out lets both
+    // buttons share one real save path.
+    fun trySave(): Boolean {
+        val minVal = parseSalaryValue(minSalary)
+        val maxVal = parseSalaryValue(maxSalary)
+
+        return when {
+            title.isBlank() || company.isBlank() || location.isBlank() || description.isBlank() -> {
+                errorMessage = "Please fill in all required fields."
+                showError = true
+                false
+            }
+            minSalary.isNotBlank() && maxSalary.isNotBlank() && maxSalary != "30,000+" && minVal > maxVal -> {
+                errorMessage = "Min salary cannot be greater than Max salary."
+                showError = true
+                false
+            }
+            else -> {
+                showError = false
+                val updatedJob = job.copy(
+                    title = title.trim(),
+                    company = company.trim(),
+                    location = location.trim(),
+                    salary = formattedSalary,
+                    salaryRange = formattedSalary,
+                    type = type,
+                    description = description.trim(),
+                    requirements = requirements.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                    skills = skills.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                )
+                onUpdateJob(updatedJob)
+                isEditing = false
+                true
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -127,10 +167,14 @@ fun EmployerJobDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { isEditing = !isEditing }) {
+                    // FIX: previously `{ isEditing = !isEditing }` — tapping this
+                    // while editing showed a Save icon but just discarded the
+                    // draft. Now it actually saves; it only exits edit mode if
+                    // validation passes.
+                    IconButton(onClick = { if (isEditing) trySave() else isEditing = true }) {
                         Icon(
                             imageVector = if (isEditing) Icons.Default.Save else Icons.Default.Edit,
-                            contentDescription = "Edit Toggle",
+                            contentDescription = if (isEditing) "Save" else "Edit",
                             tint = DeepGreenDark
                         )
                     }

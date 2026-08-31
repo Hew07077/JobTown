@@ -23,6 +23,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.jobtown.Screen
+import com.example.jobtown.data.model.ChatRoom
 import com.example.jobtown.data.model.User
 import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.data.repository.ApplicationRepository
@@ -67,10 +68,6 @@ fun AppNavGraph(
     currentUser: User? = null,
     startDestination: String = "startup",
     onLogout: () -> Unit = {},
-    // Set by MainActivity whenever the Activity is opened/re-opened via a
-    // deep link (currently just the "Forgot Password" email link). We watch
-    // it below and, if it's the reset-password link, navigate there --
-    // regardless of whatever screen happens to be showing at the time.
     pendingDeepLinkUri: Uri? = null,
     onDeepLinkHandled: () -> Unit = {}
 ) {
@@ -87,8 +84,6 @@ fun AppNavGraph(
 
     LaunchedEffect(pendingDeepLinkUri) {
         val uri = pendingDeepLinkUri
-        // Host must match the intent-filter in AndroidManifest.xml / the
-        // redirectUrl passed to resetPasswordForEmail() in LoginScreen.kt.
         if (uri != null && uri.host == "reset-password") {
             navController.navigate("reset_password") {
                 launchSingleTop = true
@@ -151,9 +146,11 @@ fun AppNavGraph(
         }
     }
 
-    val chatRoomsForBadge by chatViewModel.chatRooms.collectAsStateWithLifecycle()
-    val totalUnreadChatCount = remember(chatRoomsForBadge) {
-        chatRoomsForBadge.sumOf { it.unreadCount }
+    val chatRoomsList by chatViewModel.chatRooms.collectAsStateWithLifecycle()
+    val isChatLoading by chatViewModel.isLoading.collectAsStateWithLifecycle()
+
+    val totalUnreadChatCount = remember(chatRoomsList) {
+        chatRoomsList.sumOf { it.unreadCount }
     }
 
     fun startOrOpenChat(
@@ -163,8 +160,8 @@ fun AppNavGraph(
         jobTitle: String,
         progressKey: String
     ) {
-        val currentUser = loggedInUser
-        if (currentUser == null) {
+        val user = loggedInUser
+        if (user == null) {
             snackbarMessage = "You need to be logged in to start a chat."
             return
         }
@@ -175,14 +172,14 @@ fun AppNavGraph(
         if (chatCreationInProgressId != null) return
         chatCreationInProgressId = progressKey
 
-        val isEmployerViewer = currentUser.role == UserRole.EMPLOYER
-        val seekerId = if (isEmployerViewer) counterpartId else currentUser.id
+        val isEmployerViewer = user.role == UserRole.EMPLOYER
+        val seekerId = if (isEmployerViewer) counterpartId else user.id
         val seekerName = if (isEmployerViewer) {
             counterpartName.ifBlank { "Applicant" }
         } else {
-            currentUser.name.ifBlank { currentUser.email }
+            user.name.ifBlank { user.email }
         }
-        val employerId = if (isEmployerViewer) currentUser.id else counterpartId.ifBlank { "employer_default" }
+        val employerId = if (isEmployerViewer) user.id else counterpartId.ifBlank { "employer_default" }
 
         coroutineScope.launch {
             var caughtErrorText: String? = null
@@ -204,18 +201,17 @@ fun AppNavGraph(
             chatCreationInProgressId = null
 
             if (roomId.isNotBlank()) {
-                chatViewModel.loadUserChatRooms(currentUser.id)
+                chatViewModel.loadUserChatRooms(user.id)
 
                 val displayName = if (isEmployerViewer) seekerName else companyName.ifBlank { "Company Name" }
                 val encodedName = Uri.encode(displayName.ifBlank { "Chat" })
-                val encodedTitle = Uri.encode(jobTitle.ifBlank { "Position" })
 
                 navController.navigate(Screen.Chat.route) {
                     popUpTo(Screen.Home.route) { saveState = true }
                     launchSingleTop = true
                     restoreState = true
                 }
-                navController.navigate("chat_detail/$roomId/$encodedName/$encodedTitle/none")
+                navController.navigate("chat_detail/$roomId/$encodedName")
             } else {
                 snackbarMessage = if (caughtErrorText != null) {
                     "Chat error: $caughtErrorText"
@@ -231,7 +227,6 @@ fun AppNavGraph(
         Screen.Applied.route,
         Screen.Schedule.route,
         Screen.Chat.route,
-        "chat_list",
         "manage_jobs"
     )
 
@@ -279,9 +274,7 @@ fun AppNavGraph(
                 SignUpScreen(
                     draft = signupDraft,
                     onDraftChange = { signupDraft = it },
-                    onNextClick = {
-                        navController.navigate("complete_profile")
-                    },
+                    onNextClick = { navController.navigate("complete_profile") },
                     onLoginClick = {
                         signupDraft = SignUpFields()
                         navController.popBackStack()
@@ -572,7 +565,7 @@ fun AppNavGraph(
                     chatLoadingApplicationId = chatCreationInProgressId,
                     isTrackingLive = isTrackingLive,
                     recentlyUpdatedApplicationId = recentlyUpdatedId,
-                    onStartTracking = { userId: String -> appliedViewModel.startTracking(userId) },
+                    onStartTracking = { appliedViewModel.startTracking(it) },
                     onStopTracking = { appliedViewModel.stopTracking() },
                     onConsumeRecentUpdate = { appliedViewModel.consumeRecentUpdate() },
                     onProfileClick = { navController.navigate("profile") },
@@ -601,7 +594,7 @@ fun AppNavGraph(
                         applicationId = applicationId,
                         viewModel = appliedViewModel,
                         onBackClick = { navController.popBackStack() },
-                        onChatClick = { applicantId, applicantName ->
+                        onChatClick = { applicantId: String, applicantName: String ->
                             val application = appliedViewModel.applicationsList.find { it.id == applicationId }
                             startOrOpenChat(
                                 counterpartId = applicantId,
@@ -611,7 +604,7 @@ fun AppNavGraph(
                                 progressKey = applicationId
                             )
                         },
-                        onScheduleClick = { _, applicantId, applicantName, jobTitle, companyName ->
+                        onScheduleClick = { appId, applicantId, applicantName, jobTitle, companyName ->
                             scheduleViewModel.setPrefill(
                                 SchedulePrefill(
                                     seekerId = applicantId,
@@ -625,10 +618,10 @@ fun AppNavGraph(
                         },
                         onStatusChange = { targetAppId, newStatus ->
                             appliedViewModel.updateApplicationStatus(targetAppId, newStatus) { success ->
-                                if (success) {
-                                    snackbarMessage = "Application status updated to $newStatus"
+                                snackbarMessage = if (success) {
+                                    "Application status updated to $newStatus"
                                 } else {
-                                    snackbarMessage = "Failed to update application status."
+                                    "Failed to update application status."
                                 }
                             }
                         }
@@ -678,112 +671,90 @@ fun AppNavGraph(
                     },
                     onUpdateStatus = { scheduleId, status ->
                         scheduleViewModel.updateScheduleStatus(scheduleId, status, currentUserId, isEmployer) { success ->
-                            if (success) {
-                                snackbarMessage = "Schedule status updated to $status."
-                            } else {
-                                snackbarMessage = "Failed to update schedule status."
-                            }
+                            snackbarMessage = if (success) "Schedule status updated to $status." else "Failed to update schedule status."
                         }
                     },
                     onRespondInvite = { scheduleId, status ->
                         scheduleViewModel.updateScheduleStatus(scheduleId, status, currentUserId, isEmployer) { success ->
-                            if (success) {
-                                snackbarMessage = "Interview invitation $status successfully."
-                            } else {
-                                snackbarMessage = "Failed to update interview invitation response."
-                            }
+                            snackbarMessage = if (success) "Interview invitation $status successfully." else "Failed to update interview invitation response."
                         }
                     },
                     onProfileClick = { navController.navigate("profile") }
                 )
             }
 
+            // FIX: this destination was referenced by ScheduleScreen
+            // (navController.navigate(Screen.ScheduleDetail.createRoute(...)))
+            // but was never registered here, so tapping a schedule card
+            // crashed with "Navigation destination that matches request ...
+            // cannot be found in the navigation graph". Added below.
             composable(
                 route = Screen.ScheduleDetail.route,
                 arguments = listOf(navArgument("scheduleId") { type = NavType.StringType })
             ) { backStackEntry ->
                 val scheduleId = backStackEntry.arguments?.getString("scheduleId") ?: ""
-                val schedule = scheduleViewModel.schedulesList.find { it.id == scheduleId }
                 val currentUserId = loggedInUser?.id.orEmpty()
                 val isEmployer = loggedInUser?.role == UserRole.EMPLOYER
+                val schedule = scheduleViewModel.schedulesList.find { it.id == scheduleId }
 
                 ScheduleDetailScreen(
                     schedule = schedule,
                     isEmployer = isEmployer,
                     onBackClick = { navController.popBackStack() },
-                    onUpdateStatus = { targetId, status ->
-                        scheduleViewModel.updateScheduleStatus(targetId, status, currentUserId, isEmployer) { success ->
-                            if (success) {
-                                snackbarMessage = "Schedule status updated to $status."
-                                navController.popBackStack()
-                            } else {
-                                snackbarMessage = "Failed to update schedule status."
-                            }
+                    onUpdateStatus = { targetScheduleId, status ->
+                        scheduleViewModel.updateScheduleStatus(targetScheduleId, status, currentUserId, isEmployer) { success ->
+                            snackbarMessage = if (success) "Schedule status updated to $status." else "Failed to update schedule status."
                         }
                     },
-                    onRespondInvite = { targetId, status ->
-                        scheduleViewModel.updateScheduleStatus(targetId, status, currentUserId, isEmployer) { success ->
-                            if (success) {
-                                snackbarMessage = "Interview invitation $status successfully."
-                                navController.popBackStack()
-                            } else {
-                                snackbarMessage = "Failed to update interview invitation response."
-                            }
+                    onRespondInvite = { targetScheduleId, status ->
+                        scheduleViewModel.updateScheduleStatus(targetScheduleId, status, currentUserId, isEmployer) { success ->
+                            snackbarMessage = if (success) "Interview invitation $status successfully." else "Failed to update interview invitation response."
                         }
                     }
                 )
             }
 
-            // --- CHAT LIST SCREEN ---
             composable(Screen.Chat.route) {
-                LaunchedEffect(loggedInUser?.id) {
-                    loggedInUser?.id?.let { userId ->
-                        chatViewModel.loadUserChatRooms(userId)
+                val currentUserId = loggedInUser?.id.orEmpty()
+                LaunchedEffect(currentUserId) {
+                    if (currentUserId.isNotBlank()) {
+                        chatViewModel.loadUserChatRooms(currentUserId)
                     }
                 }
 
-                val chatRooms by chatViewModel.chatRooms.collectAsStateWithLifecycle()
-
                 ChatListScreen(
                     currentUser = loggedInUser,
-                    chatRooms = chatRooms,
-                    isLoading = false, // Added missing isLoading parameter
-                    onChatRoomClick = { roomId, otherName, position ->
-                        val encodedName = Uri.encode(otherName.ifBlank { "Chat" })
-                        val encodedTitle = Uri.encode(position.ifBlank { "Position" })
-                        navController.navigate("chat_detail/$roomId/$encodedName/$encodedTitle/none")
+                    chatRooms = chatRoomsList,
+                    isLoading = isChatLoading,
+                    onChatRoomClick = { roomId, titleName, _ ->
+                        val encodedName = Uri.encode(titleName)
+                        navController.navigate("chat_detail/$roomId/$encodedName")
                     },
-
-                    onProfileClick = { navController.navigate("profile") }
+                    onProfileClick = { navController.navigate("profile") },
+                    onRefresh = {
+                        if (currentUserId.isNotBlank()) {
+                            chatViewModel.loadUserChatRooms(currentUserId)
+                        }
+                    }
                 )
             }
 
-            // --- CHAT DETAIL SCREEN ---
             composable(
-                route = "chat_detail/{roomId}/{name}/{title}/{extra}",
+                route = "chat_detail/{chatId}/{displayName}",
                 arguments = listOf(
-                    navArgument("roomId") { type = NavType.StringType },
-                    navArgument("name") { type = NavType.StringType },
-                    navArgument("title") { type = NavType.StringType },
-                    navArgument("extra") { type = NavType.StringType }
+                    navArgument("chatId") { type = NavType.StringType },
+                    navArgument("displayName") { type = NavType.StringType }
                 )
             ) { backStackEntry ->
-                val roomId = backStackEntry.arguments?.getString("roomId").orEmpty()
-                val encodedName = backStackEntry.arguments?.getString("name").orEmpty()
-                val encodedTitle = backStackEntry.arguments?.getString("title").orEmpty()
-
-                val recipientName = Uri.decode(encodedName)
-                val jobTitle = Uri.decode(encodedTitle)
+                val chatId = backStackEntry.arguments?.getString("chatId") ?: ""
+                val displayName = backStackEntry.arguments?.getString("displayName") ?: "Chat"
 
                 ChatDetailScreen(
-                    navController = navController,
-                    roomId = roomId,
-                    companyName = recipientName,
-                    chatTitle = jobTitle,
-                    initialQuestion = "",
+                    roomId = chatId,
+                    titleName = Uri.decode(displayName),
                     currentUserId = loggedInUser?.id.orEmpty(),
-                    chatViewModel = chatViewModel,
-                    onNavigateToSchedule = { navController.navigate(Screen.Schedule.route) }
+                    repository = messageRepository,
+                    onBackClick = { navController.popBackStack() }
                 )
             }
         }

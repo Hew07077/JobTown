@@ -11,7 +11,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,8 +34,11 @@ fun JobseekerApplicationDetailScreen(
 ) {
     val context = LocalContext.current
 
-    val application = remember(applicationId, viewModel.applicationsList) {
-        viewModel.applicationsList.find { it.id == applicationId }
+    // FIX: same issue as ApplicationDetailScreen — collect the StateFlow so this
+    // screen recomposes when the applications list loads or a status changes.
+    val applicationsList by viewModel.applicationsListState.collectAsStateWithLifecycle()
+    val application = remember(applicationId, applicationsList) {
+        applicationsList.find { it.id == applicationId }
     }
 
     Scaffold(
