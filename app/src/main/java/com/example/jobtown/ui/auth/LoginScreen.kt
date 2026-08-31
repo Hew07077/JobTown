@@ -51,6 +51,14 @@ fun LoginScreen(
     var emailError by remember { mutableStateOf<String?>(null) }
     var passwordError by remember { mutableStateOf<String?>(null) }
 
+    // --- Forgot Password -------------------------------------------------
+    var showForgotPasswordDialog by remember { mutableStateOf(false) }
+    var resetEmail by remember { mutableStateOf("") }
+    var resetEmailError by remember { mutableStateOf<String?>(null) }
+    var isSendingReset by remember { mutableStateOf(false) }
+    var resetSuccessMessage by remember { mutableStateOf("") }
+    var resetErrorMessage by remember { mutableStateOf("") }
+
     val scope = rememberCoroutineScope()
 
     Box(
@@ -152,7 +160,27 @@ fun LoginScreen(
                         Text(text = errorMessage, color = Color.Red, fontSize = 12.sp)
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "Forgot Password?",
+                        color = DeepGreenDark,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .clickable {
+                                // Pre-fill with whatever's already typed into the login
+                                // email field so the user usually doesn't have to type it twice.
+                                resetEmail = email
+                                resetEmailError = null
+                                resetSuccessMessage = ""
+                                resetErrorMessage = ""
+                                showForgotPasswordDialog = true
+                            }
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Button(
                         onClick = {
@@ -234,6 +262,99 @@ fun LoginScreen(
                     modifier = Modifier.clickable { onSignUpClick() }
                 )
             }
+        }
+
+        if (showForgotPasswordDialog) {
+            AlertDialog(
+                onDismissRequest = { if (!isSendingReset) showForgotPasswordDialog = false },
+                title = { Text("Reset Password", fontWeight = FontWeight.Bold, color = DeepGreenDark) },
+                text = {
+                    Column {
+                        Text(
+                            text = "Enter your account email and we'll send you a link to reset your password.",
+                            fontSize = 13.sp,
+                            color = TextDark.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        OutlinedTextField(
+                            value = resetEmail,
+                            onValueChange = {
+                                resetEmail = it.take(ValidationUtils.EMAIL_MAX_LENGTH)
+                                resetEmailError = null
+                                resetErrorMessage = ""
+                            },
+                            label = { Text("Email Address") },
+                            leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = SageGreenDark) },
+                            singleLine = true,
+                            isError = resetEmailError != null,
+                            supportingText = {
+                                resetEmailError?.let { Text(text = it, color = Color.Red, fontSize = 12.sp) }
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                            enabled = !isSendingReset && resetSuccessMessage.isBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        if (resetSuccessMessage.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(text = resetSuccessMessage, color = DeepGreenDark, fontSize = 12.sp)
+                        }
+                        if (resetErrorMessage.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(text = resetErrorMessage, color = Color.Red, fontSize = 12.sp)
+                        }
+                    }
+                },
+                confirmButton = {
+                    if (resetSuccessMessage.isNotBlank()) {
+                        TextButton(onClick = { showForgotPasswordDialog = false }) {
+                            Text("Done", color = DeepGreenDark, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        TextButton(
+                            enabled = !isSendingReset,
+                            onClick = {
+                                val validation = ValidationUtils.validateEmail(resetEmail)
+                                resetEmailError = validation
+                                if (validation != null) return@TextButton
+
+                                isSendingReset = true
+                                resetErrorMessage = ""
+                                scope.launch {
+                                    try {
+                                        SupabaseClient.client.auth.resetPasswordForEmail(
+                                            email = resetEmail.trim(),
+                                            redirectUrl = "jobtown://reset-password"
+                                        )
+                                        isSendingReset = false
+                                        resetSuccessMessage = "Reset link sent! Check your inbox."
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                        isSendingReset = false
+                                        resetErrorMessage = "Couldn't send the reset link. Please check the email and try again."
+                                    }
+                                }
+                            }
+                        ) {
+                            if (isSendingReset) {
+                                CircularProgressIndicator(color = DeepGreenDark, modifier = Modifier.size(16.dp))
+                            } else {
+                                Text("Send Link", color = DeepGreenDark, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                },
+                dismissButton = {
+                    if (resetSuccessMessage.isBlank()) {
+                        TextButton(
+                            enabled = !isSendingReset,
+                            onClick = { showForgotPasswordDialog = false }
+                        ) {
+                            Text("Cancel", color = TextDark.copy(alpha = 0.6f))
+                        }
+                    }
+                }
+            )
         }
     }
 }

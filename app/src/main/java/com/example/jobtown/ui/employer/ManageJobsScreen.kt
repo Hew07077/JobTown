@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.model.JobApplication
@@ -40,7 +41,11 @@ fun ManageJobsScreen(
     onProfileClick: () -> Unit = {}
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
-    val applications = appliedViewModel.applicationsList
+    // FIX: appliedViewModel.applicationsList is a plain getter over a private
+    // MutableStateFlow, not Compose State, so reading it directly here never
+    // triggered a recomposition when loadEmployerApplications() finished loading.
+    // Collecting the backing StateFlow makes this screen update reliably.
+    val applications by appliedViewModel.applicationsListState.collectAsStateWithLifecycle()
 
     Scaffold(
         containerColor = BackgroundWhite,

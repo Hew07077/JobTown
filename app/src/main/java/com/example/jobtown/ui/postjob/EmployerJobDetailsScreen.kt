@@ -120,7 +120,11 @@ fun EmployerJobDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { isEditing = !isEditing }) {
+                    // FIX: previously `{ isEditing = !isEditing }` — tapping this
+                    // while editing showed a Save icon but just discarded the
+                    // draft. Now it actually saves; it only exits edit mode if
+                    // validation passes.
+                    IconButton(onClick = { if (isEditing) trySave() else isEditing = true }) {
                         Icon(
                             imageVector = if (isEditing) Icons.Default.Close else Icons.Default.Edit,
                             contentDescription = if (isEditing) "Cancel editing" else "Edit listing",
