@@ -10,6 +10,7 @@ import com.example.jobtown.data.model.JobApplication
 import com.example.jobtown.data.model.User
 import com.example.jobtown.data.model.UserProfile
 import com.example.jobtown.data.model.UserProfileCore
+import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.data.model.UserWritePayload
 import com.example.jobtown.data.model.toUserProfile
 import com.example.jobtown.data.model.toUserWritePayload
@@ -17,6 +18,8 @@ import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import java.util.UUID
 
 // One previously-uploaded profile photo, as returned by
@@ -43,11 +46,40 @@ object UserRepository {
                 lastUserSaveError = "Could not create your account session. Please try again."
                 return@withContext false
             }
-            
-            // Persist everything into the 'users' table which already has all columns
-            persistUserRow(user.toUserWritePayload())
-            
-            true
+
+            var saved = false
+            var lastError: Exception? = null
+
+            try {
+                persistUserRow(user.toUserWritePayload())
+                saved = true
+            } catch (e: Exception) {
+                lastError = e
+                if (!isMissingRelation(e)) {
+                    lastUserSaveError = describeDbError(e)
+                }
+            }
+
+            try {
+                if (user.role == UserRole.EMPLOYER) {
+                    persistEmployerRow(user)
+                } else {
+                    persistJobSeekerRow(user)
+                }
+                saved = true
+            } catch (e: Exception) {
+                lastError = e
+                if (!saved && !isMissingRelation(e)) {
+                    lastUserSaveError = describeDbError(e)
+                }
+            }
+
+            if (!saved) {
+                lastUserSaveError = lastUserSaveError
+                    ?: lastError?.let { describeDbError(it) }
+                    ?: "Failed to save profile details. Please try again."
+            }
+            saved
         } catch (e: Exception) {
             lastUserSaveError = describeDbError(e)
             false
@@ -63,25 +95,25 @@ object UserRepository {
     suspend fun resolveUserForSession(authUserId: String?, email: String): User? = withContext(Dispatchers.IO) {
         val cleanId = authUserId?.trim().orEmpty()
         val cleanEmail = email.trim()
+
+        // Employers table wins: some databases keep a users row with the
+        // default JOB_SEEKER role from the auth trigger, even after signup
+        // as a company.
         if (cleanId.isNotBlank()) {
+            fetchEmployerById(cleanId)?.let { return@withContext it }
             fetchUserById(cleanId)?.let { return@withContext it }
+            fetchJobSeekerById(cleanId)?.let { return@withContext it }
         }
         if (cleanEmail.isNotBlank()) {
+            fetchEmployerByEmail(cleanEmail)?.let { return@withContext it }
             findUserByEmail(cleanEmail)?.let { return@withContext it }
+            fetchJobSeekerByEmail(cleanEmail)?.let { return@withContext it }
         }
         null
     }
 
     suspend fun updateUserInSupabase(user: User): Boolean = withContext(Dispatchers.IO) {
-        lastUserSaveError = null
-        try {
-            SupabaseClient.client.from("users").upsert(user.toUserWritePayload())
-            true
-        } catch (e: Exception) {
-            Log.e("UserRepository", "Error updating user", e)
-            lastUserSaveError = describeDbError(e)
-            false
-        }
+        saveUserToSupabase(user)
     }
 
     private suspend fun fetchUserByEmailExact(email: String): User? = try {
@@ -89,7 +121,7 @@ object UserRepository {
             .select { filter { eq("email", email) } }
             .decodeSingleOrNull<User>()
     } catch (e: Exception) {
-        e.printStackTrace()
+        if (!isMissingRelation(e)) e.printStackTrace()
         null
     }
 
@@ -118,6 +150,14 @@ object UserRepository {
         } catch (e: Exception) {
             throw e
         }
+    }
+
+    private fun isMissingRelation(e: Exception): Boolean {
+        val message = e.message.orEmpty()
+        return message.contains("42P01") ||
+            message.contains("does not exist", ignoreCase = true) ||
+            message.contains("PGRST205", ignoreCase = true) ||
+            message.contains("Could not find the table", ignoreCase = true)
     }
 
     private fun isJwtDecodeError(e: Exception): Boolean {
@@ -332,15 +372,115 @@ object UserRepository {
 
     suspend fun fetchUserById(userId: String): User? = withContext(Dispatchers.IO) {
         if (userId.isBlank()) return@withContext null
-        try {
-            // Directly decode from 'users' table which contains all profile data
-            SupabaseClient.client.from("users")
-                .select { filter { eq("id", userId) } }
-                .decodeSingleOrNull<User>()
-        } catch (e: Exception) {
+        fetchEmployerById(userId)
+            ?: fetchUsersTableById(userId)
+            ?: fetchJobSeekerById(userId)
+    }
+
+    private suspend fun fetchUsersTableById(userId: String): User? = try {
+        SupabaseClient.client.from("users")
+            .select { filter { eq("id", userId) } }
+            .decodeSingleOrNull<User>()
+    } catch (e: Exception) {
+        if (!isMissingRelation(e)) {
             Log.e("UserRepository", "Error fetching user by ID: $userId", e)
-            null
         }
+        null
+    }
+
+    private suspend fun fetchEmployerById(userId: String): User? = try {
+        SupabaseClient.client.from("employers")
+            .select { filter { eq("id", userId) } }
+            .decodeSingleOrNull<EmployerTableRecord>()
+            ?.toUser()
+    } catch (e: Exception) {
+        if (!isMissingRelation(e)) {
+            Log.e("UserRepository", "Error fetching employer by ID: $userId", e)
+        }
+        null
+    }
+
+    private suspend fun fetchEmployerByEmail(email: String): User? = try {
+        val trimmed = email.trim()
+        SupabaseClient.client.from("employers")
+            .select { filter { eq("email", trimmed) } }
+            .decodeSingleOrNull<EmployerTableRecord>()
+            ?.toUser()
+            ?: if (trimmed != trimmed.lowercase()) {
+                SupabaseClient.client.from("employers")
+                    .select { filter { eq("email", trimmed.lowercase()) } }
+                    .decodeSingleOrNull<EmployerTableRecord>()
+                    ?.toUser()
+            } else null
+    } catch (e: Exception) {
+        if (!isMissingRelation(e)) e.printStackTrace()
+        null
+    }
+
+    private suspend fun fetchJobSeekerById(userId: String): User? = try {
+        SupabaseClient.client.from("job_seekers")
+            .select { filter { eq("id", userId) } }
+            .decodeSingleOrNull<JobSeekerTableRecord>()
+            ?.toUser()
+    } catch (e: Exception) {
+        if (!isMissingRelation(e)) {
+            Log.e("UserRepository", "Error fetching job seeker by ID: $userId", e)
+        }
+        null
+    }
+
+    private suspend fun fetchJobSeekerByEmail(email: String): User? = try {
+        val trimmed = email.trim()
+        SupabaseClient.client.from("job_seekers")
+            .select { filter { eq("email", trimmed) } }
+            .decodeSingleOrNull<JobSeekerTableRecord>()
+            ?.toUser()
+            ?: if (trimmed != trimmed.lowercase()) {
+                SupabaseClient.client.from("job_seekers")
+                    .select { filter { eq("email", trimmed.lowercase()) } }
+                    .decodeSingleOrNull<JobSeekerTableRecord>()
+                    ?.toUser()
+            } else null
+    } catch (e: Exception) {
+        if (!isMissingRelation(e)) e.printStackTrace()
+        null
+    }
+
+    private suspend fun persistEmployerRow(user: User) {
+        SupabaseClient.client.from("employers").upsert(
+            EmployerWritePayload(
+                id = user.id,
+                email = user.email.trim().lowercase(),
+                companyName = user.companyName.ifBlank { user.name },
+                companySize = user.companySize,
+                industry = user.industry,
+                tagline = user.tagline,
+                websiteUrl = user.websiteUrl.ifBlank { user.portfolioUrl },
+                perks = user.perks,
+                phone = user.phone,
+                location = user.location,
+                bio = user.bio,
+                avatarUrl = user.avatarUrl
+            )
+        )
+    }
+
+    private suspend fun persistJobSeekerRow(user: User) {
+        SupabaseClient.client.from("job_seekers").upsert(
+            JobSeekerWritePayload(
+                id = user.id,
+                email = user.email.trim().lowercase(),
+                fullName = user.name,
+                phone = user.phone,
+                location = user.location,
+                skills = user.skills,
+                experienceLevel = user.experienceLevel,
+                portfolioUrl = user.portfolioUrl,
+                bio = user.bio,
+                avatarUrl = user.avatarUrl,
+                resumeUrl = user.resumeUrl
+            )
+        )
     }
 
     // --- JOBS ---
@@ -463,3 +603,101 @@ object UserRepository {
             }
         }
 }
+
+@Serializable
+private data class EmployerTableRecord(
+    val id: String = "",
+    val email: String = "",
+    @SerialName("company_name") val companyName: String = "",
+    @SerialName("company_size") val companySize: String = "",
+    val industry: String = "",
+    val tagline: String = "",
+    @SerialName("website_url") val websiteUrl: String = "",
+    val perks: List<String> = emptyList(),
+    val phone: String = "",
+    val location: String = "",
+    val bio: String = "",
+    @SerialName("avatar_url") val avatarUrl: String = "",
+    @SerialName("created_at") val createdAt: String = ""
+)
+
+private fun EmployerTableRecord.toUser() = User(
+    id = id,
+    email = email,
+    name = companyName,
+    role = UserRole.EMPLOYER,
+    companyName = companyName,
+    companySize = companySize,
+    industry = industry,
+    tagline = tagline,
+    websiteUrl = websiteUrl,
+    perks = perks,
+    bio = bio,
+    phone = phone,
+    location = location,
+    avatarUrl = avatarUrl,
+    createdAt = createdAt
+)
+
+@Serializable
+private data class EmployerWritePayload(
+    val id: String,
+    val email: String,
+    @SerialName("company_name") val companyName: String = "",
+    @SerialName("company_size") val companySize: String = "",
+    val industry: String = "",
+    val tagline: String = "",
+    @SerialName("website_url") val websiteUrl: String = "",
+    val perks: List<String> = emptyList(),
+    val phone: String = "",
+    val location: String = "",
+    val bio: String = "",
+    @SerialName("avatar_url") val avatarUrl: String = ""
+)
+
+@Serializable
+private data class JobSeekerTableRecord(
+    val id: String = "",
+    val email: String = "",
+    @SerialName("full_name") val fullName: String = "",
+    val phone: String = "",
+    val location: String = "",
+    val skills: String = "",
+    @SerialName("experience_level") val experienceLevel: String = "",
+    @SerialName("portfolio_url") val portfolioUrl: String = "",
+    val bio: String = "",
+    @SerialName("avatar_url") val avatarUrl: String = "",
+    @SerialName("resume_url") val resumeUrl: String = "",
+    @SerialName("created_at") val createdAt: String = ""
+)
+
+private fun JobSeekerTableRecord.toUser() = User(
+    id = id,
+    email = email,
+    name = fullName,
+    role = UserRole.JOB_SEEKER,
+    phone = phone,
+    location = location,
+    skills = skills,
+    experienceLevel = experienceLevel,
+    portfolioUrl = portfolioUrl,
+    bio = bio,
+    avatarUrl = avatarUrl,
+    resumeUrl = resumeUrl,
+    createdAt = createdAt
+)
+
+@Serializable
+private data class JobSeekerWritePayload(
+    val id: String,
+    val email: String,
+    @SerialName("full_name") val fullName: String = "",
+    val phone: String = "",
+    val location: String = "",
+    val skills: String = "",
+    @SerialName("experience_level") val experienceLevel: String = "",
+    @SerialName("portfolio_url") val portfolioUrl: String = "",
+    val bio: String = "",
+    @SerialName("avatar_url") val avatarUrl: String = "",
+    @SerialName("resume_url") val resumeUrl: String = ""
+)

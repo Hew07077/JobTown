@@ -43,7 +43,7 @@ internal fun applicationStatusBackground(status: String): Color {
         else -> SageGreenMain.copy(alpha = 0.35f)
     }
 }
-
+//
 internal fun applicationStatusTextColor(status: String): Color {
     return when (status.lowercase()) {
         "rejected" -> Color(0xFFC62828)

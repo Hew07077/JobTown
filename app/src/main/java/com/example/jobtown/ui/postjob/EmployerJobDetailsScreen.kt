@@ -314,7 +314,7 @@ private fun RequirementRow(text: String) {
         Text(text = text, fontSize = 14.sp, color = TextDark.copy(alpha = 0.78f), lineHeight = 21.sp)
     }
 }
-
+//
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SkillChips(skills: List<String>) {

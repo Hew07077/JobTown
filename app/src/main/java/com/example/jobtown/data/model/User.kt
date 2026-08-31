@@ -2,16 +2,51 @@
 
 package com.example.jobtown.data.model
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 
-@Serializable
+/**
+ * Databases in this project have stored role as EMPLOYER, employer, Employer,
+ * or even "company". With coerceInputValues, an unknown enum silently became
+ * JOB_SEEKER — so employers landed on the job-seeker home screen after login.
+ */
+object UserRoleSerializer : KSerializer<UserRole> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("UserRole", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: UserRole) {
+        encoder.encodeString(
+            when (value) {
+                UserRole.EMPLOYER -> "EMPLOYER"
+                UserRole.JOB_SEEKER -> "JOB_SEEKER"
+            }
+        )
+    }
+
+    override fun deserialize(decoder: Decoder): UserRole {
+        val normalized = decoder.decodeString().trim().uppercase()
+            .replace(' ', '_')
+            .replace('-', '_')
+        return when {
+            normalized == "EMPLOYER" ||
+                normalized.contains("EMPLOY") ||
+                normalized == "COMPANY" ||
+                normalized == "RECRUITER" -> UserRole.EMPLOYER
+            else -> UserRole.JOB_SEEKER
+        }
+    }
+}
+
+@Serializable(with = UserRoleSerializer::class)
 enum class UserRole {
-    @SerialName("JOB_SEEKER")
     JOB_SEEKER,
-
-    @SerialName("EMPLOYER")
     EMPLOYER
 }
 

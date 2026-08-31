@@ -60,7 +60,7 @@ class JobFormFields(
         }
         return null
     }
-}
+}//
 
 fun parseSalaryValue(valueStr: String): Int {
     return valueStr.replace(",", "").replace("+", "").replace("$", "").trim().toIntOrNull() ?: 0

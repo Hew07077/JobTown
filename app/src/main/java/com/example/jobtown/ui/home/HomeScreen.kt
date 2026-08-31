@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FiberManualRecord
@@ -45,6 +46,7 @@ fun HomeScreen(
     jobsList: List<Job>,
     isLoading: Boolean,
     onJobClick: (Job) -> Unit,
+    onPostJobClick: () -> Unit = {},
     onProfileClick: () -> Unit,
     onRefresh: () -> Unit = {},
     matchScores: Map<String, Int> = emptyMap(),
@@ -76,10 +78,11 @@ fun HomeScreen(
 
     val isEmployer = currentUser?.role == UserRole.EMPLOYER
 
-    // Greeting name helper
-    val greetingName = (if (isEmployer) currentUser.companyName else currentUser?.name)
-        .orEmpty()
-        .ifBlank { "Job Finder" }
+    val greetingName = if (isEmployer) {
+        currentUser?.companyName?.ifBlank { currentUser.name }.orEmpty().ifBlank { "Employer" }
+    } else {
+        currentUser?.name.orEmpty().ifBlank { "Job Finder" }
+    }
 
     // Helper to check if a job is expired based on explicit status or `expiredAt` ISO timestamp
     fun isJobExpired(job: Job): Boolean {
@@ -98,8 +101,8 @@ fun HomeScreen(
     // Employers see only their own posted jobs. Job Seekers see all listings.
     val roleScopedJobs = remember(jobsList, currentUser?.id, currentUser?.companyName, currentUser?.name, isEmployer) {
         if (isEmployer) {
-            val currentUserId = currentUser.id
-            val userCompanyName = currentUser.companyName.ifBlank { currentUser.name }
+            val currentUserId = currentUser?.id.orEmpty()
+            val userCompanyName = currentUser?.companyName?.ifBlank { currentUser.name }.orEmpty()
 
             jobsList.filter { job ->
                 val employerId = job.employerId.orEmpty()
@@ -158,7 +161,18 @@ fun HomeScreen(
     }
 
     Scaffold(
-        containerColor = BackgroundWhite
+        containerColor = BackgroundWhite,
+        floatingActionButton = {
+            if (isEmployer) {
+                FloatingActionButton(
+                    onClick = onPostJobClick,
+                    containerColor = DeepGreenDark,
+                    contentColor = Color.White
+                ) {
+                    Icon(imageVector = Icons.Default.Add, contentDescription = "Post a job")
+                }
+            }
+        }
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -435,7 +449,7 @@ fun HomeScreen(
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = if (isEmployer) {
-                                    "Tap '+ Add Job' to post your company's first listing."
+                                    "Tap the + button to post your company's first listing."
                                 } else {
                                     "Try clearing your search query or switching filters."
                                 },

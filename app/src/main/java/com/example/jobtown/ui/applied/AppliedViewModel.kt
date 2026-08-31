@@ -127,7 +127,7 @@ class AppliedViewModel(
             }
         }
     }
-
+//
     fun stopTracking() {
         trackingJob?.cancel()
         trackingJob = null

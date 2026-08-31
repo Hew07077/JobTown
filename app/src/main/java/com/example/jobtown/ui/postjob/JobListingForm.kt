@@ -405,7 +405,7 @@ fun JobListingForm(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
             )
-
+//
             if (showFeaturedToggle) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 1.dp, color = Color(0xFFE6EDE4))
                 Row(

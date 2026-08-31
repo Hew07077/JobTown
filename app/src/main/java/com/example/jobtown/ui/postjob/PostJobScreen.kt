@@ -334,7 +334,7 @@ fun PostJobScreen(
             )
         }
     }
-
+//
     Scaffold(
         topBar = {
             TopAppBar(

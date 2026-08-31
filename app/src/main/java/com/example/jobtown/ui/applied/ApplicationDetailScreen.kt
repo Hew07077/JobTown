@@ -47,7 +47,7 @@ import com.example.jobtown.ui.theme.BackgroundWhite
 import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenMain
 import com.example.jobtown.ui.theme.TextDark
-
+//
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ApplicationDetailScreen(

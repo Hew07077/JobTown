@@ -63,7 +63,7 @@ fun JobseekerApplicationDetailScreen(
     val context = LocalContext.current
     val applications by viewModel.applicationsListState.collectAsState()
     val application = applications.find { it.id == applicationId }
-
+//
     Scaffold(
         topBar = {
             TopAppBar(
