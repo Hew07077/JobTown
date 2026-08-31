@@ -2,40 +2,78 @@ package com.example.jobtown.ui.applied
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.jobtown.data.model.JobApplication
 import com.example.jobtown.data.model.User
 import com.example.jobtown.data.repository.UserRepository
-import com.example.jobtown.ui.theme.*
+import com.example.jobtown.ui.theme.BackgroundWhite
+import com.example.jobtown.ui.theme.DeepGreenDark
+import com.example.jobtown.ui.theme.SageGreenDark
+import com.example.jobtown.ui.theme.SageGreenLight
+import com.example.jobtown.ui.theme.SageGreenMain
+import com.example.jobtown.ui.theme.TextDark
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyAppliedScreen(
     viewModel: AppliedViewModel,
-    navController: NavController,
     user: User?,
     isLoading: Boolean,
     onApplicationClick: (String) -> Unit = {},
@@ -43,16 +81,21 @@ fun MyAppliedScreen(
     isTrackingLive: Boolean = false,
     recentlyUpdatedApplicationId: String? = null,
     onStartTracking: (String) -> Unit = {},
-    onStopTracking: () -> Unit = {},
-    onConsumeRecentUpdate: () -> Unit = {},
     onProfileClick: () -> Unit = {},
     onChatWithCompany: (JobApplication) -> Unit
 ) {
     val selectedTab by viewModel.selectedTab.collectAsState()
-    val applications = viewModel.getFilteredApplications(selectedTab)
+    val applicationsList by viewModel.applicationsListState.collectAsState()
+    val applications = remember(applicationsList, selectedTab) {
+        viewModel.getFilteredApplications(selectedTab)
+    }
 
-    val activeCount = viewModel.getFilteredApplications(ApplicationTab.ACTIVE).size
-    val closedCount = viewModel.getFilteredApplications(ApplicationTab.CLOSED).size
+    val activeCount = remember(applicationsList) {
+        viewModel.getFilteredApplications(ApplicationTab.ACTIVE).size
+    }
+    val closedCount = remember(applicationsList) {
+        viewModel.getFilteredApplications(ApplicationTab.CLOSED).size
+    }
 
     LaunchedEffect(user?.id) {
         user?.id?.let { userId ->
@@ -61,6 +104,10 @@ fun MyAppliedScreen(
                 onStartTracking(userId)
             }
         }
+    }
+
+    DisposableEffect(user?.id) {
+        onDispose { viewModel.stopTracking() }
     }
 
     Scaffold(
@@ -102,11 +149,14 @@ fun MyAppliedScreen(
         ) {
             TabRow(
                 selectedTabIndex = selectedTab.ordinal,
-                containerColor = SageGreenMain.copy(alpha = 0.15f),
+                containerColor = Color.White,
                 contentColor = DeepGreenDark,
+                divider = {
+                    HorizontalDivider(thickness = 1.dp, color = AppliedDividerColor)
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                ApplicationTab.values().forEach { tab ->
+                ApplicationTab.entries.forEach { tab ->
                     val count = when (tab) {
                         ApplicationTab.ACTIVE -> activeCount
                         ApplicationTab.CLOSED -> closedCount
@@ -122,20 +172,20 @@ fun MyAppliedScreen(
                         text = {
                             Text(
                                 text = "$tabLabel ($count)",
-                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 13.sp
+                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 14.sp
                             )
                         },
                         selectedContentColor = DeepGreenDark,
-                        unselectedContentColor = TextDark.copy(alpha = 0.6f)
+                        unselectedContentColor = TextDark.copy(alpha = 0.55f)
                     )
                 }
             }
 
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
                     .weight(1f)
+                    .fillMaxWidth()
             ) {
                 when {
                     isLoading -> {
@@ -145,60 +195,27 @@ fun MyAppliedScreen(
                         )
                     }
                     applications.isEmpty() -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = Icons.Default.Business,
-                                    contentDescription = null,
-                                    tint = SageGreenDark,
-                                    modifier = Modifier.size(54.dp)
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = "No ${selectedTab.name.lowercase()} jobs found",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
-                                    color = TextDark
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = when (selectedTab) {
-                                        ApplicationTab.ACTIVE -> "Explore available listings and send your applications to track them here."
-                                        ApplicationTab.CLOSED -> "Applications that have closed, expired, or been rejected will appear here."
-                                    },
-                                    fontSize = 13.sp,
-                                    color = TextDark.copy(alpha = 0.6f)
-                                )
-                            }
-                        }
+                        EmptyApplicationsState(selectedTab = selectedTab)
                     }
                     else -> {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            items(applications, key = { it.id.ifBlank { it.jobTitle + it.companyName } }) { application ->
-                                val isRecentlyUpdated = recentlyUpdatedApplicationId == application.id
-
+                            items(
+                                applications,
+                                key = { it.id.ifBlank { it.jobTitle + it.companyName } }
+                            ) { application ->
                                 ApplicationCard(
                                     application = application,
                                     isSavedTab = false,
                                     isChatLoading = chatLoadingApplicationId == application.id,
-                                    isHighlighted = isRecentlyUpdated,
+                                    isHighlighted = recentlyUpdatedApplicationId == application.id,
                                     onCardClick = { onApplicationClick(application.id) },
                                     onChatWithCompany = { onChatWithCompany(application) },
                                     onApplyClick = {
-                                        viewModel.updateApplicationStatus(application.id, "applied") { success ->
-                                            if (success) {
-                                                // Handle success if needed
-                                            }
-                                        }
+                                        viewModel.updateApplicationStatus(application.id, "applied")
                                     }
                                 )
                             }
@@ -207,6 +224,53 @@ fun MyAppliedScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EmptyApplicationsState(selectedTab: ApplicationTab) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 36.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = SageGreenLight,
+            modifier = Modifier.size(72.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Icon(
+                    imageVector = Icons.Default.Business,
+                    contentDescription = null,
+                    tint = SageGreenDark,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(18.dp))
+        Text(
+            text = when (selectedTab) {
+                ApplicationTab.ACTIVE -> "No active applications"
+                ApplicationTab.CLOSED -> "No closed applications"
+            },
+            fontWeight = FontWeight.Bold,
+            fontSize = 17.sp,
+            color = TextDark
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = when (selectedTab) {
+                ApplicationTab.ACTIVE -> "Jobs you apply for will show up here so you can track their status."
+                ApplicationTab.CLOSED -> "Rejected or expired applications will appear in this list."
+            },
+            fontSize = 14.sp,
+            color = TextDark.copy(alpha = 0.6f),
+            lineHeight = 20.sp,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -240,118 +304,109 @@ fun ApplicationCard(
 
     val activePhotoUrl = jobCompanyImageUrl?.takeIf { it.isNotBlank() }
         ?: employerAvatarUrl?.takeIf { it.isNotBlank() }
+    val statusText = application.status.ifBlank { "Pending" }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCardClick() },
-        shape = RoundedCornerShape(16.dp),
+            .clickable(onClick = onCardClick),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isHighlighted) SageGreenMain.copy(alpha = 0.2f) else Color.White
+            containerColor = if (isHighlighted) SageGreenLight else Color.White
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(horizontal = 18.dp, vertical = 18.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                Surface(
+                    shape = CircleShape,
+                    color = SageGreenLight,
+                    modifier = Modifier.size(52.dp)
                 ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = SageGreenMain.copy(alpha = 0.3f),
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        if (!activePhotoUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = activePhotoUrl,
-                                contentDescription = "Employer Photo",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(CircleShape)
+                    if (!activePhotoUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = activePhotoUrl,
+                            contentDescription = "Company photo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                imageVector = Icons.Default.Business,
+                                contentDescription = null,
+                                tint = DeepGreenDark,
+                                modifier = Modifier.size(24.dp)
                             )
-                        } else {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Business,
-                                    contentDescription = null,
-                                    tint = DeepGreenDark,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
                         }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = application.jobTitle,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = TextDark
-                        )
-                        Text(
-                            text = application.companyName,
-                            fontSize = 13.sp,
-                            color = TextDark.copy(alpha = 0.6f)
-                        )
-                    }
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = application.jobTitle.ifBlank { "Untitled role" },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = TextDark,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 21.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = application.companyName.ifBlank { "Company" },
+                        fontSize = 13.sp,
+                        color = TextDark.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
 
                 if (!isSavedTab) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = SageGreenMain.copy(alpha = 0.4f)
-                    ) {
-                        Text(
-                            text = application.status.ifBlank { "Pending" },
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = DeepGreenDark,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
-                    }
+                    ApplicationStatusBadge(statusText)
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            AppliedDivider()
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = null,
-                    tint = TextDark.copy(alpha = 0.5f),
-                    modifier = Modifier.size(14.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MetaItem(
+                    icon = Icons.Default.LocationOn,
+                    text = application.location.ifBlank { "Remote" }
                 )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = application.location.ifBlank { "Remote" },
-                    fontSize = 12.sp,
-                    color = TextDark.copy(alpha = 0.5f)
+                MetaItem(
+                    icon = Icons.Default.CalendarToday,
+                    text = application.appliedDate
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            AppliedDivider()
 
             if (isSavedTab) {
                 Button(
                     onClick = onApplyClick,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(44.dp),
-                    shape = RoundedCornerShape(22.dp),
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
                 ) {
                     Text(
-                        text = "Apply Now",
+                        text = "Apply now",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
@@ -363,8 +418,8 @@ fun ApplicationCard(
                     enabled = !isChatLoading,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(44.dp),
-                    shape = RoundedCornerShape(22.dp),
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = DeepGreenDark,
                         disabledContainerColor = DeepGreenDark.copy(alpha = 0.6f)
@@ -392,7 +447,7 @@ fun ApplicationCard(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Chat with Employer",
+                            text = "Chat with employer",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
@@ -401,5 +456,30 @@ fun ApplicationCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MetaItem(
+    icon: ImageVector,
+    text: String
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = SageGreenDark,
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = text,
+            fontSize = 13.sp,
+            color = TextDark.copy(alpha = 0.6f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }

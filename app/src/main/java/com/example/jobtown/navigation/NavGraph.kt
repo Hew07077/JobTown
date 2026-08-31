@@ -59,6 +59,7 @@ import com.example.jobtown.ui.schedule.ScheduleDetailScreen
 import com.example.jobtown.ui.schedule.ScheduleViewModel
 import com.example.jobtown.ui.schedule.SchedulePrefill
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.gotrue.auth
 import kotlinx.coroutines.launch
 
 @Composable
@@ -147,7 +148,7 @@ fun AppNavGraph(
     }
 
     val chatRoomsList by chatViewModel.chatRooms.collectAsStateWithLifecycle()
-    val isChatLoading by chatViewModel.isLoading.collectAsStateWithLifecycle()
+    val isChatLoading by chatViewModel.isLoadingRooms.collectAsStateWithLifecycle()
 
     val totalUnreadChatCount = remember(chatRoomsList) {
         chatRoomsList.sumOf { it.unreadCount }
@@ -325,7 +326,6 @@ fun AppNavGraph(
 
             composable(Screen.Home.route) {
                 HomeScreen(
-                    navController = navController,
                     currentUser = loggedInUser,
                     jobsList = homeViewModel.jobsList,
                     isLoading = homeViewModel.isLoading,
@@ -337,13 +337,7 @@ fun AppNavGraph(
                             navController.navigate("apply_job")
                         }
                     },
-                    onPostJobClick = {
-                        if (loggedInUser?.role == UserRole.EMPLOYER) {
-                            navController.navigate("manage_jobs")
-                        } else {
-                            navController.navigate("post_job")
-                        }
-                    },
+                    onPostJobClick = { navController.navigate("post_job") },
                     onProfileClick = { navController.navigate("profile") },
                     onRefresh = { homeViewModel.loadJobs(loggedInUser?.id) },
                     matchScores = homeViewModel.matchScores,
@@ -432,18 +426,22 @@ fun AppNavGraph(
             }
 
             composable("post_job") {
-                PostJobScreen(
-                    navController = navController,
-                    currentUser = loggedInUser,
-                    onJobPosted = { createdJob, onComplete ->
-                        homeViewModel.postJob(createdJob) { success, message ->
-                            onComplete(success, message)
-                            if (success) {
-                                homeViewModel.loadJobs(loggedInUser?.id)
+                if (loggedInUser?.role != UserRole.EMPLOYER) {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                } else {
+                    PostJobScreen(
+                        navController = navController,
+                        currentUser = loggedInUser,
+                        onJobPosted = { createdJob, onComplete ->
+                            homeViewModel.postJob(createdJob) { success, message ->
+                                onComplete(success, message)
+                                if (success) {
+                                    homeViewModel.loadJobs(loggedInUser?.id)
+                                }
                             }
                         }
-                    }
-                )
+                    )
+                }
             }
 
             composable(
@@ -532,6 +530,12 @@ fun AppNavGraph(
                     onProfileUpdated = { updatedUser -> loggedInUser = updatedUser },
                     onLogout = {
                         loggedInUser = null
+                        coroutineScope.launch {
+                            try {
+                                supabaseClient.auth.signOut()
+                            } catch (_: Exception) {
+                            }
+                        }
                         onLogout()
                         navController.navigate("startup") {
                             popUpTo(0) { inclusive = true }
@@ -558,16 +562,16 @@ fun AppNavGraph(
                 val recentlyUpdatedId by appliedViewModel.recentlyUpdatedApplicationId.collectAsStateWithLifecycle()
 
                 MyAppliedScreen(
-                    navController = navController,
                     user = loggedInUser,
                     viewModel = appliedViewModel,
                     isLoading = isLoading,
+                    onApplicationClick = { applicationId ->
+                        navController.navigate(Screen.ApplicationDetail.createRoute(applicationId))
+                    },
                     chatLoadingApplicationId = chatCreationInProgressId,
                     isTrackingLive = isTrackingLive,
                     recentlyUpdatedApplicationId = recentlyUpdatedId,
                     onStartTracking = { appliedViewModel.startTracking(it) },
-                    onStopTracking = { appliedViewModel.stopTracking() },
-                    onConsumeRecentUpdate = { appliedViewModel.consumeRecentUpdate() },
                     onProfileClick = { navController.navigate("profile") },
                     onChatWithCompany = { application ->
                         startOrOpenChat(
@@ -730,12 +734,7 @@ fun AppNavGraph(
                         val encodedName = Uri.encode(titleName)
                         navController.navigate("chat_detail/$roomId/$encodedName")
                     },
-                    onProfileClick = { navController.navigate("profile") },
-                    onRefresh = {
-                        if (currentUserId.isNotBlank()) {
-                            chatViewModel.loadUserChatRooms(currentUserId)
-                        }
-                    }
+                    onProfileClick = { navController.navigate("profile") }
                 )
             }
 
