@@ -30,7 +30,9 @@ private val jwtOnlyAuthorization = createClientPlugin("JwtOnlyAuthorization") {
             .orEmpty()
             .map { it.removePrefix("Bearer").trim() }
             .filter { it.isNotEmpty() }
+
         val jwt = tokens.firstOrNull { looksLikeJwt(it) }
+
         request.headers.remove(HttpHeaders.Authorization)
         if (jwt != null) {
             request.headers.append(HttpHeaders.Authorization, "Bearer $jwt")
@@ -58,7 +60,17 @@ object SupabaseClient {
         }
 
         install(Postgrest)
-        install(Auth)     // Needed for user login, signup, and session management
+        
+        // Needed for user login, signup, and session management. host/scheme
+        // here define the deep link Android will hand back to this app --
+        // must match the intent-filter in AndroidManifest.xml AND the
+        // redirectUrl passed to resetPasswordForEmail() in LoginScreen.kt.
+        // Full link: jobtown://reset-password
+        install(Auth) {
+            host = "reset-password"
+            scheme = "jobtown"
+        }
+
         install(Realtime) // Needed for live chat updates
         install(Storage)  // Needed for PDF resume uploads & user avatars
     }

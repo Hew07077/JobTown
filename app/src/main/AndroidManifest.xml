@@ -31,10 +31,31 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.JobTown">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+                Deep link used for the "Forgot Password" email flow. Supabase
+                sends the reset link with this scheme+host as the redirectUrl
+                (see LoginScreen.kt's resetPasswordForEmail call); Android
+                routes any jobtown://reset-password URL straight back into
+                this Activity instead of opening a browser.
+
+                launchMode="singleTask" above avoids spawning a second copy
+                of MainActivity if the app is already open when the link is
+                tapped (which would otherwise lose the existing nav/auth state).
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="jobtown"
+                    android:host="reset-password" />
             </intent-filter>
         </activity>
 

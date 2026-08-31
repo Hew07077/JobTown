@@ -117,7 +117,9 @@ internal data class UserWritePayload(
 internal fun User.toUserWritePayload(): UserWritePayload = UserWritePayload(
     id = id,
     email = email.trim().lowercase(),
-    fullName = name,
+    // For Employers, the "full_name" column in public.users is often used for the company name 
+    // if a separate company_name column doesn't exist or is redundant.
+    fullName = if (role == UserRole.EMPLOYER && name.isBlank()) companyName else name,
     role = role,
     companyName = companyName,
     companySize = companySize,

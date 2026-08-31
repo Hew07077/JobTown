@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.jobtown.data.SupabaseClient
 import com.example.jobtown.data.model.User
-import com.example.jobtown.data.model.UserProfile
 import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
@@ -694,30 +693,14 @@ fun CompleteProfileScreen(
                                 createdAt = Clock.System.now().toString()
                             )
 
-                            // 5. Populate UserProfile for separate profile queries
-                            val userProfile = UserProfile(
-                                id = finalUserId,
-                                phone = draft.phone.trim(),
-                                location = draft.location.trim(),
-                                tagline = companyTagline.trim(),
-                                websiteUrl = draft.portfolioUrl.trim(),
-                                perks = selectedPerks.toList(),
-                                skills = draft.skills.trim(),
-                                experienceLevel = draft.experienceLevel.trim(),
-                                portfolioUrl = draft.portfolioUrl.trim(),
-                                bio = draft.bio.trim()
-                            )
-
-                            // 6. Persist User and UserProfile data in Database
+                            // 6. Persist everything to the 'users' table (which already contains profile fields)
                             val isUserSaved = UserRepository.saveUserToSupabase(newUser)
-                            UserRepository.updateUserProfile(userProfile)
 
                             isLoading = false
                             if (isUserSaved) {
                                 onComplete(newUser)
                             } else {
-                                errorMessage = UserRepository.lastUserSaveError
-                                    ?: "Failed to save profile details. Please try again."
+                                errorMessage = UserRepository.lastUserSaveError ?: "Failed to save profile details. Please try again."
                             }
                         } catch (e: Exception) {
                             isLoading = false

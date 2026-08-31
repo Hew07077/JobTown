@@ -37,8 +37,8 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
-private val dateFormat = SimpleDateFormat("MMM d", Locale.getDefault())
+private val timeFormat by lazy { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+private val dateFormat by lazy { SimpleDateFormat("MMM d", Locale.getDefault()) }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,20 +50,15 @@ fun ChatListScreen(
     onProfileClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-
     var searchQuery by remember { mutableStateOf("") }
     var showUnreadOnly by remember { mutableStateOf(false) }
 
     val currentUserId = currentUser?.id.orEmpty()
 
-    // Total unread count across all rooms
     val totalUnreadCount by remember(chatRooms) {
-        derivedStateOf {
-            chatRooms.sumOf { room -> room.unreadCount }
-        }
+        derivedStateOf { chatRooms.sumOf { room -> room.unreadCount } }
     }
 
-    // Dynamic filtering and sorting based on latest message time
     val filteredRooms by remember(chatRooms, searchQuery, showUnreadOnly, currentUserId) {
         derivedStateOf {
             var rooms = chatRooms
@@ -84,7 +79,6 @@ fun ChatListScreen(
                             room.lastMessage.contains(query, ignoreCase = true)
                 }
             }
-            // Keep room with the most recent message timestamp at top
             rooms.sortedByDescending { it.lastMessageTime }
         }
     }
@@ -144,82 +138,12 @@ fun ChatListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Search and Filter Bar Row
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = {
-                            Text(
-                                text = "Search messages or companies...",
-                                fontSize = 13.sp,
-                                color = TextDark.copy(alpha = 0.5f)
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "Search",
-                                tint = TextDark.copy(alpha = 0.5f)
-                            )
-                        },
-                        trailingIcon = {
-                            AnimatedVisibility(
-                                visible = searchQuery.isNotEmpty(),
-                                enter = fadeIn(),
-                                exit = fadeOut()
-                            ) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Clear,
-                                        contentDescription = "Clear search",
-                                        tint = TextDark.copy(alpha = 0.5f)
-                                    )
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        singleLine = true
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                FilterChip(
-                    selected = showUnreadOnly,
-                    onClick = { showUnreadOnly = !showUnreadOnly },
-                    label = { Text("Unread only", fontSize = 12.sp) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.FilterList,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = DeepGreenDark,
-                        selectedLabelColor = Color.White,
-                        selectedLeadingIconColor = Color.White,
-                        containerColor = Color.White,
-                        labelColor = TextDark
-                    )
-                )
-            }
+            ChatSearchFilterHeader(
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                showUnreadOnly = showUnreadOnly,
+                onToggleUnreadOnly = { showUnreadOnly = !showUnreadOnly }
+            )
 
             Box(
                 modifier = Modifier
@@ -238,7 +162,13 @@ fun ChatListScreen(
                     }
                     filteredRooms.isEmpty() -> {
                         Text(
-                            text = if (showUnreadOnly) "No unread messages" else "No results found for \"$searchQuery\"",
+                            text = if (showUnreadOnly && searchQuery.isNotBlank()) {
+                                "No unread messages matching \"$searchQuery\""
+                            } else if (showUnreadOnly) {
+                                "No unread messages"
+                            } else {
+                                "No results found for \"$searchQuery\""
+                            },
                             color = TextDark.copy(alpha = 0.5f),
                             fontSize = 14.sp,
                             textAlign = TextAlign.Center,
@@ -276,6 +206,85 @@ fun ChatListScreen(
 }
 
 @Composable
+private fun ChatSearchFilterHeader(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    showUnreadOnly: Boolean,
+    onToggleUnreadOnly: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        TextField(
+            value = searchQuery,
+            onValueChange = onSearchQueryChange,
+            placeholder = {
+                Text(
+                    text = "Search messages or companies...",
+                    fontSize = 13.sp,
+                    color = TextDark.copy(alpha = 0.5f)
+                )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Search",
+                    tint = TextDark.copy(alpha = 0.5f)
+                )
+            },
+            trailingIcon = {
+                AnimatedVisibility(
+                    visible = searchQuery.isNotEmpty(),
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    IconButton(onClick = { onSearchQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Default.Clear,
+                            contentDescription = "Clear search",
+                            tint = TextDark.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color.White,
+                unfocusedContainerColor = Color.White,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent
+            ),
+            singleLine = true
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        FilterChip(
+            selected = showUnreadOnly,
+            onClick = onToggleUnreadOnly,
+            label = { Text("Unread only", fontSize = 12.sp) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.FilterList,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+            },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = DeepGreenDark,
+                selectedLabelColor = Color.White,
+                selectedLeadingIconColor = Color.White,
+                containerColor = Color.White,
+                labelColor = TextDark
+            )
+        )
+    }
+}
+
+@Composable
 private fun ChatRoomItem(
     room: ChatRoom,
     isSeeker: Boolean,
@@ -286,8 +295,7 @@ private fun ChatRoomItem(
 ) {
     var fetchedAvatarUrl by remember(room.id) { mutableStateOf<String?>(null) }
 
-    // Safely fetch target user's avatar from repository if not present directly in ChatRoom
-    LaunchedEffect(room.id) {
+    LaunchedEffect(room.id, isSeeker, room.employerId, room.seekerId) {
         val targetUserId = if (isSeeker) room.employerId else room.seekerId
         if (!targetUserId.isNullOrBlank()) {
             val user = UserRepository.fetchUserById(targetUserId)
@@ -295,8 +303,9 @@ private fun ChatRoomItem(
         }
     }
 
-    // Resolves avatar URL safely matching standard ChatRoom / User schema variations
-    val activeAvatarUrl = fetchedAvatarUrl?.takeIf { it.isNotBlank() }
+    val activeAvatarUrl = remember(fetchedAvatarUrl) {
+        fetchedAvatarUrl?.takeIf { it.isNotBlank() }
+    }
 
     val formattedTime = remember(room.lastMessageTime) {
         if (room.lastMessageTime > 0L) formatRelativeTime(room.lastMessageTime) else ""
@@ -322,7 +331,6 @@ private fun ChatRoomItem(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // AVATAR CONTAINER
             Surface(
                 modifier = Modifier.size(50.dp),
                 shape = CircleShape,
@@ -503,15 +511,18 @@ private fun formatLastMessagePreview(message: String): String {
 
 private fun formatRelativeTime(timestamp: Long): String {
     val now = Calendar.getInstance()
-    val time = Calendar.getInstance().apply { timeInMillis = timestamp }
+    val target = Calendar.getInstance().apply { timeInMillis = timestamp }
 
-    val isSameYear = now.get(Calendar.YEAR) == time.get(Calendar.YEAR)
-    val dayOfYearNow = now.get(Calendar.DAY_OF_YEAR)
-    val dayOfYearTime = time.get(Calendar.DAY_OF_YEAR)
+    val sameDay = now.get(Calendar.YEAR) == target.get(Calendar.YEAR) &&
+            now.get(Calendar.DAY_OF_YEAR) == target.get(Calendar.DAY_OF_YEAR)
 
-    return when {
-        isSameYear && dayOfYearNow == dayOfYearTime -> timeFormat.format(Date(timestamp))
-        isSameYear && (dayOfYearNow - dayOfYearTime == 1) -> "Yesterday"
-        else -> dateFormat.format(Date(timestamp))
+    if (sameDay) {
+        return timeFormat.format(Date(timestamp))
     }
+
+    val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+    val isYesterday = yesterday.get(Calendar.YEAR) == target.get(Calendar.YEAR) &&
+            yesterday.get(Calendar.DAY_OF_YEAR) == target.get(Calendar.DAY_OF_YEAR)
+
+    return if (isYesterday) "Yesterday" else dateFormat.format(Date(timestamp))
 }
