@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FiberManualRecord
@@ -28,6 +29,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
 import coil.compose.SubcomposeAsyncImage
 import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.model.User
@@ -41,10 +43,12 @@ import java.util.Locale
 
 @Composable
 fun HomeScreen(
+    navController: NavController,
     currentUser: User?,
     jobsList: List<Job>,
     isLoading: Boolean,
     onJobClick: (Job) -> Unit,
+    onPostJobClick: () -> Unit,
     onProfileClick: () -> Unit,
     onRefresh: () -> Unit = {},
     matchScores: Map<String, Int> = emptyMap(),
@@ -77,7 +81,7 @@ fun HomeScreen(
     val isEmployer = currentUser?.role == UserRole.EMPLOYER
 
     // Greeting name helper
-    val greetingName = (if (isEmployer) currentUser.companyName else currentUser?.name)
+    val greetingName = (if (isEmployer) currentUser?.companyName else currentUser?.name)
         .orEmpty()
         .ifBlank { "Job Finder" }
 
@@ -98,14 +102,14 @@ fun HomeScreen(
     // Employers see only their own posted jobs. Job Seekers see all listings.
     val roleScopedJobs = remember(jobsList, currentUser?.id, currentUser?.companyName, currentUser?.name, isEmployer) {
         if (isEmployer) {
-            val currentUserId = currentUser.id
-            val userCompanyName = currentUser.companyName.ifBlank { currentUser.name }
+            val currentUserId = currentUser?.id.orEmpty()
+            val userCompanyName = currentUser?.companyName.orEmpty().ifBlank { currentUser?.name.orEmpty() }
 
             jobsList.filter { job ->
                 val employerId = job.employerId.orEmpty()
                 val postedByUserId = job.postedByUserId.orEmpty()
                 val ownerId = employerId.ifBlank { postedByUserId }
-                val jobCompany = job.company
+                val jobCompany = job.company.orEmpty()
 
                 when {
                     currentUserId.isNotBlank() && ownerId.isNotBlank() -> ownerId == currentUserId
@@ -124,20 +128,20 @@ fun HomeScreen(
     // Search and Category/Expired Filter Logic
     val filteredJobs = remember(roleScopedJobs, searchQuery, selectedFilter) {
         roleScopedJobs.filter { job ->
-            val jobType = job.type
+            val jobType = job.type.orEmpty()
             val jobExpired = isJobExpired(job)
 
             val matchesFilter = when (selectedFilter.lowercase()) {
                 "all" -> !jobExpired // Default ALL hides expired items to keep feed clean
                 "expired" -> jobExpired
-                "remote" -> !jobExpired && (jobType.contains("remote", ignoreCase = true) || job.location.contains("remote", ignoreCase = true))
+                "remote" -> !jobExpired && (jobType.contains("remote", ignoreCase = true) || job.location.orEmpty().contains("remote", ignoreCase = true))
                 else -> !jobExpired && jobType.replace("-", " ").contains(selectedFilter.replace("-", " "), ignoreCase = true)
             }
 
             val query = searchQuery.trim().lowercase()
-            val title = job.title.lowercase()
-            val company = job.company.lowercase()
-            val location = job.location.lowercase()
+            val title = job.title.orEmpty().lowercase()
+            val company = job.company.orEmpty().lowercase()
+            val location = job.location.orEmpty().lowercase()
 
             val matchesSearch = query.isEmpty() ||
                     title.contains(query) ||
@@ -158,7 +162,33 @@ fun HomeScreen(
     }
 
     Scaffold(
-        containerColor = BackgroundWhite
+        containerColor = BackgroundWhite,
+        floatingActionButton = {
+            if (isEmployer) {
+                ExtendedFloatingActionButton(
+                    onClick = onPostJobClick,
+                    containerColor = DeepGreenDark,
+                    contentColor = Color.White,
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp),
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "Add Job",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    },
+                    modifier = Modifier.semantics { contentDescription = "Post a new job" }
+                )
+            }
+        },
+        floatingActionButtonPosition = FabPosition.End
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -213,7 +243,12 @@ fun HomeScreen(
                                     }
                                 }
                             }
-                            Text(text = greetingName, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextDark)
+                            Text(
+                                text = greetingName,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextDark
+                            )
                         }
 
                         // --- SAVED JOBS + PROFILE / COMPANY LOGO BUTTON ---
@@ -226,7 +261,11 @@ fun HomeScreen(
                                         .clip(CircleShape)
                                         .background(SageGreenLight)
                                 ) {
-                                    Icon(imageVector = Icons.Default.Bookmark, contentDescription = "Saved jobs", tint = DeepGreenDark)
+                                    Icon(
+                                        imageVector = Icons.Default.Bookmark,
+                                        contentDescription = "Saved jobs",
+                                        tint = DeepGreenDark
+                                    )
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                             }
@@ -248,7 +287,11 @@ fun HomeScreen(
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 } else {
-                                    Icon(imageVector = Icons.Default.Person, contentDescription = "Open your profile", tint = DeepGreenDark)
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "Open your profile",
+                                        tint = DeepGreenDark
+                                    )
                                 }
                             }
                         }
@@ -489,8 +532,8 @@ fun HomeScreen(
                             items(
                                 items = displayedJobs,
                                 key = { job ->
-                                    val id = job.id
-                                    id.ifBlank { "${job.title}_${job.company}_${job.createdAt}" }
+                                    val id = job.id.orEmpty()
+                                    if (id.isNotBlank()) id else "${job.title}_${job.company}_${job.createdAt}"
                                 }
                             ) { job ->
                                 JobCard(
@@ -499,7 +542,7 @@ fun HomeScreen(
                                         onJobClick(job)
                                     },
                                     matchResult = if (!isEmployer) matchResults[job.id] else null,
-                                    isSaved = !isEmployer && savedJobIds.contains(job.id),
+                                    isSaved = !isEmployer && savedJobIds.contains(job.id.orEmpty()),
                                     onToggleSave = if (!isEmployer) {
                                         { onToggleSaveJob(job) }
                                     } else null

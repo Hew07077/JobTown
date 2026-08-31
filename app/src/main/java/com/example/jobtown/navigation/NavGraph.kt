@@ -325,6 +325,7 @@ fun AppNavGraph(
 
             composable(Screen.Home.route) {
                 HomeScreen(
+                    navController = navController,
                     currentUser = loggedInUser,
                     jobsList = homeViewModel.jobsList,
                     isLoading = homeViewModel.isLoading,
@@ -334,6 +335,13 @@ fun AppNavGraph(
                             navController.navigate("employer_job_detail/${selectedJob.id}")
                         } else {
                             navController.navigate("apply_job")
+                        }
+                    },
+                    onPostJobClick = {
+                        if (loggedInUser?.role == UserRole.EMPLOYER) {
+                            navController.navigate("manage_jobs")
+                        } else {
+                            navController.navigate("post_job")
                         }
                     },
                     onProfileClick = { navController.navigate("profile") },
@@ -350,7 +358,7 @@ fun AppNavGraph(
                     onStopRealtime = { homeViewModel.stopRealtimeUpdates() },
                     savedJobIds = homeViewModel.savedJobIds,
                     onToggleSaveJob = { job ->
-                        val jobId = job.id
+                        val jobId = job.id.orEmpty()
                         val userId = loggedInUser?.id.orEmpty()
                         if (jobId.isNotBlank() && userId.isNotBlank()) {
                             homeViewModel.toggleSaveJob(userId, jobId)
@@ -550,17 +558,17 @@ fun AppNavGraph(
                 val recentlyUpdatedId by appliedViewModel.recentlyUpdatedApplicationId.collectAsStateWithLifecycle()
 
                 MyAppliedScreen(
+                    navController = navController,
                     user = loggedInUser,
                     viewModel = appliedViewModel,
                     isLoading = isLoading,
                     chatLoadingApplicationId = chatCreationInProgressId,
                     isTrackingLive = isTrackingLive,
                     recentlyUpdatedApplicationId = recentlyUpdatedId,
-                    onStartTracking = { userId: String -> appliedViewModel.startTracking(userId) },
+                    onStartTracking = { appliedViewModel.startTracking(it) },
+                    onStopTracking = { appliedViewModel.stopTracking() },
+                    onConsumeRecentUpdate = { appliedViewModel.consumeRecentUpdate() },
                     onProfileClick = { navController.navigate("profile") },
-                    onApplicationClick = { applicationId ->
-                        navController.navigate(Screen.ApplicationDetail.createRoute(applicationId))
-                    },
                     onChatWithCompany = { application ->
                         startOrOpenChat(
                             counterpartId = application.employerId.ifBlank { "employer_default" },
