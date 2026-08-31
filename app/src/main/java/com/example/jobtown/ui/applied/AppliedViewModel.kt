@@ -20,7 +20,6 @@ class AppliedViewModel(
 ) : ViewModel() {
 
     private val _applicationsList = MutableStateFlow<List<JobApplication>>(emptyList())
-    // Expose both StateFlow and a List property wrapper for legacy compatibility across screens
     val applicationsListState: StateFlow<List<JobApplication>> = _applicationsList.asStateFlow()
     val applicationsList: List<JobApplication>
         get() = _applicationsList.value
@@ -49,8 +48,7 @@ class AppliedViewModel(
             if (_applicationsList.value.isEmpty() || forceRefresh) {
                 _isLoading.value = true
             }
-            val results = applicationRepository.getApplicationsForUser(userId)
-            _applicationsList.value = results
+            _applicationsList.value = applicationRepository.getApplicationsForUser(userId)
             _isLoading.value = false
         }
     }
@@ -61,8 +59,7 @@ class AppliedViewModel(
             if (_applicationsList.value.isEmpty() || forceRefresh) {
                 _isLoading.value = true
             }
-            val results = applicationRepository.getApplicationsForEmployer(employerId, forceRefresh)
-            _applicationsList.value = results
+            _applicationsList.value = applicationRepository.getApplicationsForEmployer(employerId, forceRefresh)
             _isLoading.value = false
         }
     }
@@ -81,16 +78,18 @@ class AppliedViewModel(
 
     fun getFilteredApplications(tab: ApplicationTab): List<JobApplication> {
         return _applicationsList.value.filter { app ->
-            val closed = app.status.equals("rejected", ignoreCase = true) ||
-                app.status.equals("expired", ignoreCase = true)
             when (tab) {
-                ApplicationTab.ACTIVE -> !closed
-                ApplicationTab.CLOSED -> closed
+                ApplicationTab.ACTIVE -> !app.isClosed()
+                ApplicationTab.CLOSED -> app.isClosed()
             }
         }
     }
 
-    fun updateApplicationStatus(applicationId: String, newStatus: String, onResult: (Boolean) -> Unit = {}) {
+    fun updateApplicationStatus(
+        applicationId: String,
+        newStatus: String,
+        onResult: (Boolean) -> Unit = {}
+    ) {
         viewModelScope.launch {
             val success = applicationRepository.updateApplicationStatus(applicationId, newStatus)
             if (success) {
@@ -113,19 +112,16 @@ class AppliedViewModel(
                         val updatedApp = event.application
                         val currentList = _applicationsList.value.toMutableList()
                         val index = currentList.indexOfFirst { it.id == updatedApp.id }
-
                         if (index != -1) {
                             currentList[index] = updatedApp
                         } else {
                             currentList.add(0, updatedApp)
                         }
-
                         _applicationsList.value = currentList
                         _recentlyUpdatedApplicationId.value = updatedApp.id
                     }
                     is ApplicationTrackingEvent.Removed -> {
-                        val currentList = _applicationsList.value.filter { it.id != event.applicationId }
-                        _applicationsList.value = currentList
+                        _applicationsList.value = _applicationsList.value.filter { it.id != event.applicationId }
                     }
                 }
             }
