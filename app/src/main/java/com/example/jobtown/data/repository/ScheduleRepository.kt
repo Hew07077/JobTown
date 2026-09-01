@@ -104,12 +104,38 @@ class ScheduleRepository(private val supabaseClient: SupabaseClient) {
     suspend fun updateSchedule(schedule: InterviewSchedule): Boolean = withContext(Dispatchers.IO) {
         try {
             supabaseClient.from("interview_schedules")
-                .update(schedule) {
+                .update({
+                    set("date", schedule.date)
+                    set("time", schedule.time)
+                    set("location_or_link", schedule.locationOrLink)
+                    set("notes", schedule.notes)
+                    set("status", schedule.status)
+                    set("reschedule_reason", schedule.rescheduleReason)
+                    set("preferred_time", schedule.preferredTime)
+                    set("title", schedule.title)
+                    set("company", schedule.company)
+                    if (schedule.jobId.isNotBlank()) set("job_id", schedule.jobId)
+                    if (schedule.userId.isNotBlank()) set("user_id", schedule.userId)
+                    if (schedule.employerId.isNotBlank()) set("employer_id", schedule.employerId)
+                }) {
                     filter { eq("id", schedule.id) }
                 }
             true
         } catch (e: Exception) {
             Log.e("ScheduleRepository", "Error updating schedule: ${e.localizedMessage}", e)
+            false
+        }
+    }
+
+    suspend fun deleteSchedule(scheduleId: String): Boolean = withContext(Dispatchers.IO) {
+        if (scheduleId.isBlank()) return@withContext false
+        try {
+            supabaseClient.from("interview_schedules").delete {
+                filter { eq("id", scheduleId) }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("ScheduleRepository", "Error deleting schedule: ${e.localizedMessage}", e)
             false
         }
     }

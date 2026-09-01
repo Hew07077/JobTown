@@ -114,6 +114,9 @@ data class User(
     @SerialName("resume_url")
     val resumeUrl: String = "",
 
+    @SerialName("is_oku")
+    val isOku: Boolean = false,
+
     @Transient
     val experienceEntries: List<ProfileEntry> = emptyList(),
 
@@ -146,7 +149,8 @@ internal data class UserWritePayload(
     @SerialName("phone") val phone: String = "",
     @SerialName("location") val location: String = "",
     @SerialName("avatar_url") val avatarUrl: String = "",
-    @SerialName("resume_url") val resumeUrl: String = ""
+    @SerialName("resume_url") val resumeUrl: String = "",
+    @SerialName("is_oku") val isOku: Boolean = false
 )
 
 internal fun User.toUserWritePayload(): UserWritePayload = UserWritePayload(
@@ -169,7 +173,8 @@ internal fun User.toUserWritePayload(): UserWritePayload = UserWritePayload(
     phone = phone,
     location = location,
     avatarUrl = avatarUrl,
-    resumeUrl = resumeUrl
+    resumeUrl = resumeUrl,
+    isOku = isOku
 )
 
 internal fun User.toUserProfile(): UserProfile = UserProfile(

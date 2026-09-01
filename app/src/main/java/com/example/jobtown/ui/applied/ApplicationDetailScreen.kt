@@ -35,8 +35,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import com.example.jobtown.data.model.NotificationType
+import com.example.jobtown.data.repository.NotificationRepository
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -56,10 +61,28 @@ fun ApplicationDetailScreen(
     onBackClick: () -> Unit,
     onChatClick: (applicantId: String, applicantName: String) -> Unit = { _, _ -> },
     onScheduleClick: (applicationId: String, applicantId: String, applicantName: String, jobTitle: String, companyName: String) -> Unit = { _, _, _, _, _ -> },
-    onStatusChange: (applicationId: String, newStatus: String) -> Unit = { _, _ -> }
+    onStatusChange: (applicationId: String, newStatus: String) -> Unit = { _, _ -> },
+    viewerCompanyName: String = ""
 ) {
     val applications by viewModel.applicationsListState.collectAsState()
     val application = applications.find { it.id == applicationId }
+    val notifiedViewKey = remember(applicationId) { mutableStateOf(false) }
+
+    LaunchedEffect(application?.id, application?.status) {
+        val app = application ?: return@LaunchedEffect
+        if (notifiedViewKey.value) return@LaunchedEffect
+        if (!app.status.equals("Pending", ignoreCase = true)) return@LaunchedEffect
+        notifiedViewKey.value = true
+        val company = viewerCompanyName.ifBlank { app.companyName }.ifBlank { "A company" }
+        NotificationRepository.notifyUser(
+            userId = app.userId,
+            title = "Application viewed",
+            body = "$company viewed your application for ${app.jobTitle.ifBlank { "a role" }}.",
+            type = NotificationType.APPLICATION_VIEWED,
+            relatedId = app.id
+        )
+        onStatusChange(app.id, "Viewed")
+    }
 
     Scaffold(
         topBar = {

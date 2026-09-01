@@ -36,9 +36,9 @@ internal val AppliedDividerColor = Color(0xFFE6EDE4)
 
 internal fun applicationStatusBackground(status: String): Color {
     return when (status.lowercase()) {
-        "shortlisted" -> SageGreenMain.copy(alpha = 0.45f)
+        "shortlisted", "viewed" -> SageGreenMain.copy(alpha = 0.45f)
         "interview" -> SageGreenDark.copy(alpha = 0.2f)
-        "rejected" -> Color(0xFFFFEBEE)
+        "rejected", "cancelled" -> Color(0xFFFFEBEE)
         "accepted" -> Color(0xFFE8F5E9)
         else -> SageGreenMain.copy(alpha = 0.35f)
     }
@@ -46,7 +46,7 @@ internal fun applicationStatusBackground(status: String): Color {
 //
 internal fun applicationStatusTextColor(status: String): Color {
     return when (status.lowercase()) {
-        "rejected" -> Color(0xFFC62828)
+        "rejected", "cancelled" -> Color(0xFFC62828)
         "accepted" -> Color(0xFF2E7D32)
         else -> DeepGreenDark
     }
@@ -54,7 +54,13 @@ internal fun applicationStatusTextColor(status: String): Color {
 
 internal fun JobApplication.isClosed(): Boolean {
     return status.equals("rejected", ignoreCase = true) ||
-        status.equals("expired", ignoreCase = true)
+        status.equals("expired", ignoreCase = true) ||
+        status.equals("cancelled", ignoreCase = true)
+}
+
+internal fun JobApplication.canCancel(): Boolean {
+    val normalized = status.lowercase()
+    return normalized in setOf("pending", "viewed", "shortlisted", "interview")
 }
 
 @Composable

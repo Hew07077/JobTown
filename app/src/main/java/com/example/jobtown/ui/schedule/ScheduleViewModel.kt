@@ -119,6 +119,23 @@ class ScheduleViewModel(
         }
     }
 
+    fun deleteSchedule(
+        scheduleId: String,
+        currentUserId: String,
+        isEmployer: Boolean,
+        onResult: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            val success = scheduleRepository.deleteSchedule(scheduleId)
+            if (success) {
+                schedulesList = scheduleRepository.getSchedulesForUser(currentUserId, isEmployer)
+                onResult(true)
+            } else {
+                onResult(false)
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         realtimeJob?.cancel()

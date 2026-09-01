@@ -345,12 +345,14 @@ class MessageRepository(private val supabase: SupabaseClient) {
                 }
             }
 
-            supabase.from("chat_rooms").update(
-                mapOf(
-                    "last_message" to snippet,
-                    "last_message_time" to now
-                )
-            ) { filter { eq("id", roomId) } }
+            try {
+                supabase.from("chat_rooms").update({
+                    set("last_message", snippet)
+                    set("last_message_time", now)
+                }) { filter { eq("id", roomId) } }
+            } catch (e: Exception) {
+                Log.e(TAG, "Message saved but room preview update failed: ${e.localizedMessage}", e)
+            }
 
             inserted
         } catch (e: Exception) {
@@ -385,17 +387,18 @@ class MessageRepository(private val supabase: SupabaseClient) {
         try {
             val wasLatest = getLatestMessageId(roomId) == messageId
 
-            supabase.from("chat_messages").update(
-                mapOf("text" to newText, "is_edited" to true)
-            ) { filter { eq("id", messageId); eq("chat_room_id", roomId) } }
+            supabase.from("chat_messages").update({
+                set("text", newText)
+                set("is_edited", true)
+            }) {
+                filter { eq("id", messageId); eq("chat_room_id", roomId) }
+            }
 
             if (wasLatest) {
-                supabase.from("chat_rooms").update(
-                    mapOf(
-                        "last_message" to newText,
-                        "last_message_time" to System.currentTimeMillis()
-                    )
-                ) { filter { eq("id", roomId) } }
+                supabase.from("chat_rooms").update({
+                    set("last_message", newText)
+                    set("last_message_time", System.currentTimeMillis())
+                }) { filter { eq("id", roomId) } }
             }
 
             true
@@ -411,17 +414,19 @@ class MessageRepository(private val supabase: SupabaseClient) {
             val wasLatest = getLatestMessageId(roomId) == messageId
             val deletedText = "This message was deleted"
 
-            supabase.from("chat_messages").update(
-                mapOf("text" to deletedText, "is_deleted" to true, "is_edited" to false)
-            ) { filter { eq("id", messageId); eq("chat_room_id", roomId) } }
+            supabase.from("chat_messages").update({
+                set("text", deletedText)
+                set("is_deleted", true)
+                set("is_edited", false)
+            }) {
+                filter { eq("id", messageId); eq("chat_room_id", roomId) }
+            }
 
             if (wasLatest) {
-                supabase.from("chat_rooms").update(
-                    mapOf(
-                        "last_message" to deletedText,
-                        "last_message_time" to System.currentTimeMillis()
-                    )
-                ) { filter { eq("id", roomId) } }
+                supabase.from("chat_rooms").update({
+                    set("last_message", deletedText)
+                    set("last_message_time", System.currentTimeMillis())
+                }) { filter { eq("id", roomId) } }
             }
 
             true

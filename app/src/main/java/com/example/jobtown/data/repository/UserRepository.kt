@@ -478,7 +478,8 @@ object UserRepository {
                 portfolioUrl = user.portfolioUrl,
                 bio = user.bio,
                 avatarUrl = user.avatarUrl,
-                resumeUrl = user.resumeUrl
+                resumeUrl = user.resumeUrl,
+                isOku = user.isOku
             )
         )
     }
@@ -668,6 +669,7 @@ private data class JobSeekerTableRecord(
     val bio: String = "",
     @SerialName("avatar_url") val avatarUrl: String = "",
     @SerialName("resume_url") val resumeUrl: String = "",
+    @SerialName("is_oku") val isOku: Boolean = false,
     @SerialName("created_at") val createdAt: String = ""
 )
 
@@ -684,6 +686,7 @@ private fun JobSeekerTableRecord.toUser() = User(
     bio = bio,
     avatarUrl = avatarUrl,
     resumeUrl = resumeUrl,
+    isOku = isOku,
     createdAt = createdAt
 )
 
@@ -699,5 +702,6 @@ private data class JobSeekerWritePayload(
     @SerialName("portfolio_url") val portfolioUrl: String = "",
     val bio: String = "",
     @SerialName("avatar_url") val avatarUrl: String = "",
-    @SerialName("resume_url") val resumeUrl: String = ""
+    @SerialName("resume_url") val resumeUrl: String = "",
+    @SerialName("is_oku") val isOku: Boolean = false
 )

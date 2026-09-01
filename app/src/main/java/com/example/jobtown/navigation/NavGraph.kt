@@ -26,9 +26,11 @@ import com.example.jobtown.Screen
 import com.example.jobtown.data.model.ChatRoom
 import com.example.jobtown.data.model.User
 import com.example.jobtown.data.model.UserRole
+import com.example.jobtown.data.model.NotificationType
 import com.example.jobtown.data.repository.ApplicationRepository
 import com.example.jobtown.data.repository.JobRepository
 import com.example.jobtown.data.repository.MessageRepository
+import com.example.jobtown.data.repository.NotificationRepository
 import com.example.jobtown.data.repository.ScheduleRepository
 import com.example.jobtown.ui.applied.AppliedViewModel
 import com.example.jobtown.ui.applied.MyAppliedScreen
@@ -53,11 +55,14 @@ import com.example.jobtown.ui.home.SavedJobsScreen
 import com.example.jobtown.ui.job.ApplyJobScreen
 import com.example.jobtown.ui.postjob.EmployerJobDetailScreen
 import com.example.jobtown.ui.postjob.PostJobScreen
+import com.example.jobtown.ui.profile.NotificationsScreen
 import com.example.jobtown.ui.profile.ProfileScreen
 import com.example.jobtown.ui.schedule.ScheduleScreen
 import com.example.jobtown.ui.schedule.ScheduleDetailScreen
 import com.example.jobtown.ui.schedule.ScheduleViewModel
 import com.example.jobtown.ui.schedule.SchedulePrefill
+import com.example.jobtown.ui.schedule.InterviewEditorScreen
+import com.example.jobtown.ui.schedule.toSchedulePrefill
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.gotrue.auth
 import kotlinx.coroutines.launch
@@ -82,6 +87,7 @@ fun AppNavGraph(
 
     var snackbarMessage by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    var showInterviewEditor by remember { mutableStateOf(false) }
 
     LaunchedEffect(pendingDeepLinkUri) {
         val uri = pendingDeepLinkUri
@@ -204,15 +210,18 @@ fun AppNavGraph(
             if (roomId.isNotBlank()) {
                 chatViewModel.loadUserChatRooms(user.id)
 
-                val displayName = if (isEmployerViewer) seekerName else companyName.ifBlank { "Company Name" }
-                val encodedName = Uri.encode(displayName.ifBlank { "Chat" })
-
                 navController.navigate(Screen.Chat.route) {
                     popUpTo(Screen.Home.route) { saveState = true }
                     launchSingleTop = true
                     restoreState = true
                 }
-                navController.navigate("chat_detail/$roomId/$encodedName")
+                navController.navigate(
+                    Screen.ChatDetail.createRoute(
+                        chatRoomId = roomId,
+                        company = if (isEmployerViewer) seekerName else companyName.ifBlank { "Company Name" },
+                        title = jobTitle.ifBlank { "Position" }
+                    )
+                )
             } else {
                 snackbarMessage = if (caughtErrorText != null) {
                     "Chat error: $caughtErrorText"
@@ -402,15 +411,12 @@ fun AppNavGraph(
                     },
                     onScheduleInterview = { application ->
                         scheduleViewModel.setPrefill(
-                            SchedulePrefill(
-                                seekerId = application.userId,
-                                seekerName = application.applicantName,
+                            application.toSchedulePrefill(
                                 employerId = loggedInUser?.id.orEmpty(),
-                                company = application.companyName,
-                                title = application.jobTitle
+                                fallbackCompany = loggedInUser?.companyName.orEmpty()
                             )
                         )
-                        navController.navigate(Screen.Schedule.route)
+                        showInterviewEditor = true
                     },
                     onStartChat = { application ->
                         startOrOpenChat(
@@ -455,6 +461,7 @@ fun AppNavGraph(
                     EmployerJobDetailScreen(
                         job = currentJob,
                         navController = navController,
+                        currentUser = loggedInUser,
                         onUpdateJob = { updatedJob ->
                             homeViewModel.updateJob(updatedJob) { success, message ->
                                 if (success) {
@@ -479,6 +486,9 @@ fun AppNavGraph(
                         navController = navController,
                         job = selectedJob,
                         currentUser = loggedInUser,
+                        existingApplication = loggedInUser?.id?.let { uid ->
+                            appliedViewModel.findApplicationForJob(uid, selectedJob.id)
+                        },
                         onApplySubmit = { application ->
                             appliedViewModel.submitNewApplication(application) { success ->
                                 if (success) {
@@ -495,6 +505,14 @@ fun AppNavGraph(
                         onViewCompanyDetails = { companyId ->
                             val encodedCompanyId = Uri.encode(companyId)
                             navController.navigate("company_detail/$encodedCompanyId")
+                        },
+                        onViewExistingApplication = {
+                            val existing = loggedInUser?.id?.let { uid ->
+                                appliedViewModel.findApplicationForJob(uid, selectedJob.id)
+                            }
+                            if (existing != null) {
+                                navController.navigate(Screen.ApplicationDetail.createRoute(existing.id))
+                            }
                         }
                     )
                 } else {
@@ -609,31 +627,57 @@ fun AppNavGraph(
                             )
                         },
                         onScheduleClick = { appId, applicantId, applicantName, jobTitle, companyName ->
+                            val application = appliedViewModel.applicationsList.find { it.id == appId || it.id == applicationId }
                             scheduleViewModel.setPrefill(
                                 SchedulePrefill(
                                     seekerId = applicantId,
                                     seekerName = applicantName,
                                     employerId = loggedInUser?.id.orEmpty(),
-                                    company = companyName,
-                                    title = jobTitle
+                                    company = companyName.ifBlank { loggedInUser?.companyName.orEmpty() },
+                                    title = jobTitle,
+                                    jobId = application?.jobId.orEmpty()
                                 )
                             )
-                            navController.navigate(Screen.Schedule.route)
+                            showInterviewEditor = true
                         },
                         onStatusChange = { targetAppId, newStatus ->
                             appliedViewModel.updateApplicationStatus(targetAppId, newStatus) { success ->
                                 snackbarMessage = if (success) {
+                                    if (!newStatus.equals("Viewed", ignoreCase = true)) {
+                                        val app = appliedViewModel.applicationsList.find { it.id == targetAppId }
+                                        if (app != null) {
+                                            coroutineScope.launch {
+                                                val company = loggedInUser?.companyName
+                                                    ?.ifBlank { loggedInUser?.name }
+                                                    .orEmpty()
+                                                    .ifBlank { "A company" }
+                                                NotificationRepository.notifyUser(
+                                                    userId = app.userId,
+                                                    title = "Application update",
+                                                    body = "$company updated your application for ${app.jobTitle} to $newStatus.",
+                                                    type = NotificationType.APPLICATION_STATUS,
+                                                    relatedId = app.id
+                                                )
+                                            }
+                                        }
+                                    }
                                     "Application status updated to $newStatus"
                                 } else {
                                     "Failed to update application status."
                                 }
                             }
-                        }
+                        },
+                        viewerCompanyName = loggedInUser?.companyName?.ifBlank { loggedInUser?.name }.orEmpty()
                     )
                 } else {
                     JobseekerApplicationDetailScreen(
                         applicationId = applicationId,
                         viewModel = appliedViewModel,
+                        jobLocation = appliedViewModel.applicationsList.find { it.id == applicationId }?.let { app ->
+                            app.location.ifBlank {
+                                homeViewModel.jobsList.find { it.id == app.jobId }?.location.orEmpty()
+                            }
+                        },
                         onBackClick = { navController.popBackStack() },
                         onChatWithEmployerClick = { application ->
                             startOrOpenChat(
@@ -643,6 +687,16 @@ fun AppNavGraph(
                                 jobTitle = application.jobTitle,
                                 progressKey = application.id
                             )
+                        },
+                        onCancelApplication = { application ->
+                            appliedViewModel.cancelApplication(application.id) { success ->
+                                snackbarMessage = if (success) {
+                                    "Application cancelled"
+                                } else {
+                                    "Failed to cancel application."
+                                }
+                                if (success) navController.popBackStack()
+                            }
                         }
                     )
                 }
@@ -655,6 +709,9 @@ fun AppNavGraph(
                 LaunchedEffect(currentUserId) {
                     if (currentUserId.isNotBlank()) {
                         scheduleViewModel.loadSchedules(currentUserId, isEmployer)
+                        if (isEmployer) {
+                            appliedViewModel.loadEmployerApplications(currentUserId)
+                        }
                     }
                 }
 
@@ -662,14 +719,28 @@ fun AppNavGraph(
                     navController = navController,
                     user = loggedInUser,
                     schedules = scheduleViewModel.schedulesList,
+                    isLoading = scheduleViewModel.isLoading,
                     isEmployer = isEmployer,
                     isSaving = scheduleViewModel.isSaving,
                     prefill = scheduleViewModel.schedulePrefill,
+                    applicants = appliedViewModel.applicationsList,
                     onCreateSchedule = { newSchedule ->
                         scheduleViewModel.createSchedule(newSchedule, currentUserId, isEmployer) { success, message ->
                             snackbarMessage = message
                             if (success) {
-                                navController.popBackStack()
+                                coroutineScope.launch {
+                                    val company = loggedInUser?.companyName
+                                        ?.ifBlank { loggedInUser?.name }
+                                        .orEmpty()
+                                        .ifBlank { "A company" }
+                                    NotificationRepository.notifyUser(
+                                        userId = newSchedule.userId,
+                                        title = "Interview scheduled",
+                                        body = "$company scheduled an interview for ${newSchedule.title.ifBlank { "a role" }} on ${newSchedule.date} at ${newSchedule.time}.",
+                                        type = NotificationType.INTERVIEW_SCHEDULED,
+                                        relatedId = newSchedule.jobId
+                                    )
+                                }
                             }
                         }
                     },
@@ -683,6 +754,34 @@ fun AppNavGraph(
                             snackbarMessage = if (success) "Interview invitation $status successfully." else "Failed to update interview invitation response."
                         }
                     },
+                    onUpdateSchedule = { updated ->
+                        scheduleViewModel.updateSchedule(updated, currentUserId, isEmployer) { success ->
+                            if (success && updated.status.equals("Pending", ignoreCase = true)) {
+                                coroutineScope.launch {
+                                    val company = loggedInUser?.companyName
+                                        ?.ifBlank { loggedInUser?.name }
+                                        .orEmpty()
+                                        .ifBlank { "A company" }
+                                    NotificationRepository.notifyUser(
+                                        userId = updated.userId,
+                                        title = "Interview updated",
+                                        body = "$company updated your interview for ${updated.title.ifBlank { "a role" }} on ${updated.date} at ${updated.time}.",
+                                        type = NotificationType.INTERVIEW_SCHEDULED,
+                                        relatedId = updated.jobId
+                                    )
+                                }
+                                snackbarMessage = "Interview updated and resent to the candidate."
+                            } else {
+                                snackbarMessage = if (success) "Schedule updated." else "Failed to update schedule."
+                            }
+                        }
+                    },
+                    onDeleteSchedule = { scheduleId ->
+                        scheduleViewModel.deleteSchedule(scheduleId, currentUserId, isEmployer) { success ->
+                            snackbarMessage = if (success) "Interview removed." else "Couldn't delete this interview. Try again."
+                        }
+                    },
+                    onClearPrefill = { scheduleViewModel.clearPrefill() },
                     onProfileClick = { navController.navigate("profile") }
                 )
             }
@@ -704,6 +803,10 @@ fun AppNavGraph(
                 ScheduleDetailScreen(
                     schedule = schedule,
                     isEmployer = isEmployer,
+                    isSaving = scheduleViewModel.isSaving,
+                    currentUserId = currentUserId,
+                    defaultCompany = loggedInUser?.companyName?.ifBlank { loggedInUser?.name }.orEmpty(),
+                    applicants = appliedViewModel.applicationsList,
                     onBackClick = { navController.popBackStack() },
                     onUpdateStatus = { targetScheduleId, status ->
                         scheduleViewModel.updateScheduleStatus(targetScheduleId, status, currentUserId, isEmployer) { success ->
@@ -713,6 +816,42 @@ fun AppNavGraph(
                     onRespondInvite = { targetScheduleId, status ->
                         scheduleViewModel.updateScheduleStatus(targetScheduleId, status, currentUserId, isEmployer) { success ->
                             snackbarMessage = if (success) "Interview invitation $status successfully." else "Failed to update interview invitation response."
+                        }
+                    },
+                    onUpdateSchedule = { updated ->
+                        scheduleViewModel.updateSchedule(updated, currentUserId, isEmployer) { success ->
+                            if (success && updated.status.equals("Pending", ignoreCase = true)) {
+                                coroutineScope.launch {
+                                    val company = loggedInUser?.companyName
+                                        ?.ifBlank { loggedInUser?.name }
+                                        .orEmpty()
+                                        .ifBlank { "A company" }
+                                    NotificationRepository.notifyUser(
+                                        userId = updated.userId,
+                                        title = "Interview updated",
+                                        body = "$company updated your interview for ${updated.title.ifBlank { "a role" }} on ${updated.date} at ${updated.time}.",
+                                        type = NotificationType.INTERVIEW_SCHEDULED,
+                                        relatedId = updated.jobId
+                                    )
+                                }
+                                snackbarMessage = "Interview updated and resent to the candidate."
+                            } else {
+                                snackbarMessage = if (success) {
+                                    if (updated.status.equals("Reschedule Requested", ignoreCase = true)) {
+                                        "Reschedule request sent."
+                                    } else {
+                                        "Schedule updated."
+                                    }
+                                } else {
+                                    "Failed to update schedule."
+                                }
+                            }
+                        }
+                    },
+                    onDeleteSchedule = { targetScheduleId ->
+                        scheduleViewModel.deleteSchedule(targetScheduleId, currentUserId, isEmployer) { success ->
+                            snackbarMessage = if (success) "Interview removed." else "Couldn't delete this interview. Try again."
+                            if (success) navController.popBackStack()
                         }
                     }
                 )
@@ -730,41 +869,92 @@ fun AppNavGraph(
                     currentUser = loggedInUser,
                     chatRooms = chatRoomsList,
                     isLoading = isChatLoading,
-                    onChatRoomClick = { roomId, titleName, _ ->
-                        val encodedName = Uri.encode(titleName)
-                        navController.navigate("chat_detail/$roomId/$encodedName")
+                    onChatRoomClick = { roomId, titleName, position ->
+                        navController.navigate(
+                            Screen.ChatDetail.createRoute(
+                                chatRoomId = roomId,
+                                company = titleName,
+                                title = position
+                            )
+                        )
                     },
                     onProfileClick = { navController.navigate("profile") }
                 )
             }
 
             composable(
-                route = "chat_detail/{roomId}/{name}/{title}/{extra}",
+                route = Screen.ChatDetail.route,
                 arguments = listOf(
-                    navArgument("roomId") { type = NavType.StringType },
-                    navArgument("name") { type = NavType.StringType },
-                    navArgument("title") { type = NavType.StringType },
-                    navArgument("extra") { type = NavType.StringType }
+                    navArgument("chatRoomId") { type = NavType.StringType },
+                    navArgument("company") { type = NavType.StringType; defaultValue = "" },
+                    navArgument("title") { type = NavType.StringType; defaultValue = "" },
+                    navArgument("initialQuestion") { type = NavType.StringType; defaultValue = "" }
                 )
             ) { backStackEntry ->
-                val roomId = backStackEntry.arguments?.getString("roomId").orEmpty()
-                val encodedName = backStackEntry.arguments?.getString("name").orEmpty()
-                val encodedTitle = backStackEntry.arguments?.getString("title").orEmpty()
-
-                val recipientName = Uri.decode(encodedName)
-                val jobTitle = Uri.decode(encodedTitle)
+                val chatId = backStackEntry.arguments?.getString("chatRoomId") ?: ""
+                val company = Uri.decode(backStackEntry.arguments?.getString("company").orEmpty())
+                val title = Uri.decode(backStackEntry.arguments?.getString("title").orEmpty())
+                val initialQuestion = Uri.decode(backStackEntry.arguments?.getString("initialQuestion").orEmpty())
 
                 ChatDetailScreen(
                     navController = navController,
-                    roomId = roomId,
-                    companyName = recipientName,
-                    chatTitle = jobTitle,
-                    initialQuestion = "",
+                    roomId = chatId,
+                    companyName = company,
+                    chatTitle = title,
+                    initialQuestion = initialQuestion,
                     currentUserId = loggedInUser?.id.orEmpty(),
                     chatViewModel = chatViewModel,
                     onNavigateToSchedule = { navController.navigate(Screen.Schedule.route) }
                 )
             }
+
+            composable(Screen.Notifications.route) {
+                NotificationsScreen(
+                    userId = loggedInUser?.id.orEmpty(),
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
         }
+    }
+
+    if (showInterviewEditor) {
+        val employer = loggedInUser
+        InterviewEditorScreen(
+            isEdit = false,
+            isSaving = scheduleViewModel.isSaving,
+            currentUserId = employer?.id.orEmpty(),
+            defaultCompany = employer?.companyName?.ifBlank { employer.name }.orEmpty(),
+            applicants = appliedViewModel.applicationsList,
+            prefill = scheduleViewModel.schedulePrefill,
+            onDismiss = {
+                if (!scheduleViewModel.isSaving) {
+                    showInterviewEditor = false
+                    scheduleViewModel.clearPrefill()
+                }
+            },
+            onSave = { newSchedule ->
+                val currentUserId = employer?.id.orEmpty()
+                val isEmployerUser = employer?.role == UserRole.EMPLOYER
+                scheduleViewModel.createSchedule(newSchedule, currentUserId, isEmployerUser) { success, message ->
+                    snackbarMessage = message
+                    if (success) {
+                        showInterviewEditor = false
+                        coroutineScope.launch {
+                            val company = employer?.companyName
+                                ?.ifBlank { employer.name }
+                                .orEmpty()
+                                .ifBlank { "A company" }
+                            NotificationRepository.notifyUser(
+                                userId = newSchedule.userId,
+                                title = "Interview scheduled",
+                                body = "$company scheduled an interview for ${newSchedule.title.ifBlank { "a role" }} on ${newSchedule.date} at ${newSchedule.time}.",
+                                type = NotificationType.INTERVIEW_SCHEDULED,
+                                relatedId = newSchedule.jobId
+                            )
+                        }
+                    }
+                }
+            }
+        )
     }
 }

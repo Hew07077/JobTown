@@ -53,7 +53,9 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.jobtown.data.model.Job
+import com.example.jobtown.data.model.User
 import com.example.jobtown.data.repository.UserRepository
+import com.example.jobtown.utils.LocationOptions
 import com.example.jobtown.ui.theme.BackgroundWhite
 import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenDark
@@ -66,6 +68,7 @@ import com.example.jobtown.ui.theme.TextDark
 fun EmployerJobDetailScreen(
     job: Job,
     navController: NavController? = null,
+    currentUser: User? = null,
     avatarUrl: String? = null,
     onUpdateJob: (Job) -> Unit = {},
     onBackClick: () -> Unit = { navController?.popBackStack() }
@@ -73,7 +76,13 @@ fun EmployerJobDetailScreen(
     var isEditing by remember { mutableStateOf(false) }
     var fetchedAvatarUrl by remember { mutableStateOf<String?>(null) }
 
-    val (initialMinSalary, initialMaxSalary) = remember(job.salary) { parseSalaryBounds(job.salary) }
+    val savedAddresses = remember(currentUser?.location) {
+        LocationOptions.parseAddresses(currentUser?.location.orEmpty())
+            .map { it.display() }
+            .filter { it.isNotBlank() }
+    }
+
+    val (initialMinSalary, initialMaxSalary) = remember(job.id, job.salary) { parseSalaryBounds(job.salary) }
 
     val fields = rememberJobFormFields(
         title = job.title,
@@ -84,7 +93,10 @@ fun EmployerJobDetailScreen(
         type = job.jobType.ifBlank { "Full-time" },
         description = job.description,
         requirements = job.requirements?.filter { it.isNotBlank() }?.joinToString(", ").orEmpty(),
-        skills = job.skills?.filter { it.isNotBlank() }?.joinToString(", ").orEmpty()
+        skills = job.skills?.filter { it.isNotBlank() }?.joinToString(", ").orEmpty(),
+        isFeatured = job.isFeatured == true,
+        isOkuFriendly = job.isOkuFriendly == true,
+        useCustomLocation = savedAddresses.isEmpty() || savedAddresses.none { it.equals(job.location, ignoreCase = true) }
     )
 
     LaunchedEffect(job.employerId) {
@@ -147,6 +159,8 @@ fun EmployerJobDetailScreen(
                     submitLabel = "Save changes",
                     companyPhotoUrl = displayAvatarUrl,
                     requireSalary = false,
+                    savedAddresses = savedAddresses,
+                    showFeaturedToggle = true,
                     onSubmit = {
                         val salary = fields.formattedSalary(blankFallback = job.salary)
                         onUpdateJob(
@@ -159,7 +173,9 @@ fun EmployerJobDetailScreen(
                                 type = fields.type,
                                 description = fields.description.trim(),
                                 requirements = fields.requirementsList(),
-                                skills = fields.skillsList()
+                                skills = fields.skillsList(),
+                                isFeatured = fields.isFeatured,
+                                isOkuFriendly = fields.isOkuFriendly
                             )
                         )
                         isEditing = false
@@ -229,6 +245,11 @@ private fun JobDetailsReadView(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), thickness = 1.dp, color = Color(0xFFE6EDE4))
             JobDetailMetaRow(icon = Icons.Filled.Work, label = "Job type", value = job.jobType.ifBlank { "Full-time" })
+
+            if (job.isOkuFriendly == true) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), thickness = 1.dp, color = Color(0xFFE6EDE4))
+                JobDetailMetaRow(icon = Icons.Filled.Work, label = "Accessibility", value = "OKU-friendly role")
+            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), thickness = 1.dp, color = Color(0xFFE6EDE4))
             JobDetailMetaRow(icon = Icons.Filled.AttachMoney, label = "Salary", value = job.salary.ifBlank { "Salary not specified" })

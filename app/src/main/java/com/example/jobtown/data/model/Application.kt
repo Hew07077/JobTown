@@ -40,13 +40,15 @@ data class JobApplication(
     @SerialName("status")
     val status: String = "Pending",
 
+    @SerialName("location")
+    val location: String = "",
+
     @SerialName("applied_at")
     val appliedAt: String = ""
 ) {
-
-    val location: String
-        get() = "Remote" // Fallback or retrieve from parent Job model if available
-
     val appliedDate: String
         get() = appliedAt.ifBlank { "Recently" }
+
+    val displayLocation: String
+        get() = location.ifBlank { "Not specified" }
 }

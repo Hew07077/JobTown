@@ -377,7 +377,8 @@ fun PostJobScreen(
                             salary = fields.formattedSalary(),
                             type = fields.type,
                             description = fields.description,
-                            isFeatured = fields.isFeatured
+                            isFeatured = fields.isFeatured,
+                            isOkuFriendly = fields.isOkuFriendly
                         ),
                         expiryDaysText = displayExpiryDate
                     )
@@ -401,6 +402,7 @@ fun PostJobScreen(
                         requirements = fields.requirementsList(),
                         skills = fields.skillsList(),
                         isFeatured = fields.isFeatured,
+                        isOkuFriendly = fields.isOkuFriendly,
                         employerId = userId,
                         postedByUserId = userId,
                         status = "active",

@@ -19,6 +19,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -425,10 +427,34 @@ fun JobListingForm(
                             checkedThumbColor = Color.White,
                             checkedTrackColor = DeepGreenDark,
                             uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = Color(0xFFD0D5CE)
+                            uncheckedTrackColor = Color(0xFFCBD5E1)
                         )
                     )
                 }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 1.dp, color = Color(0xFFE6EDE4))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = enabled) { fields.isOkuFriendly = !fields.isOkuFriendly },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text(text = "OKU-friendly role", fontSize = 15.sp, color = TextDark, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = "This job welcomes applicants with disabilities (OKU)",
+                        fontSize = 12.sp,
+                        color = TextDark.copy(alpha = 0.55f)
+                    )
+                }
+                Checkbox(
+                    checked = fields.isOkuFriendly,
+                    onCheckedChange = { fields.isOkuFriendly = it },
+                    enabled = enabled,
+                    colors = CheckboxDefaults.colors(checkedColor = DeepGreenDark)
+                )
             }
 
             if (fields.errorMessage.isNotBlank()) {

@@ -55,12 +55,11 @@ private data class NewJobPayload(
     @SerialName("requirements") val requirements: List<String>,
     @SerialName("skills") val skills: List<String>,
     @SerialName("is_featured") val isFeatured: Boolean,
+    @SerialName("is_oku_friendly") val isOkuFriendly: Boolean = false,
     @SerialName("employer_id") val employerId: String?,
     @SerialName("posted_by_user_id") val postedByUserId: String?,
     @SerialName("status") val status: String? = "active",
     @SerialName("expired_at") val expiredAt: String? = null
-
-
 )
 
 @Serializable
@@ -77,6 +76,7 @@ private data class UpsertJobPayload(
     @SerialName("requirements") val requirements: List<String>,
     @SerialName("skills") val skills: List<String>,
     @SerialName("is_featured") val isFeatured: Boolean,
+    @SerialName("is_oku_friendly") val isOkuFriendly: Boolean = false,
     @SerialName("employer_id") val employerId: String?,
     @SerialName("posted_by_user_id") val postedByUserId: String?,
     @SerialName("status") val status: String? = "active",
@@ -218,6 +218,7 @@ class JobRepository(private val supabaseClient: SupabaseClient) {
             requirements = job.requirements.orEmpty(),
             skills = job.skills.orEmpty(),
             isFeatured = job.isFeatured ?: false,
+            isOkuFriendly = job.isOkuFriendly ?: false,
             employerId = cleanEmployerId,
             postedByUserId = cleanUserId,
             status = job.status ?: "active",
@@ -249,6 +250,7 @@ class JobRepository(private val supabaseClient: SupabaseClient) {
             requirements = job.requirements.orEmpty(),
             skills = job.skills.orEmpty(),
             isFeatured = job.isFeatured ?: false,
+            isOkuFriendly = job.isOkuFriendly ?: false,
             employerId = cleanEmployerId,
             postedByUserId = cleanUserId,
             status = job.status ?: "active",
