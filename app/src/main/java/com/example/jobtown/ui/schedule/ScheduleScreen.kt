@@ -1,14 +1,11 @@
 package com.example.jobtown.ui.schedule
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -24,9 +21,11 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.jobtown.Screen
 import com.example.jobtown.data.model.InterviewSchedule
+import com.example.jobtown.data.model.JobApplication
 import com.example.jobtown.data.model.User
 import com.example.jobtown.ui.theme.*
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -34,11 +33,22 @@ data class SchedulePrefill(
     val seekerId: String? = "",
     val seekerName: String? = "",
     val employerId: String? = "",
+    val jobId: String? = "",
     val company: String? = "",
     val title: String? = ""
 ) {
-    val isEmpty: Boolean get() = seekerId.isNullOrBlank() && company.isNullOrBlank() && title.isNullOrBlank()
+    val isEmpty: Boolean get() = seekerId.isNullOrBlank() && title.isNullOrBlank()
 }
+
+fun JobApplication.toSchedulePrefill(employerId: String, fallbackCompany: String): SchedulePrefill =
+    SchedulePrefill(
+        seekerId = userId,
+        seekerName = applicantName,
+        employerId = employerId,
+        company = companyName.ifBlank { fallbackCompany },
+        title = jobTitle,
+        jobId = jobId
+    )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,23 +64,31 @@ fun ScheduleScreen(
     onUpdateStatus: (scheduleId: String, status: String) -> Unit = { _, _ -> },
     onRespondInvite: (scheduleId: String, status: String) -> Unit = { _, _ -> },
     onUpdateSchedule: (InterviewSchedule) -> Unit = {},
+    onDeleteSchedule: (scheduleId: String) -> Unit = {},
+    onClearPrefill: () -> Unit = {},
+    applicants: List<JobApplication> = emptyList(),
     onProfileClick: () -> Unit = {}
 ) {
     val safeSchedules = schedules ?: emptyList()
     var showCreateDialog by remember(prefill) { mutableStateOf(isEmployer && !prefill.isEmpty) }
     var selectedFilterTab by remember { mutableStateOf(0) }
 
-    // Dialog States
     var rescheduleTarget by remember { mutableStateOf<InterviewSchedule?>(null) }
     var rejectTarget by remember { mutableStateOf<InterviewSchedule?>(null) }
+    var cancelTarget by remember { mutableStateOf<InterviewSchedule?>(null) }
     var editTarget by remember { mutableStateOf<InterviewSchedule?>(null) }
+    var deleteTarget by remember { mutableStateOf<InterviewSchedule?>(null) }
 
     val filteredSchedules = remember(safeSchedules, selectedFilterTab) {
         when (selectedFilterTab) {
             1 -> safeSchedules.filter { it.status.equals("Pending", ignoreCase = true) || it.status.equals("Scheduled", ignoreCase = true) }
             2 -> safeSchedules.filter { it.status.equals("Accepted", ignoreCase = true) }
             3 -> safeSchedules.filter { it.status.equals("Reschedule Requested", ignoreCase = true) }
-            4 -> safeSchedules.filter { it.status.equals("Completed", ignoreCase = true) || it.status.equals("Cancelled", ignoreCase = true) }
+            4 -> safeSchedules.filter {
+                it.status.equals("Completed", ignoreCase = true) ||
+                    it.status.equals("Cancelled", ignoreCase = true) ||
+                    it.status.equals("Rejected", ignoreCase = true)
+            }
             else -> safeSchedules
         }
     }
@@ -115,11 +133,11 @@ fun ScheduleScreen(
                         Tab(
                             selected = selectedFilterTab == index,
                             onClick = { selectedFilterTab = index },
-                            modifier = Modifier
-                                .padding(horizontal = 4.dp, vertical = 8.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(if (selectedFilterTab == index) DeepGreenDark else SageGreenLight)
-                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp, vertical = 8.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (selectedFilterTab == index) DeepGreenDark else SageGreenLight)
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                         ) {
                             Text(
                                 text = title,
@@ -191,7 +209,9 @@ fun ScheduleScreen(
                                 onRespondInvite = onRespondInvite,
                                 onRequestReschedule = { rescheduleTarget = schedule },
                                 onRejectConfirm = { rejectTarget = schedule },
-                                onEditSchedule = { editTarget = schedule }
+                                onCancelConfirm = { cancelTarget = schedule },
+                                onEditSchedule = { editTarget = schedule },
+                                onDeleteSchedule = { deleteTarget = schedule }
                             )
                         }
                     }
@@ -200,7 +220,6 @@ fun ScheduleScreen(
         }
     }
 
-    // Dialog: Jobseeker Reschedule Request
     rescheduleTarget?.let { target ->
         RescheduleRequestDialog(
             onDismiss = { rescheduleTarget = null },
@@ -216,16 +235,15 @@ fun ScheduleScreen(
         )
     }
 
-    // Dialog: Jobseeker Reject Confirmation
     rejectTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { rejectTarget = null },
             title = { Text("Reject Interview Invitation", fontWeight = FontWeight.Bold) },
-            text = { Text("Are you sure you want to reject this interview invite? The status will be marked as cancelled.") },
+            text = { Text("Reject this interview invite? The employer will see the status as Rejected. This is different from cancelling an already accepted interview.") },
             confirmButton = {
                 Button(
                     onClick = {
-                        onRespondInvite(target.id, "Cancelled")
+                        onRespondInvite(target.id, "Rejected")
                         rejectTarget = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -239,19 +257,61 @@ fun ScheduleScreen(
         )
     }
 
-    // Dialog: Employer Edit Schedule
+    cancelTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { cancelTarget = null },
+            title = { Text("Cancel Interview", fontWeight = FontWeight.Bold) },
+            text = { Text("Cancel this scheduled interview? The status will be marked as Cancelled, not Rejected.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRespondInvite(target.id, "Cancelled")
+                        cancelTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Confirm Cancel", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { cancelTarget = null }) { Text("Keep interview", color = TextDark) }
+            }
+        )
+    }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete interview", fontWeight = FontWeight.Bold) },
+            text = { Text("Remove this cancelled interview from your list? This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteSchedule(target.id)
+                        deleteTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("Keep", color = TextDark) }
+            }
+        )
+    }
+
     editTarget?.let { target ->
-        EditScheduleDialog(
-            schedule = target,
-            onDismiss = { editTarget = null },
-            onSubmit = { newDate, newTime, newLocation, newNotes ->
-                val updated = target.copy(
-                    date = newDate,
-                    time = newTime,
-                    locationOrLink = newLocation,
-                    notes = newNotes,
-                    status = "Pending" // Change status back to Pending after edit
-                )
+        InterviewEditorScreen(
+            isEdit = true,
+            isSaving = isSaving,
+            currentUserId = user?.id.orEmpty(),
+            defaultCompany = user?.companyName?.ifBlank { user.name }.orEmpty(),
+            applicants = applicants,
+            prefill = prefill,
+            existing = target,
+            onDismiss = { if (!isSaving) editTarget = null },
+            onSave = { updated ->
                 onUpdateSchedule(updated)
                 editTarget = null
             }
@@ -259,12 +319,20 @@ fun ScheduleScreen(
     }
 
     if (showCreateDialog) {
-        CreateScheduleDialog(
-            currentUserId = user?.id.orEmpty(),
-            prefill = prefill,
+        InterviewEditorScreen(
+            isEdit = false,
             isSaving = isSaving,
-            onDismiss = { if (!isSaving) showCreateDialog = false },
-            onSubmit = { schedule ->
+            currentUserId = user?.id.orEmpty(),
+            defaultCompany = user?.companyName?.ifBlank { user.name }.orEmpty(),
+            applicants = applicants,
+            prefill = prefill,
+            onDismiss = {
+                if (!isSaving) {
+                    showCreateDialog = false
+                    onClearPrefill()
+                }
+            },
+            onSave = { schedule ->
                 onCreateSchedule(schedule)
                 showCreateDialog = false
             }
@@ -281,10 +349,14 @@ private fun ScheduleCard(
     onRespondInvite: (scheduleId: String, status: String) -> Unit,
     onRequestReschedule: () -> Unit,
     onRejectConfirm: () -> Unit,
-    onEditSchedule: () -> Unit
+    onCancelConfirm: () -> Unit,
+    onEditSchedule: () -> Unit,
+    onDeleteSchedule: () -> Unit
 ) {
     val context = LocalContext.current
     val statusText = schedule.status.ifBlank { "Pending" }
+    val cancelled = schedule.isCancelledInterview()
+    val meetingKind = detectMeetingKind(schedule.locationOrLink)
 
     Card(
         onClick = onCardClick,
@@ -345,12 +417,19 @@ private fun ScheduleCard(
             Spacer(modifier = Modifier.height(6.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Schedule, contentDescription = null, tint = SageGreenDark, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = SageGreenDark, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("${schedule.date} at ${schedule.time}", fontSize = 13.sp, color = TextDark.copy(alpha = 0.7f))
+                Text(formatDisplayDate(schedule.date), fontSize = 13.sp, color = TextDark.copy(alpha = 0.75f))
             }
 
-            // Display Reschedule Info if present
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Schedule, contentDescription = null, tint = SageGreenDark, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(schedule.time.ifBlank { "Time not set" }, fontSize = 13.sp, color = TextDark.copy(alpha = 0.7f))
+            }
+
             if (schedule.rescheduleReason.isNotBlank() || schedule.preferredTime.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Card(
@@ -369,16 +448,47 @@ private fun ScheduleCard(
                 }
             }
 
+            if (!cancelled && schedule.locationOrLink.isNotBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = { openInterviewDestination(context, schedule.locationOrLink) },
+                    colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = if (meetingKind == MeetingKind.ONLINE) Icons.Default.Videocam else Icons.Default.Map,
+                        contentDescription = null,
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (meetingKind == MeetingKind.ONLINE) "Join Google Meet" else "Open in Google Maps",
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Action Buttons
-            if (isEmployer) {
+            if (cancelled) {
+                OutlinedButton(
+                    onClick = onDeleteSchedule,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Delete from list", fontSize = 12.sp)
+                }
+            } else if (isEmployer) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = onEditSchedule,
                         colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
                     ) {
-                        Text("Edit Schedule", fontSize = 12.sp, color = Color.White)
+                        Text("Edit", fontSize = 12.sp, color = Color.White)
                     }
                     if (statusText.equals("Pending", ignoreCase = true) || statusText.equals("Accepted", ignoreCase = true)) {
                         OutlinedButton(onClick = { onUpdateStatus(schedule.id, "Completed") }) {
@@ -390,19 +500,17 @@ private fun ScheduleCard(
                     }
                 }
             } else {
-                if (statusText.equals("Pending", ignoreCase = true) || statusText.equals("Scheduled", ignoreCase = true) || statusText.equals("Accepted", ignoreCase = true)) {
+                if (statusText.equals("Pending", ignoreCase = true) || statusText.equals("Scheduled", ignoreCase = true)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        if (!statusText.equals("Accepted", ignoreCase = true)) {
-                            Button(
-                                onClick = { onRespondInvite(schedule.id, "Accepted") },
-                                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Accept", fontSize = 11.sp, color = Color.White)
-                            }
+                        Button(
+                            onClick = { onRespondInvite(schedule.id, "Accepted") },
+                            colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Accept", fontSize = 11.sp, color = Color.White)
                         }
                         OutlinedButton(
                             onClick = onRequestReschedule,
@@ -417,37 +525,128 @@ private fun ScheduleCard(
                             Text("Reject", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                         }
                     }
+                } else if (statusText.equals("Accepted", ignoreCase = true) ||
+                    statusText.equals("Reschedule Requested", ignoreCase = true)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onRequestReschedule,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Reschedule", fontSize = 11.sp, color = DeepGreenDark)
+                        }
+                        OutlinedButton(
+                            onClick = onCancelConfirm,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Cancel", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RescheduleRequestDialog(
+internal fun RescheduleRequestDialog(
     onDismiss: () -> Unit,
     onSubmit: (reason: String, preferredTime: String) -> Unit
 ) {
     var reason by remember { mutableStateOf("") }
-    var preferredTime by remember { mutableStateOf("") }
+    val defaultDate = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+    var date by remember { mutableStateOf(defaultDate) }
+    var time by remember { mutableStateOf("10:00 AM") }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState()
+    val timePickerState = rememberTimePickerState(initialHour = 10, initialMinute = 0, is24Hour = false)
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(millis))
+                        }
+                        showDatePicker = false
+                    }
+                ) { Text("OK", color = DeepGreenDark) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel", color = TextDark) }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    if (showTimePicker) {
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val calendar = Calendar.getInstance().apply {
+                            set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                            set(Calendar.MINUTE, timePickerState.minute)
+                        }
+                        time = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(calendar.time)
+                        showTimePicker = false
+                    }
+                ) { Text("OK", color = DeepGreenDark) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) { Text("Cancel", color = TextDark) }
+            },
+            text = { TimePicker(state = timePickerState) }
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Request Reschedule", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Pick the date and time you prefer. The employer will see this and can update the interview.",
+                    fontSize = 13.sp,
+                    color = TextDark.copy(alpha = 0.7f)
+                )
                 OutlinedTextField(
-                    value = preferredTime,
-                    onValueChange = { preferredTime = it },
-                    label = { Text("Preferred Date & Time") },
-                    placeholder = { Text("e.g. 2026-09-01 at 02:00 PM") },
-                    singleLine = true,
+                    value = date,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Preferred date") },
+                    trailingIcon = {
+                        IconButton(onClick = { showDatePicker = true }) {
+                            Icon(Icons.Default.DateRange, contentDescription = "Pick date", tint = DeepGreenDark)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = time,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Preferred time") },
+                    trailingIcon = {
+                        IconButton(onClick = { showTimePicker = true }) {
+                            Icon(Icons.Default.Schedule, contentDescription = "Pick time", tint = DeepGreenDark)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it },
-                    label = { Text("Reason for Reschedule") },
+                    label = { Text("Reason for reschedule") },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -455,8 +654,8 @@ private fun RescheduleRequestDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (reason.isBlank() || preferredTime.isBlank()) return@Button
-                    onSubmit(reason.trim(), preferredTime.trim())
+                    if (reason.isBlank()) return@Button
+                    onSubmit(reason.trim(), "$date at $time")
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
             ) {
@@ -465,285 +664,6 @@ private fun RescheduleRequestDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel", color = TextDark) }
-        }
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun EditScheduleDialog(
-    schedule: InterviewSchedule,
-    onDismiss: () -> Unit,
-    onSubmit: (date: String, time: String, location: String, notes: String) -> Unit
-) {
-    var date by remember { mutableStateOf(schedule.date) }
-    var time by remember { mutableStateOf(schedule.time) }
-    var locationOrLink by remember { mutableStateOf(schedule.locationOrLink) }
-    var notes by remember { mutableStateOf(schedule.notes) }
-
-    var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState()
-
-    if (showDatePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        datePickerState.selectedDateMillis?.let { millis ->
-                            date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(millis))
-                        }
-                        showDatePicker = false
-                    }
-                ) { Text("OK", color = DeepGreenDark) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel", color = TextDark) }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit Interview Schedule", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (schedule.preferredTime.isNotBlank()) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = SageGreenLight),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            Text("Jobseeker Preferred Time:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text(schedule.preferredTime, fontSize = 12.sp)
-                        }
-                    }
-                }
-
-                OutlinedTextField(
-                    value = date,
-                    onValueChange = { date = it },
-                    label = { Text("Date (YYYY-MM-DD)") },
-                    singleLine = true,
-                    readOnly = true,
-                    trailingIcon = {
-                        IconButton(onClick = { showDatePicker = true }) {
-                            Icon(Icons.Default.DateRange, contentDescription = "Pick Date", tint = DeepGreenDark)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = time,
-                    onValueChange = { time = it },
-                    label = { Text("Time (e.g. 10:00 AM)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = locationOrLink,
-                    onValueChange = { locationOrLink = it },
-                    label = { Text("Location or Meeting Link") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onSubmit(date.trim(), time.trim(), locationOrLink.trim(), notes.trim()) },
-                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
-            ) {
-                Text("Update & Resend (Pending)", color = Color.White)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextDark) }
-        }
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CreateScheduleDialog(
-    currentUserId: String,
-    prefill: SchedulePrefill,
-    isSaving: Boolean,
-    onDismiss: () -> Unit,
-    onSubmit: (InterviewSchedule) -> Unit
-) {
-    val context = LocalContext.current
-    var seekerName by remember { mutableStateOf(prefill.seekerName.orEmpty()) }
-    var company by remember { mutableStateOf(prefill.company.orEmpty()) }
-    var title by remember { mutableStateOf(prefill.title.orEmpty()) }
-
-    val defaultDate = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
-    var date by remember { mutableStateOf(defaultDate) }
-    var time by remember { mutableStateOf("10:00 AM") }
-    var locationOrLink by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-
-    var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState()
-
-    if (showDatePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        datePickerState.selectedDateMillis?.let { millis ->
-                            date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(millis))
-                        }
-                        showDatePicker = false
-                    }
-                ) { Text("OK", color = DeepGreenDark) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel", color = TextDark) }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = { if (!isSaving) onDismiss() },
-        title = { Text("Schedule an Interview", fontWeight = FontWeight.Bold, color = TextDark) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                OutlinedTextField(
-                    value = seekerName,
-                    onValueChange = { seekerName = it },
-                    label = { Text("Candidate Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Job Title") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = company,
-                    onValueChange = { company = it },
-                    label = { Text("Company Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = date,
-                    onValueChange = { date = it },
-                    label = { Text("Date (YYYY-MM-DD)") },
-                    singleLine = true,
-                    readOnly = true,
-                    trailingIcon = {
-                        IconButton(onClick = { showDatePicker = true }) {
-                            Icon(Icons.Default.DateRange, contentDescription = "Pick Date", tint = DeepGreenDark)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = time,
-                    onValueChange = { time = it },
-                    label = { Text("Time (e.g. 10:00 AM)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = locationOrLink,
-                    onValueChange = { locationOrLink = it },
-                    label = { Text("Location or Meeting Link") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes (optional)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = !isSaving,
-                onClick = {
-                    val seekerIdStr = prefill.seekerId.orEmpty()
-                    val employerIdStr = prefill.employerId.orEmpty()
-
-                    when {
-                        seekerIdStr.isBlank() -> {
-                            Toast.makeText(context, "Candidate profile is missing.", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        title.isBlank() -> {
-                            Toast.makeText(context, "Job title is required.", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        company.isBlank() -> {
-                            Toast.makeText(context, "Company name is required.", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                    }
-
-                    onSubmit(
-                        InterviewSchedule(
-                            userId = seekerIdStr.trim(),
-                            seekerName = seekerName.trim(),
-                            employerId = employerIdStr.ifBlank { currentUserId },
-                            jobId = "",
-                            title = title.trim(),
-                            company = company.trim(),
-                            date = date.trim(),
-                            time = time.trim(),
-                            locationOrLink = locationOrLink.trim(),
-                            status = "Pending",
-                            notes = notes.trim()
-                        )
-                    )
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark, contentColor = Color.White)
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                } else {
-                    Text("Schedule & Send")
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(enabled = !isSaving, onClick = onDismiss) { Text("Cancel", color = TextDark) }
         }
     )
 }

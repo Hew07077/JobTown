@@ -505,7 +505,7 @@ fun ProfileScreen(
                     }
                 }
 
-                item { Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 16.dp)) { ProfileAccountActions(isEmployer = true, onLogout = onLogout) } }
+                item { Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 16.dp)) { ProfileAccountActions(isEmployer = true, onNotificationsClick = { navController.navigate(com.example.jobtown.Screen.Notifications.route) }, onLogout = onLogout) } }
                 item { Spacer(modifier = Modifier.height(32.dp)) }
             }
         } else {
@@ -642,6 +642,7 @@ fun ProfileScreen(
                             isEmployer = false,
                             resumeUrl = displayedUser?.resumeUrl,
                             onResumeClick = { viewModel.showResumeDialog = true },
+                            onNotificationsClick = { navController.navigate(com.example.jobtown.Screen.Notifications.route) },
                             onLogout = onLogout
                         )
                     }
@@ -1126,6 +1127,7 @@ private fun ProfileAccountActions(
     isEmployer: Boolean,
     resumeUrl: String? = null,
     onResumeClick: () -> Unit = {},
+    onNotificationsClick: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1139,7 +1141,7 @@ private fun ProfileAccountActions(
                 onClick = onResumeClick
             )
         }
-        ProfileOptionItem(icon = Icons.Default.Notifications, title = "Notifications", onClick = { })
+        ProfileOptionItem(icon = Icons.Default.Notifications, title = "Notifications", onClick = onNotificationsClick)
 
         Spacer(modifier = Modifier.height(4.dp))
 

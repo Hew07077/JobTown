@@ -1,5 +1,6 @@
 package com.example.jobtown.ui.employer
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -338,62 +339,59 @@ private fun EmployerApplicationCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Action Buttons: Details, Schedule, Chat
+            OutlinedButton(
+                onClick = onViewDetails,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, DeepGreenDark.copy(alpha = 0.35f))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Visibility,
+                    contentDescription = "Details",
+                    modifier = Modifier.size(18.dp),
+                    tint = DeepGreenDark
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Details", fontSize = 14.sp, color = DeepGreenDark, fontWeight = FontWeight.SemiBold)
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // View Candidate Details Button
-                OutlinedButton(
-                    onClick = onViewDetails,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Visibility,
-                        contentDescription = "Details",
-                        modifier = Modifier.size(14.dp),
-                        tint = DeepGreenDark
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Details", fontSize = 11.sp, color = DeepGreenDark, fontWeight = FontWeight.SemiBold)
-                }
-
-                // Schedule Interview Button
-                OutlinedButton(
-                    onClick = onScheduleInterview,
-                    modifier = Modifier.weight(1.2f),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Event,
-                        contentDescription = "Schedule",
-                        modifier = Modifier.size(14.dp),
-                        tint = DeepGreenDark
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Schedule", fontSize = 11.sp, color = DeepGreenDark, fontWeight = FontWeight.SemiBold)
-                }
-
-                // Chat with Applicant Button
                 Button(
                     onClick = onStartChat,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Chat", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+
+                OutlinedButton(
+                    onClick = onScheduleInterview,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, DeepGreenDark)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Chat,
-                        contentDescription = "Chat",
-                        modifier = Modifier.size(14.dp),
-                        tint = Color.White
+                        Icons.Default.Event,
+                        contentDescription = null,
+                        tint = DeepGreenDark,
+                        modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Chat", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Schedule", fontSize = 14.sp, color = DeepGreenDark, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

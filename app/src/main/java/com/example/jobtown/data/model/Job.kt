@@ -44,6 +44,9 @@ data class Job(
     @SerialName("is_featured")
     val isFeatured: Boolean? = false,
 
+    @SerialName("is_oku_friendly")
+    val isOkuFriendly: Boolean? = false,
+
     @SerialName("employer_id")
     val employerId: String? = null,
 

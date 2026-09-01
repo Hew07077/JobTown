@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -20,6 +21,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -29,9 +32,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -71,6 +79,8 @@ fun ChatDetailScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val composerFocusRequester = remember { FocusRequester() }
 
     val messages by chatViewModel.messagesList.collectAsStateWithLifecycle()
     val reactions by chatViewModel.reactionsList.collectAsStateWithLifecycle()
@@ -208,6 +218,63 @@ fun ChatDetailScreen(
         if (roomId.isNotBlank()) {
             chatViewModel.loadMessages(roomId, currentUserId)
             chatViewModel.sendInitialQuestionOnce(roomId, currentUserId, initialQuestion)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        chatViewModel.eventFlow.collect { event ->
+            when (event) {
+                is ChatUiEvent.ShowToast -> {
+                    Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(editingMessage?.id) {
+        if (editingMessage != null) {
+            kotlinx.coroutines.yield()
+            runCatching { composerFocusRequester.requestFocus() }
+        }
+    }
+
+    fun submitComposer() {
+        val textToSend = messageText.trim()
+        if (textToSend.isBlank()) return
+
+        val currentEdit = editingMessage
+        val currentReplyId = replyingToMessage?.id
+        messageText = ""
+        keyboardController?.hide()
+
+        if (currentEdit != null) {
+            chatViewModel.editMessage(roomId, currentEdit.id, textToSend, currentUserId) { success ->
+                if (success) {
+                    editingMessage = null
+                } else {
+                    messageText = textToSend
+                    editingMessage = currentEdit
+                }
+            }
+        } else {
+            chatViewModel.sendMessage(
+                roomId = roomId,
+                senderId = currentUserId,
+                content = textToSend,
+                replyToId = currentReplyId
+            ) { success ->
+                if (success) {
+                    chatViewModel.loadUserChatRooms(currentUserId)
+                    replyingToMessage = null
+                    coroutineScope.launch {
+                        if (totalLazyItems > 0) {
+                            listState.animateScrollToItem(totalLazyItems - 1)
+                        }
+                    }
+                } else {
+                    messageText = textToSend
+                }
+            }
         }
     }
 
@@ -379,8 +446,12 @@ fun ChatDetailScreen(
                         TextField(
                             value = messageText,
                             onValueChange = { messageText = it },
-                            placeholder = { Text("Type a message...") },
-                            modifier = Modifier.weight(1f),
+                            placeholder = {
+                                Text(if (editingMessage != null) "Edit message..." else "Type a message...")
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(composerFocusRequester),
                             shape = RoundedCornerShape(24.dp),
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = BackgroundWhite,
@@ -388,6 +459,13 @@ fun ChatDetailScreen(
                                 disabledContainerColor = BackgroundWhite,
                                 focusedIndicatorColor = Color.Transparent,
                                 unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                                imeAction = ImeAction.Send
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onSend = { if (messageText.isNotBlank()) submitComposer() }
                             ),
                             maxLines = 4
                         )
@@ -397,37 +475,7 @@ fun ChatDetailScreen(
                         val canSend = messageText.isNotBlank()
 
                         IconButton(
-                            onClick = {
-                                if (canSend) {
-                                    val textToSend = messageText
-                                    val currentEdit = editingMessage
-                                    val currentReplyId = replyingToMessage?.id
-
-                                    messageText = ""
-
-                                    if (currentEdit != null) {
-                                        chatViewModel.editMessage(roomId, currentEdit.id, textToSend, currentUserId)
-                                        editingMessage = null
-                                    } else {
-                                        chatViewModel.sendMessage(
-                                            roomId = roomId,
-                                            senderId = currentUserId,
-                                            content = textToSend,
-                                            replyToId = currentReplyId
-                                        ) { success ->
-                                            if (success) {
-                                                chatViewModel.loadUserChatRooms(currentUserId)
-                                                replyingToMessage = null
-                                                coroutineScope.launch {
-                                                    if (totalLazyItems > 0) {
-                                                        listState.animateScrollToItem(totalLazyItems - 1)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            },
+                            onClick = { if (canSend) submitComposer() },
                             enabled = canSend,
                             modifier = Modifier
                                 .size(44.dp)
@@ -443,7 +491,7 @@ fun ChatDetailScreen(
                             } else {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Send Message",
+                                    contentDescription = if (editingMessage != null) "Save edited message" else "Send Message",
                                     tint = DeepGreenDark
                                 )
                             }

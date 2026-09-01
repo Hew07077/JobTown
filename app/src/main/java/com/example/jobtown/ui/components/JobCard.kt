@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -148,28 +149,23 @@ fun JobCard(
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextDark,
-                            maxLines = 1
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Text(
+                            text = job.companyName.ifBlank { "Company Name" },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextDark.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                text = job.companyName.ifBlank { "Company Name" },
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = TextDark.copy(alpha = 0.8f),
-                                maxLines = 1,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-
-                            Text(
-                                text = " • ",
-                                fontSize = 12.sp,
-                                color = TextDark.copy(alpha = 0.4f)
-                            )
-
                             Icon(
                                 imageVector = Icons.Default.LocationOn,
                                 contentDescription = null,
@@ -181,8 +177,9 @@ fun JobCard(
                                 text = job.location.ifBlank { "Location" },
                                 fontSize = 12.sp,
                                 color = TextDark.copy(alpha = 0.6f),
-                                maxLines = 1,
-                                modifier = Modifier.weight(1f, fill = false)
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
@@ -257,12 +254,12 @@ fun JobCard(
                                 0.5.dp,
                                 if (isSaved) DeepGreenDark.copy(alpha = 0.4f) else Color(0xFFCBD5E1)
                             ),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable(onClick = onToggleSave)
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp))
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier
+                                    .clickable(onClick = onToggleSave)
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
@@ -302,6 +299,21 @@ fun JobCard(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = DeepGreenDark,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                if (job.isOkuFriendly == true) {
+                    Surface(
+                        color = Color(0xFFE3F2FD),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "OKU",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF1565C0),
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }

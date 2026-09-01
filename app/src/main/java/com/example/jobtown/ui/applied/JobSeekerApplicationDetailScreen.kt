@@ -39,6 +39,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -57,13 +60,15 @@ import com.example.jobtown.ui.theme.TextDark
 fun JobseekerApplicationDetailScreen(
     applicationId: String,
     viewModel: AppliedViewModel,
+    jobLocation: String? = null,
     onBackClick: () -> Unit,
-    onChatWithEmployerClick: (JobApplication) -> Unit
+    onChatWithEmployerClick: (JobApplication) -> Unit,
+    onCancelApplication: (JobApplication) -> Unit = {}
 ) {
     val context = LocalContext.current
     val applications by viewModel.applicationsListState.collectAsState()
     val application = applications.find { it.id == applicationId }
-//
+    var showCancelDialog by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -146,7 +151,7 @@ fun JobseekerApplicationDetailScreen(
                         ApplicationDetailRow(
                             icon = Icons.Default.LocationOn,
                             label = "Location",
-                            value = application.location.ifBlank { "Remote" }
+                            value = application.location.ifBlank { jobLocation }.orEmpty().ifBlank { "Not specified" }
                         )
                         AppliedDivider()
                         ApplicationDetailRow(
@@ -234,9 +239,51 @@ fun JobseekerApplicationDetailScreen(
                                 color = Color.White
                             )
                         }
+
+                        if (application.canCancel()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedButton(
+                                onClick = { showCancelDialog = true },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
+                            ) {
+                                Text(
+                                    text = "Cancel application",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (showCancelDialog && application != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showCancelDialog = false },
+            title = { Text("Cancel application?", fontWeight = FontWeight.Bold) },
+            text = { Text("This withdraws your application for ${application.jobTitle}. You can apply again later if the job is still open.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onCancelApplication(application)
+                        showCancelDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
+                ) {
+                    Text("Cancel application", color = Color.White)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showCancelDialog = false }) {
+                    Text("Keep application")
+                }
+            }
+        )
     }
 }

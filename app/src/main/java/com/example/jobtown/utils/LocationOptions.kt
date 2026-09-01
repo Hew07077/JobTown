@@ -26,6 +26,32 @@ object LocationOptions {
         "Other"
     )
 
+    val CITIES_BY_COUNTRY: Map<String, List<String>> = mapOf(
+        "Malaysia" to listOf(
+            "Kuala Lumpur", "Petaling Jaya", "Shah Alam", "Subang Jaya", "Klang",
+            "George Town", "Johor Bahru", "Ipoh", "Melaka", "Seremban",
+            "Kota Kinabalu", "Kuching", "Kuantan", "Alor Setar", "Kuala Terengganu",
+            "Miri", "Sandakan", "Kangar", "Kota Bharu", "Cyberjaya", "Putrajaya", "Other"
+        ),
+        "Singapore" to listOf("Singapore", "Other"),
+        "Indonesia" to listOf("Jakarta", "Surabaya", "Bandung", "Medan", "Bali", "Yogyakarta", "Other"),
+        "Thailand" to listOf("Bangkok", "Chiang Mai", "Phuket", "Pattaya", "Other"),
+        "Vietnam" to listOf("Ho Chi Minh City", "Hanoi", "Da Nang", "Other"),
+        "Philippines" to listOf("Manila", "Cebu", "Davao", "Quezon City", "Other"),
+        "China" to listOf("Beijing", "Shanghai", "Shenzhen", "Guangzhou", "Hangzhou", "Other"),
+        "Hong Kong" to listOf("Hong Kong", "Other"),
+        "Japan" to listOf("Tokyo", "Osaka", "Kyoto", "Yokohama", "Other"),
+        "South Korea" to listOf("Seoul", "Busan", "Incheon", "Other"),
+        "India" to listOf("Bengaluru", "Mumbai", "Delhi", "Hyderabad", "Chennai", "Pune", "Other"),
+        "Australia" to listOf("Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Other"),
+        "United States" to listOf("New York", "San Francisco", "Los Angeles", "Seattle", "Austin", "Chicago", "Other"),
+        "United Kingdom" to listOf("London", "Manchester", "Birmingham", "Edinburgh", "Other"),
+        "United Arab Emirates" to listOf("Dubai", "Abu Dhabi", "Sharjah", "Other")
+    )
+
+    fun citiesFor(country: String): List<String> =
+        CITIES_BY_COUNTRY[country].orEmpty()
+
     data class Address(val city: String, val country: String) {
         fun display(): String = when {
             city.isBlank() && country.isBlank() -> ""

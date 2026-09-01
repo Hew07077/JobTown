@@ -260,7 +260,7 @@ fun MessageBubble(
                     )
                 }
 
-                if (isMe && !message.isDeleted) {
+                if (isMe && !message.isDeleted && !isPending) {
                     if (message.messageType == MessageType.TEXT) {
                         DropdownMenuItem(
                             text = { Text("Edit") },

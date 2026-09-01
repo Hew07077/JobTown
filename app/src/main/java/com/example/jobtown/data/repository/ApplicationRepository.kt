@@ -131,6 +131,28 @@ class ApplicationRepository(private val supabase: SupabaseClient) {
         }
     }
 
+    /** Returns an existing application for this seeker + job, if any. */
+    suspend fun findApplicationForJob(userId: String, jobId: String): JobApplication? = withContext(Dispatchers.IO) {
+        if (userId.isBlank() || jobId.isBlank()) return@withContext null
+        try {
+            supabase.postgrest["applications"]
+                .select {
+                    filter {
+                        eq("user_id", userId)
+                        eq("job_id", jobId)
+                    }
+                }
+                .decodeList<JobApplication>()
+                .firstOrNull()
+        } catch (e: Exception) {
+            Log.e("ApplicationRepository", "Error checking existing application", e)
+            null
+        }
+    }
+
+    suspend fun cancelApplication(applicationId: String): Boolean =
+        updateApplicationStatus(applicationId, "Cancelled")
+
     /** Lets an employer move an application through the pipeline (Pending -> Shortlisted / Interview / Rejected / Accepted). */
     suspend fun updateApplicationStatus(applicationId: String, newStatus: String): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -149,6 +171,12 @@ class ApplicationRepository(private val supabase: SupabaseClient) {
 
     suspend fun applyForJob(application: JobApplication): Boolean = withContext(Dispatchers.IO) {
         try {
+            val existing = findApplicationForJob(application.userId, application.jobId)
+            if (existing != null && !existing.status.equals("Cancelled", ignoreCase = true)) {
+                println("DEBUG_SUPABASE: Duplicate application blocked for job ${application.jobId}")
+                return@withContext false
+            }
+
             println("DEBUG_SUPABASE: Inserting application for userId = '${application.userId}'")
 
             // Map fields explicitly to prevent empty string UUID errors on 'id'
@@ -166,6 +194,9 @@ class ApplicationRepository(private val supabase: SupabaseClient) {
                     put("cover_letter", application.coverLetter)
                     put("resume_url", application.resumeUrl)
                     put("status", application.status)
+                    if (application.location.isNotBlank()) {
+                        put("location", application.location)
+                    }
                     if (application.appliedAt.isNotBlank()) {
                         put("applied_at", application.appliedAt)
                     }

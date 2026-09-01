@@ -21,6 +21,7 @@ class JobFormFields(
     requirements: String = "",
     skills: String = "",
     isFeatured: Boolean = false,
+    isOkuFriendly: Boolean = false,
     useCustomLocation: Boolean = true
 ) {
     var title by mutableStateOf(title)
@@ -33,6 +34,7 @@ class JobFormFields(
     var requirements by mutableStateOf(requirements)
     var skills by mutableStateOf(skills)
     var isFeatured by mutableStateOf(isFeatured)
+    var isOkuFriendly by mutableStateOf(isOkuFriendly)
     var useCustomLocation by mutableStateOf(useCustomLocation)
     var errorMessage by mutableStateOf("")
 
@@ -88,8 +90,12 @@ fun rememberJobFormFields(
     requirements: String = "",
     skills: String = "",
     isFeatured: Boolean = false,
+    isOkuFriendly: Boolean = false,
     useCustomLocation: Boolean = true
-): JobFormFields = remember {
+): JobFormFields = remember(
+    title, company, location, minSalary, maxSalary, type,
+    description, requirements, skills, isFeatured, isOkuFriendly, useCustomLocation
+) {
     JobFormFields(
         title = title,
         company = company,
@@ -101,6 +107,7 @@ fun rememberJobFormFields(
         requirements = requirements,
         skills = skills,
         isFeatured = isFeatured,
+        isOkuFriendly = isOkuFriendly,
         useCustomLocation = useCustomLocation
     )
 }

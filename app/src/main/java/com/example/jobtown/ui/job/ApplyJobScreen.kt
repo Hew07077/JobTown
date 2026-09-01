@@ -44,16 +44,23 @@ fun ApplyJobScreen(
     navController: NavController,
     job: Job,
     currentUser: User?,
+    existingApplication: JobApplication? = null,
     onApplySubmit: (JobApplication) -> Unit,
-    onViewCompanyDetails: (String) -> Unit = {}
+    onViewCompanyDetails: (String) -> Unit = {},
+    onViewExistingApplication: () -> Unit = {}
 ) {
     var isApplying by remember { mutableStateOf(false) }
+    val alreadyApplied = existingApplication != null &&
+        !existingApplication.status.equals("Cancelled", ignoreCase = true)
 
     if (!isApplying) {
         JobDetailsOverviewScreen(
             job = job,
+            alreadyApplied = alreadyApplied,
+            existingStatus = existingApplication?.status.orEmpty(),
             onBackToHome = { navController.popBackStack() },
             onStartApplication = { isApplying = true },
+            onViewExistingApplication = onViewExistingApplication,
             onViewCompanyDetails = onViewCompanyDetails
         )
     } else {
@@ -73,8 +80,11 @@ fun ApplyJobScreen(
 @Composable
 private fun JobDetailsOverviewScreen(
     job: Job,
+    alreadyApplied: Boolean,
+    existingStatus: String,
     onBackToHome: () -> Unit,
     onStartApplication: () -> Unit,
+    onViewExistingApplication: () -> Unit,
     onViewCompanyDetails: (String) -> Unit
 ) {
     val displayTitle = job.title.ifBlank { "Untitled Position" }
@@ -113,12 +123,20 @@ private fun JobDetailsOverviewScreen(
                 shadowElevation = 16.dp,
                 color = Color.White
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                    if (alreadyApplied) {
+                        Text(
+                            text = "You already applied · ${existingStatus.ifBlank { "Pending" }}. Only one application is allowed per job.",
+                            fontSize = 12.sp,
+                            color = DeepGreenDark,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                     OutlinedButton(
                         onClick = onBackToHome,
                         modifier = Modifier
@@ -131,21 +149,33 @@ private fun JobDetailsOverviewScreen(
                     }
 
                     Button(
-                        onClick = onStartApplication,
+                        onClick = if (alreadyApplied) onViewExistingApplication else onStartApplication,
                         modifier = Modifier
                             .weight(1.2f)
                             .height(52.dp),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
                     ) {
-                        Text("Apply Now", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
+                        Text(
+                            if (alreadyApplied) {
+                                "View application"
+                            } else {
+                                "Apply Now"
+                            },
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
+                        if (!alreadyApplied) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                     }
                 }
             }
@@ -728,7 +758,8 @@ private fun ApplicationFlowScreen(
                                             applicantEmail = applicant.email ?: "",
                                             resumeUrl = uploadedResumeUrl,
                                             coverLetter = coverLetterUri.ifBlank { additionalNotes.trim() },
-                                            status = "Pending"
+                                            status = "Pending",
+                                            location = job.location
                                         )
                                         onApplySubmit(application)
                                         successMessage = "Application submitted successfully!"

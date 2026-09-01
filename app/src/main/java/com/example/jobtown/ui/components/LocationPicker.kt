@@ -75,6 +75,12 @@ fun LocationPicker(
                             onClick = {
                                 country = option
                                 expanded = false
+                                val allowed = LocationOptions.citiesFor(option)
+                                if (allowed.isNotEmpty() && city.isNotBlank() &&
+                                    allowed.none { it.equals(city, ignoreCase = true) }
+                                ) {
+                                    city = ""
+                                }
                                 emit()
                             }
                         )
@@ -82,18 +88,32 @@ fun LocationPicker(
                 }
             }
 
-            OutlinedTextField(
-                value = city,
-                onValueChange = {
-                    city = it.take(ValidationUtils.LOCATION_MAX_LENGTH)
-                    emit()
-                },
-                label = { Text("City") },
-                isError = errorText != null,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true
-            )
+            val cityOptions = LocationOptions.citiesFor(country)
+            if (cityOptions.isNotEmpty()) {
+                CityDropdown(
+                    city = city,
+                    options = cityOptions,
+                    onCityChange = {
+                        city = it
+                        emit()
+                    },
+                    modifier = Modifier.weight(1f),
+                    isError = errorText != null
+                )
+            } else {
+                OutlinedTextField(
+                    value = city,
+                    onValueChange = {
+                        city = it.take(ValidationUtils.LOCATION_MAX_LENGTH)
+                        emit()
+                    },
+                    label = { Text("City") },
+                    isError = errorText != null,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true
+                )
+            }
         }
 
         if (errorText != null) {
@@ -125,6 +145,67 @@ fun LocationPicker(
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("Add another branch / office", color = DeepGreenDark, fontWeight = FontWeight.Medium, fontSize = 13.sp)
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CityDropdown(
+    city: String,
+    options: List<String>,
+    onCityChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    isError: Boolean = false
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var customMode by remember(city, options) {
+        mutableStateOf(city.isNotBlank() && options.none { it.equals(city, ignoreCase = true) && it != "Other" })
+    }
+
+    Column(modifier = modifier) {
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = !expanded }
+        ) {
+            OutlinedTextField(
+                value = if (customMode && city.isNotBlank()) city else city,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("City") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                isError = isError,
+                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            if (option == "Other") {
+                                customMode = true
+                                onCityChange("")
+                            } else {
+                                customMode = false
+                                onCityChange(option)
+                            }
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+        if (customMode) {
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = city,
+                onValueChange = { onCityChange(it.take(ValidationUtils.LOCATION_MAX_LENGTH)) },
+                label = { Text("Enter city") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true
+            )
         }
     }
 }
@@ -175,15 +256,25 @@ private fun BranchRow(
             }
         }
 
-        OutlinedTextField(
-            value = city,
-            onValueChange = { onCityChange(it.take(ValidationUtils.LOCATION_MAX_LENGTH)) },
-            label = { Text("City") },
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(12.dp),
-            singleLine = true,
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
-        )
+        val branchCities = LocationOptions.citiesFor(country)
+        if (branchCities.isNotEmpty()) {
+            CityDropdown(
+                city = city,
+                options = branchCities,
+                onCityChange = onCityChange,
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            OutlinedTextField(
+                value = city,
+                onValueChange = { onCityChange(it.take(ValidationUtils.LOCATION_MAX_LENGTH)) },
+                label = { Text("City") },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
+            )
+        }
 
         IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Remove branch", tint = TextDark.copy(alpha = 0.5f))

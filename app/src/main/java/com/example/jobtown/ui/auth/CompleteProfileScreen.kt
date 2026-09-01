@@ -13,10 +13,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Accessible
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -78,26 +81,30 @@ private val DEFAULT_PERKS_OPTIONS = listOf(
 )
 
 // Uploads logo image bytes to the 'avatars' bucket in Supabase Storage
-private suspend fun uploadCompanyLogoToSupabase(
+private suspend fun uploadProfilePhotoToSupabase(
     context: Context,
     userId: String,
-    imageUri: Uri
+    imageUri: Uri,
+    folder: String = "photos"
 ): String? = withContext(Dispatchers.IO) {
     try {
         val inputStream = context.contentResolver.openInputStream(imageUri)
         val bytes = inputStream?.use { it.readBytes() } ?: return@withContext null
-        val filePath = "logos/$userId.jpg"
+        val filePath = "$folder/$userId.jpg"
 
-        // Upload file to 'avatars' storage bucket
         SupabaseClient.client.storage.from("avatars").upload(filePath, bytes, upsert = true)
-
-        // Retrieve public URL
         SupabaseClient.client.storage.from("avatars").publicUrl(filePath)
     } catch (e: Exception) {
         e.printStackTrace()
         null
     }
 }
+
+private suspend fun uploadCompanyLogoToSupabase(
+    context: Context,
+    userId: String,
+    imageUri: Uri
+): String? = uploadProfilePhotoToSupabase(context, userId, imageUri, folder = "logos")
 
 private fun isRateLimited(message: String): Boolean =
     message.contains("rate limit", ignoreCase = true) ||
@@ -219,11 +226,28 @@ fun CompleteProfileScreen(
     var companyTagline by remember { mutableStateOf("") }
     var selectedPerks by remember { mutableStateOf(setOf<String>()) }
     var logoUri by remember { mutableStateOf<Uri?>(null) }
+    var photoUri by remember { mutableStateOf<Uri?>(null) }
+    var resumeUri by remember { mutableStateOf<Uri?>(null) }
+    var resumeFileName by remember { mutableStateOf("") }
+    var isOku by remember { mutableStateOf(false) }
 
     val logoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         logoUri = uri
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        photoUri = uri
+    }
+
+    val resumePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        resumeUri = uri
+        resumeFileName = uri?.lastPathSegment?.substringAfterLast("/").orEmpty()
     }
 
     // Validation Errors
@@ -361,6 +385,104 @@ fun CompleteProfileScreen(
                             fontSize = 11.sp,
                             color = TextDark.copy(alpha = 0.6f)
                         )
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Profile photo",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextDark
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Box(
+                            contentAlignment = Alignment.BottomEnd,
+                            modifier = Modifier.size(90.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = SageGreenLight,
+                                border = androidx.compose.foundation.BorderStroke(2.dp, SageGreenDark),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clickable { photoPickerLauncher.launch("image/*") }
+                            ) {
+                                if (photoUri != null) {
+                                    AsyncImage(
+                                        model = photoUri,
+                                        contentDescription = "Profile photo",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Person,
+                                            contentDescription = null,
+                                            tint = DeepGreenDark,
+                                            modifier = Modifier.size(40.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Surface(
+                                shape = CircleShape,
+                                color = DeepGreenDark,
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clickable {
+                                        if (photoUri != null) photoUri = null else photoPickerLauncher.launch("image/*")
+                                    }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = if (photoUri != null) Icons.Filled.Close else Icons.Filled.AddPhotoAlternate,
+                                        contentDescription = "Upload photo",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = if (photoUri != null) "Tap to change photo" else "Tap to upload a profile photo",
+                            fontSize = 11.sp,
+                            color = TextDark.copy(alpha = 0.6f)
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedButton(
+                            onClick = { resumePickerLauncher.launch("application/pdf") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Filled.Description, contentDescription = null, tint = DeepGreenDark)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (resumeUri != null) {
+                                    "Resume selected${if (resumeFileName.isNotBlank()) ": $resumeFileName" else ""}"
+                                } else {
+                                    "Upload resume (optional)"
+                                },
+                                color = DeepGreenDark,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                        }
                     }
                 }
             }
@@ -577,6 +699,53 @@ fun CompleteProfileScreen(
                 }
             }
 
+            if (!isEmployer) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isOku = !isOku }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isOku,
+                            onCheckedChange = { isOku = it },
+                            colors = CheckboxDefaults.colors(checkedColor = DeepGreenDark)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Filled.Accessible,
+                                    contentDescription = null,
+                                    tint = DeepGreenDark,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "I am an OKU applicant",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextDark
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Optional. Employers with OKU-friendly jobs can match you more easily.",
+                                fontSize = 12.sp,
+                                color = TextDark.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                }
+            }
+
             // Portfolio / Website URL
             OutlinedTextField(
                 value = draft.portfolioUrl,
@@ -585,7 +754,7 @@ fun CompleteProfileScreen(
                     portfolioUrlError = null
                     errorMessage = ""
                 },
-                label = { Text(if (isEmployer) "Company Website URL" else "Portfolio / LinkedIn / GitHub URL") },
+                label = { Text(if (isEmployer) "Company Website URL (optional)" else "Portfolio / LinkedIn / GitHub URL (optional)") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 isError = portfolioUrlError != null,
                 supportingText = {
@@ -673,6 +842,18 @@ fun CompleteProfileScreen(
                             var uploadedLogoUrl: String? = null
                             if (isEmployer && logoUri != null) {
                                 uploadedLogoUrl = uploadCompanyLogoToSupabase(context, finalUserId, logoUri!!)
+                            } else if (!isEmployer && photoUri != null) {
+                                uploadedLogoUrl = uploadProfilePhotoToSupabase(context, finalUserId, photoUri!!)
+                            }
+
+                            var uploadedResumeUrl = user.resumeUrl
+                            if (!isEmployer && resumeUri != null) {
+                                val resumeBytes = withContext(Dispatchers.IO) {
+                                    context.contentResolver.openInputStream(resumeUri!!)?.use { it.readBytes() }
+                                }
+                                if (resumeBytes != null) {
+                                    uploadedResumeUrl = UserRepository.uploadResume(finalUserId, resumeBytes).orEmpty()
+                                }
                             }
 
                             val newUser = user.copy(
@@ -690,6 +871,8 @@ fun CompleteProfileScreen(
                                 experienceLevel = draft.experienceLevel.trim(),
                                 portfolioUrl = draft.portfolioUrl.trim(),
                                 avatarUrl = uploadedLogoUrl ?: user.avatarUrl,
+                                resumeUrl = uploadedResumeUrl,
+                                isOku = isOku,
                                 createdAt = Clock.System.now().toString()
                             )
 

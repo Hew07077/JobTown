@@ -265,7 +265,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         onResult: (Boolean) -> Unit = {}
     ) {
         val trimmed = content.trim()
-        if (roomId.isBlank() || trimmed.isBlank()) {
+        if (roomId.isBlank() || senderId.isBlank() || trimmed.isBlank()) {
             onResult(false)
             return
         }
@@ -486,12 +486,22 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         }
     }
 
-    fun editMessage(roomId: String, messageId: String, newText: String, currentUserId: String = "") {
+    fun editMessage(
+        roomId: String,
+        messageId: String,
+        newText: String,
+        currentUserId: String = "",
+        onResult: (Boolean) -> Unit = {}
+    ) {
         val trimmed = newText.trim()
-        if (roomId.isBlank() || messageId.isBlank() || trimmed.isBlank()) return
+        if (roomId.isBlank() || messageId.isBlank() || trimmed.isBlank() || messageId.startsWith("temp_")) {
+            onResult(false)
+            return
+        }
 
         viewModelScope.launch {
             val wasLatest = isLatestMessageInRoom(messageId)
+            val previous = _messagesList.value.firstOrNull { it.id == messageId }
 
             _messagesList.update { current ->
                 current.map { msg ->
@@ -506,9 +516,23 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
             }
 
             try {
-                messageRepository.editMessage(roomId, messageId, trimmed)
+                val success = messageRepository.editMessage(roomId, messageId, trimmed)
+                if (!success && previous != null) {
+                    _messagesList.update { current ->
+                        current.map { msg -> if (msg.id == messageId) previous else msg }
+                    }
+                    _eventFlow.emit(ChatUiEvent.ShowToast("Couldn't save the edited message. Try again."))
+                }
+                onResult(success)
             } catch (e: Exception) {
                 Log.e(TAG, "Exception while editing message", e)
+                if (previous != null) {
+                    _messagesList.update { current ->
+                        current.map { msg -> if (msg.id == messageId) previous else msg }
+                    }
+                }
+                _eventFlow.emit(ChatUiEvent.ShowToast("Error: ${e.localizedMessage}"))
+                onResult(false)
             }
         }
     }

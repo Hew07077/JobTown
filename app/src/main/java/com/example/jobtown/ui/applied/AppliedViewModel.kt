@@ -85,6 +85,18 @@ class AppliedViewModel(
         }
     }
 
+    fun findApplicationForJob(userId: String, jobId: String): JobApplication? {
+        return _applicationsList.value.firstOrNull { app ->
+            app.userId == userId &&
+                app.jobId == jobId &&
+                !app.status.equals("Cancelled", ignoreCase = true)
+        }
+    }
+
+    fun cancelApplication(applicationId: String, onResult: (Boolean) -> Unit = {}) {
+        updateApplicationStatus(applicationId, "Cancelled", onResult)
+    }
+
     fun updateApplicationStatus(
         applicationId: String,
         newStatus: String,
