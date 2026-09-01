@@ -11,8 +11,6 @@ import com.example.jobtown.data.model.MessageReaction
 import com.example.jobtown.data.model.MessageType
 import com.example.jobtown.data.repository.MessageRepository
 import com.example.jobtown.data.repository.RoomPresence
-import java.util.UUID
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,8 +25,6 @@ import kotlinx.coroutines.launch
 sealed interface ChatUiEvent {
     data class ShowToast(val message: String) : ChatUiEvent
 }
-
-@OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModel(private val messageRepository: MessageRepository) : ViewModel() {
 
     private val _chatRooms = MutableStateFlow<List<ChatRoom>>(emptyList())
@@ -74,7 +70,9 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
     val eventFlow: SharedFlow<ChatUiEvent> = _eventFlow.asSharedFlow()
 
     private var activeRoomId: String? = null
-    private var activeRoomSubJob: Job? = null
+    private var roomListenerJob: Job? = null
+    private var reactionListenerJob: Job? = null
+    private var presenceListenerJob: Job? = null
     private var roomsListenerJob: Job? = null
 
     private val initialQuestionSentForRooms = mutableSetOf<String>()
@@ -89,7 +87,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
             try {
                 _chatRooms.value = messageRepository.getChatRoomsForUser(userId)
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading initial chat rooms", e)
+                Log.e(TAG, "Error loading chat rooms", e)
             } finally {
                 _isLoadingRooms.value = false
             }
@@ -152,16 +150,16 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
 
         if (activeRoomId != roomId) {
             _messagesList.value = emptyList()
-            _reactionsList.value = emptyList()
-            _roomPresence.value = RoomPresence()
         }
 
         activeRoomId = roomId
-        activeRoomSubJob?.cancel()
+        roomListenerJob?.cancel()
+        reactionListenerJob?.cancel()
+        presenceListenerJob?.cancel()
         _hasMoreMessages.value = true
         _messageSearchQuery.value = ""
 
-        activeRoomSubJob = viewModelScope.launch {
+        roomListenerJob = viewModelScope.launch {
             _isLoadingMessages.value = true
             try {
                 val fetchedMessages = messageRepository.getMessagesForRoom(roomId)
@@ -175,56 +173,54 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                     messageRepository.markMessagesAsRead(roomId, currentUserId)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading messages for room $roomId", e)
+                Log.e(TAG, "Error loading messages", e)
             } finally {
                 _isLoadingMessages.value = false
             }
 
-            // Real-time Messages Stream
-            launch {
-                messageRepository.observeNewMessages(roomId)
-                    .catch { e -> Log.e(TAG, "Error in realtime message stream", e) }
-                    .collect { incoming ->
-                        if (activeRoomId != roomId) return@collect
-                        mergeIncomingMessage(incoming)
+            messageRepository.observeNewMessages(roomId)
+                .catch { e -> Log.e(TAG, "Error in realtime message stream", e) }
+                .collect { incoming ->
+                    if (activeRoomId != roomId) return@collect
+                    mergeIncomingMessage(incoming)
 
-                        if (isLatestMessageInRoom(incoming.id)) {
-                            val snippet = when (incoming.messageType) {
-                                MessageType.IMAGE -> "[Photo]"
-                                MessageType.FILE -> "[Document]"
-                                else -> incoming.text
-                            }
-                            updateLocalRoomPreview(roomId, snippet, incoming.timestamp)
+                    // Only refresh the chat-list preview if this message is actually the
+                    // latest one in the room - otherwise an edit/delete on an older message
+                    // would incorrectly overwrite the preview shown in the chat list.
+                    if (isLatestMessageInRoom(incoming.id)) {
+                        val snippet = when (incoming.messageType) {
+                            MessageType.IMAGE -> "[Photo]"
+                            MessageType.FILE -> "[Document]"
+                            else -> incoming.text
                         }
-
-                        if (currentUserId.isNotBlank() && incoming.senderId != currentUserId) {
-                            messageRepository.markMessagesAsRead(roomId, currentUserId)
-                        }
+                        updateLocalRoomPreview(roomId, snippet, incoming.timestamp)
                     }
-            }
 
-            // Real-time Reactions Stream
-            launch {
-                messageRepository.observeReactions(roomId)
-                    .catch { e -> Log.e(TAG, "Error in reactions stream", e) }
-                    .collect { reactions ->
-                        if (activeRoomId == roomId) {
-                            _reactionsList.value = reactions
-                        }
+                    if (currentUserId.isNotBlank() && incoming.senderId != currentUserId) {
+                        messageRepository.markMessagesAsRead(roomId, currentUserId)
                     }
-            }
-
-            // Real-time Presence Stream
-            if (currentUserId.isNotBlank()) {
-                launch {
-                    messageRepository.observeRoomPresence(roomId, currentUserId)
-                        .catch { e -> Log.e(TAG, "Error in presence stream", e) }
-                        .collect { presence ->
-                            if (activeRoomId == roomId) {
-                                _roomPresence.value = presence
-                            }
-                        }
                 }
+        }
+
+        reactionListenerJob = viewModelScope.launch {
+            messageRepository.observeReactions(roomId)
+                .catch { e -> Log.e(TAG, "Error in reactions stream", e) }
+                .collect { reactions ->
+                    if (activeRoomId == roomId) {
+                        _reactionsList.value = reactions
+                    }
+                }
+        }
+
+        if (currentUserId.isNotBlank()) {
+            presenceListenerJob = viewModelScope.launch {
+                messageRepository.observeRoomPresence(roomId, currentUserId)
+                    .catch { e -> Log.e(TAG, "Error in presence stream", e) }
+                    .collect { presence ->
+                        if (activeRoomId == roomId) {
+                            _roomPresence.value = presence
+                        }
+                    }
             }
         }
     }
@@ -242,7 +238,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 } else {
                     _hasMoreMessages.value = olderPage.size >= MessageRepository.DEFAULT_PAGE_SIZE
                     _messagesList.update { current ->
-                        val existingIds = current.mapTo(HashSet()) { it.id }
+                        val existingIds = current.map { it.id }.toSet()
                         val newUnique = olderPage.filterNot { existingIds.contains(it.id) }
                         newUnique + current
                     }
@@ -277,7 +273,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         viewModelScope.launch {
             _isSendingMessage.value = true
             val now = System.currentTimeMillis()
-            val tempId = "temp_${UUID.randomUUID()}"
+            val tempId = "temp_$now"
 
             val tempMessage = ChatMessage(
                 id = tempId,
@@ -314,13 +310,17 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                     replaceTempMessage(tempId, confirmed)
                     onResult(true)
                 } else {
-                    markMessageFailed(tempId)
+                    _messagesList.update { current ->
+                        current.map { if (it.id == tempId) it.copy(isFailed = true) else it }
+                    }
                     _eventFlow.emit(ChatUiEvent.ShowToast("Failed to post message to database"))
                     onResult(false)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Exception while sending message", e)
-                markMessageFailed(tempId)
+                _messagesList.update { current ->
+                    current.map { if (it.id == tempId) it.copy(isFailed = true) else it }
+                }
                 _eventFlow.emit(ChatUiEvent.ShowToast("Error: ${e.localizedMessage}"))
                 onResult(false)
             } finally {
@@ -352,12 +352,9 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                         else -> failedMessage.text
                     }
                     updateLocalRoomPreview(roomId, snippet, confirmed.timestamp)
-                } else {
-                    markMessageFailed(failedMessage.id)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Exception while retrying message", e)
-                markMessageFailed(failedMessage.id)
             }
         }
     }
@@ -396,11 +393,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
     fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean) {
         if (roomId.isBlank() || userId.isBlank()) return
         viewModelScope.launch {
-            try {
-                messageRepository.sendTypingStatus(roomId, userId, isTyping)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to update typing status", e)
-            }
+            messageRepository.sendTypingStatus(roomId, userId, isTyping)
         }
     }
 
@@ -422,7 +415,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         viewModelScope.launch {
             _isUploadingAttachment.value = true
             val now = System.currentTimeMillis()
-            val tempId = "temp_att_${UUID.randomUUID()}"
+            val tempId = "temp_att_$now"
 
             val tempAttachmentMessage = ChatMessage(
                 id = tempId,
@@ -481,8 +474,11 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error uploading and sending attachment", e)
-                markMessageFailed(tempId, "Failed to send attachment")
-                _eventFlow.emit(ChatUiEvent.ShowToast("Attachment upload failed: ${e.localizedMessage}"))
+                _messagesList.update { list ->
+                    list.map {
+                        if (it.id == tempId) it.copy(isFailed = true, text = "Failed to send attachment") else it
+                    }
+                }
                 onComplete(false)
             } finally {
                 _isUploadingAttachment.value = false
@@ -596,16 +592,6 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         }
     }
 
-    private fun markMessageFailed(messageId: String, failedText: String? = null) {
-        _messagesList.update { current ->
-            current.map { msg ->
-                if (msg.id == messageId) {
-                    msg.copy(isFailed = true, text = failedText ?: msg.text)
-                } else msg
-            }
-        }
-    }
-
     private fun replaceTempMessage(tempId: String, confirmed: ChatMessage) {
         _messagesList.update { current ->
             val hasConfirmed = current.any { it.id == confirmed.id }
@@ -615,10 +601,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
             } else {
                 val index = current.indexOfFirst { it.id == tempId }
                 if (index != -1) {
-                    buildList {
-                        addAll(current)
-                        set(index, confirmed)
-                    }
+                    current.toMutableList().apply { set(index, confirmed) }
                 } else {
                     current + confirmed
                 }
@@ -630,10 +613,7 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
         _messagesList.update { current ->
             val index = current.indexOfFirst { it.id == incoming.id }
             if (index != -1) {
-                return@update buildList {
-                    addAll(current)
-                    set(index, incoming)
-                }
+                return@update current.toMutableList().apply { set(index, incoming) }
             }
 
             val filtered = current.filterNot {
@@ -648,17 +628,16 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
             if (insertIndex == -1) {
                 filtered + incoming
             } else {
-                buildList {
-                    addAll(filtered)
-                    add(insertIndex, incoming)
-                }
+                filtered.toMutableList().apply { add(insertIndex, incoming) }
             }
         }
     }
 
     override fun onCleared() {
         super.onCleared()
-        activeRoomSubJob?.cancel()
+        roomListenerJob?.cancel()
+        reactionListenerJob?.cancel()
+        presenceListenerJob?.cancel()
         roomsListenerJob?.cancel()
     }
 

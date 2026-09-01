@@ -11,11 +11,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -37,29 +35,35 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-private val fullDateFormatter by lazy { SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault()) }
-
 /**
  * Groups messages chronologically by human-readable calendar dates ("Today", "Yesterday", or "MMMM dd, yyyy").
  */
 fun groupMessagesByDate(messages: List<ChatMessage>): Map<String, List<ChatMessage>> {
-    val todayCal = Calendar.getInstance()
-    val yesterdayCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+    val fullFormatter = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
+    val todayCal = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+
+
     val msgCal = Calendar.getInstance()
 
     return messages.groupBy { message ->
         msgCal.timeInMillis = message.timestamp
+        msgCal.set(Calendar.HOUR_OF_DAY, 0)
+        msgCal.set(Calendar.MINUTE, 0)
+        msgCal.set(Calendar.SECOND, 0)
+        msgCal.set(Calendar.MILLISECOND, 0)
 
-        val isSameYear = todayCal.get(Calendar.YEAR) == msgCal.get(Calendar.YEAR)
-        val isToday = isSameYear && todayCal.get(Calendar.DAY_OF_YEAR) == msgCal.get(Calendar.DAY_OF_YEAR)
+        val diffInMillis = todayCal.timeInMillis - msgCal.timeInMillis
+        val diffInDays = diffInMillis / (24 * 60 * 60 * 1000)
 
-        val isYesterday = yesterdayCal.get(Calendar.YEAR) == msgCal.get(Calendar.YEAR) &&
-                yesterdayCal.get(Calendar.DAY_OF_YEAR) == msgCal.get(Calendar.DAY_OF_YEAR)
-
-        when {
-            isToday -> "Today"
-            isYesterday -> "Yesterday"
-            else -> fullDateFormatter.format(Date(message.timestamp))
+        when (diffInDays) {
+            0L -> "Today"
+            1L -> "Yesterday"
+            else -> fullFormatter.format(Date(message.timestamp))
         }
     }
 }
@@ -96,9 +100,7 @@ fun startVoiceRecording(
         onStart(recorder, audioFile)
     } catch (e: Exception) {
         Log.e("ChatUtils", "Failed to start voice recording", e)
-        try {
-            recorder?.release()
-        } catch (ignored: Exception) {}
+        recorder?.release()
         if (audioFile?.exists() == true) {
             audioFile.delete()
         }
@@ -113,9 +115,10 @@ fun stopVoiceRecording(
     audioFile: File?
 ): File? {
     return try {
-        recorder?.stop()
-        recorder?.release()
-
+        recorder?.apply {
+            stop()
+            release()
+        }
         if (audioFile != null && audioFile.exists() && audioFile.length() > 0) {
             audioFile
         } else {
@@ -184,21 +187,6 @@ fun PhotoPreviewDialog(
 ) {
     var captionText by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
-
-    val handleSendAction = remember(imageUri, captionText, isSending) {
-        {
-            if (!isSending) {
-                isSending = true
-                val preparedFile = getFileFromContentUri(context, imageUri)
-                if (preparedFile != null) {
-                    onSend(preparedFile, captionText)
-                } else {
-                    Log.e("PhotoPreview", "Failed to resolve local file from URI")
-                    isSending = false
-                }
-            }
-        }
-    }
 
     // System Back Press Handler
     BackHandler(enabled = !isSending) {
@@ -278,8 +266,6 @@ fun PhotoPreviewDialog(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(24.dp),
                             enabled = !isSending,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(onSend = { handleSendAction() }),
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.DarkGray,
                                 unfocusedContainerColor = Color.DarkGray,
@@ -294,7 +280,18 @@ fun PhotoPreviewDialog(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         IconButton(
-                            onClick = { handleSendAction() },
+                            onClick = {
+                                if (!isSending) {
+                                    isSending = true
+                                    val preparedFile = getFileFromContentUri(context, imageUri)
+                                    if (preparedFile != null) {
+                                        onSend(preparedFile, captionText)
+                                    } else {
+                                        Log.e("PhotoPreview", "Failed to resolve local file from URI")
+                                        isSending = false
+                                    }
+                                }
+                            },
                             enabled = !isSending,
                             modifier = Modifier
                                 .size(44.dp)

@@ -1,167 +1,224 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.example.jobtown.ui.chat
 
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.util.Log
+import android.webkit.MimeTypeMap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Reply
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavController
 import com.example.jobtown.data.model.ChatMessage
 import com.example.jobtown.data.model.MessageType
-import com.example.jobtown.data.repository.MessageRepository
+import com.example.jobtown.data.model.toReactionGroups
+import com.example.jobtown.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatDetailScreen(
+    navController: NavController,
     roomId: String,
-    currentUserId: String,
-    titleName: String,
-    repository: MessageRepository,
-    onBackClick: () -> Unit
+    companyName: String,
+    chatTitle: String,
+    initialQuestion: String = "",
+    currentUserId: String = "1",
+    chatViewModel: ChatViewModel,
+    onNavigateToSchedule: () -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
 
-    var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
-    var inputText by remember { mutableStateOf("") }
+    var messageText by remember { mutableStateOf("") }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var replyingToMessage by remember { mutableStateOf<ChatMessage?>(null) }
-    var isUploading by remember { mutableStateOf(false) }
-    var isOtherUserTyping by remember { mutableStateOf(false) }
-    var isOtherUserOnline by remember { mutableStateOf(false) }
 
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { selectedUri ->
-            scope.launch {
-                isUploading = true
-                try {
-                    val bytes = context.contentResolver.openInputStream(selectedUri)?.use { it.readBytes() }
-                    val mimeType = context.contentResolver.getType(selectedUri) ?: "application/octet-stream"
-                    val fileName = selectedUri.lastPathSegment ?: "attachment"
+    var showAttachmentSheet by remember { mutableStateOf(false) }
+    var showInterviewDialog by remember { mutableStateOf(false) }
+    var isSearchActive by remember { mutableStateOf(false) }
+    var inChatSearchQuery by remember { mutableStateOf("") }
+    var hasScrolledToBottomInitially by remember { mutableStateOf(false) }
 
-                    if (bytes != null) {
-                        val publicUrl = repository.uploadChatAttachment(
-                            roomId = roomId,
-                            fileName = fileName,
-                            bytes = bytes,
-                            mimeType = mimeType
-                        )
-                        val messageType = if (mimeType.startsWith("image/")) MessageType.IMAGE else MessageType.FILE
-                        repository.sendMessage(
-                            roomId = roomId,
-                            senderId = currentUserId,
-                            content = publicUrl,
-                            type = messageType
-                        )
-                    }
-                } catch (_: Exception) {
-                    // Handle upload error (e.g. show snackbar)
-                } finally {
-                    isUploading = false
-                }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val messages by chatViewModel.messagesList.collectAsStateWithLifecycle()
+    val reactions by chatViewModel.reactionsList.collectAsStateWithLifecycle()
+    val roomPresence by chatViewModel.roomPresence.collectAsStateWithLifecycle()
+
+    val isMessagesLoading by chatViewModel.isLoadingMessages.collectAsStateWithLifecycle()
+    val isSendingMessage by chatViewModel.isSendingMessage.collectAsStateWithLifecycle()
+    val isUploadingAttachment by chatViewModel.isUploadingAttachment.collectAsStateWithLifecycle()
+    val isLoadingOlderMessages by chatViewModel.isLoadingOlderMessages.collectAsStateWithLifecycle()
+    val hasMoreMessages by chatViewModel.hasMoreMessages.collectAsStateWithLifecycle()
+
+    val displayCompanyName = companyName.ifBlank { "Company Name" }
+    val displayPosition = chatTitle.ifBlank { "Position" }
+
+    val displayedMessages = remember(messages, inChatSearchQuery) {
+        if (inChatSearchQuery.isBlank()) {
+            messages
+        } else {
+            messages.filter { it.text.contains(inChatSearchQuery, ignoreCase = true) }
+        }
+    }
+
+    val isNearBottom by remember {
+        derivedStateOf {
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val totalItems = listState.layoutInfo.totalItemsCount
+            totalItems == 0 || lastVisible >= totalItems - 2
+        }
+    }
+
+    val reactionsByMessage = remember(reactions, currentUserId) {
+        reactions.groupBy { it.messageId }
+            .mapValues { (_, messageReactions) -> messageReactions.toReactionGroups(currentUserId) }
+    }
+
+    val groupedMessages = remember(displayedMessages) { groupMessagesByDate(displayedMessages) }
+    val (messageIndexMap, totalLazyItems) = remember(groupedMessages) {
+        val map = mutableMapOf<String, Int>()
+        var currentIndex = 0
+        groupedMessages.forEach { (_, list) ->
+            currentIndex++
+            list.forEach { msg ->
+                map[msg.id] = currentIndex
+                currentIndex++
             }
         }
+        Pair(map, currentIndex)
+    }
+
+    // Pagination: fetch older history once the user scrolls near the top of what's loaded.
+    LaunchedEffect(roomId) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .collect { firstVisible ->
+                if (firstVisible <= 3 &&
+                    hasMoreMessages &&
+                    !isLoadingOlderMessages &&
+                    !isMessagesLoading &&
+                    inChatSearchQuery.isBlank()
+                ) {
+                    chatViewModel.loadOlderMessages(roomId)
+                }
+            }
+    }
+
+    // Typing indicator: debounce keystrokes so we don't broadcast on every character
+    LaunchedEffect(roomId, currentUserId) {
+        if (roomId.isBlank() || currentUserId.isBlank()) return@LaunchedEffect
+        snapshotFlow { messageText }
+            .collectLatest { text ->
+                if (text.isBlank()) {
+                    chatViewModel.sendTypingStatus(roomId, currentUserId, false)
+                } else {
+                    chatViewModel.sendTypingStatus(roomId, currentUserId, true)
+                    delay(3000)
+                    chatViewModel.sendTypingStatus(roomId, currentUserId, false)
+                }
+            }
+    }
+
+    // Clear typing status on screen dispose
+    DisposableEffect(roomId, currentUserId) {
+        onDispose {
+            if (roomId.isNotBlank() && currentUserId.isNotBlank()) {
+                chatViewModel.sendTypingStatus(roomId, currentUserId, false)
+            }
+        }
+    }
+
+    fun readBytesAndSendWithCaption(uri: Uri, type: MessageType, caption: String) {
+        coroutineScope.launch {
+            try {
+                val resolver = context.contentResolver
+                val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes == null) return@launch
+                val mimeType = resolver.getType(uri)
+                    ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString())
+                        ?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
+                    ?: "application/octet-stream"
+                val rawFileName = uri.lastPathSegment?.substringAfterLast("/") ?: "attachment"
+                val finalFileName = if (caption.isNotBlank()) caption else rawFileName
+
+                chatViewModel.sendAttachment(
+                    roomId = roomId,
+                    senderId = currentUserId,
+                    bytes = bytes,
+                    fileName = finalFileName,
+                    mimeType = mimeType,
+                    type = type,
+                    replyToId = replyingToMessage?.id
+                ) { success ->
+                    if (success) {
+                        replyingToMessage = null
+                        chatViewModel.loadUserChatRooms(currentUserId)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("ChatDetailScreen", "Error reading attachment", e)
+            }
+        }
+    }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { selectedImageUri = it }
+    }
+
+    val documentPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { readBytesAndSendWithCaption(it, MessageType.FILE, "") }
     }
 
     LaunchedEffect(roomId) {
-        messages = repository.getMessagesForRoom(roomId)
-        repository.markMessagesAsRead(roomId, currentUserId)
-
-        launch {
-            repository.observeNewMessages(roomId).collect { newOrUpdatedMsg ->
-                messages = (messages.filterNot { it.id == newOrUpdatedMsg.id } + newOrUpdatedMsg)
-                    .sortedBy { it.timestamp }
-            }
-        }
-
-        launch {
-            repository.observeRoomPresence(roomId, currentUserId).collect { presence ->
-                isOtherUserOnline = presence.onlineUserIds.any { it != currentUserId }
-                isOtherUserTyping = presence.typingUserIds.any { it != currentUserId }
-            }
+        if (roomId.isNotBlank()) {
+            chatViewModel.loadMessages(roomId, currentUserId)
+            chatViewModel.sendInitialQuestionOnce(roomId, currentUserId, initialQuestion)
         }
     }
 
-    // Auto-scroll on new messages
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
-        }
-    }
-
-    // Debounced Typing Status Updates
-    LaunchedEffect(inputText) {
-        if (inputText.isNotBlank()) {
-            repository.sendTypingStatus(roomId, currentUserId, true)
-            delay(1500)
-            repository.sendTypingStatus(roomId, currentUserId, false)
-        } else {
-            repository.sendTypingStatus(roomId, currentUserId, false)
+    LaunchedEffect(messages) {
+        if (messages.isNotEmpty() && totalLazyItems > 0 && !isSearchActive) {
+            if (!hasScrolledToBottomInitially) {
+                listState.scrollToItem(totalLazyItems - 1)
+                hasScrolledToBottomInitially = true
+            } else if (isNearBottom) {
+                listState.animateScrollToItem(totalLazyItems - 1)
+            }
         }
     }
 
@@ -169,410 +226,448 @@ fun ChatDetailScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = titleName,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                    if (isSearchActive) {
+                        TextField(
+                            value = inChatSearchQuery,
+                            onValueChange = { inChatSearchQuery = it },
+                            placeholder = { Text("Search in chat...", fontSize = 14.sp) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            )
                         )
-                        Text(
-                            text = when {
-                                isOtherUserTyping -> "typing..."
-                                isOtherUserOnline -> "Online"
-                                else -> "Offline"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isOtherUserTyping || isOtherUserOnline) {
-                                MaterialTheme.colorScheme.primary
+                    } else {
+                        Column {
+                            Text(
+                                text = displayCompanyName,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextDark
+                            )
+                            val otherTyping = roomPresence.typingUserIds.isNotEmpty()
+                            if (otherTyping) {
+                                Text(
+                                    text = "typing...",
+                                    fontSize = 12.sp,
+                                    color = DeepGreenDark,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
+                                Text(
+                                    text = displayPosition,
+                                    fontSize = 12.sp,
+                                    color = TextDark.copy(alpha = 0.6f)
+                                )
                             }
-                        )
+                        }
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = TextDark
+                        )
                     }
-                }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        isSearchActive = !isSearchActive
+                        if (!isSearchActive) inChatSearchQuery = ""
+                    }) {
+                        Icon(
+                            imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
+                            contentDescription = "Toggle Search",
+                            tint = TextDark
+                        )
+                    }
+                    IconButton(onClick = { showInterviewDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.CalendarToday,
+                            contentDescription = "View Interview Details",
+                            tint = DeepGreenDark
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
             )
         },
-        modifier = Modifier.imePadding()
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+        bottomBar = {
+            Surface(
+                shadowElevation = 8.dp,
+                color = Color.White,
+                modifier = Modifier.imePadding()
             ) {
-                items(messages, key = { it.id }) { message ->
-                    val replyParent = remember(message.replyToId, messages) {
-                        message.replyToId?.let { replyId -> messages.find { it.id == replyId } }
-                    }
-
-                    MessageBubble(
-                        message = message,
-                        replyParentMessage = replyParent,
-                        isFromMe = message.senderId == currentUserId,
-                        onEdit = {
-                            replyingToMessage = null
-                            editingMessage = message
-                            inputText = message.text
-                        },
-                        onDelete = {
-                            scope.launch {
-                                repository.deleteMessage(roomId, message.id)
-                            }
-                        },
-                        onReply = {
-                            editingMessage = null
-                            replyingToMessage = message
-                        }
-                    )
-                }
-            }
-
-            // Replying Banner
-            AnimatedVisibility(
-                visible = replyingToMessage != null,
-                enter = expandVertically(),
-                exit = shrinkVertically()
-            ) {
-                replyingToMessage?.let { replyTarget ->
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                Column {
+                    editingMessage?.let { editMsg ->
                         Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(SageGreenMain.copy(alpha = 0.2f))
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Reply,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Replying to message",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold
+                                    text = "Editing Message",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = DeepGreenDark
                                 )
                                 Text(
-                                    text = replyTarget.text,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    text = editMsg.text,
+                                    fontSize = 12.sp,
+                                    color = TextDark.copy(alpha = 0.7f),
+                                    maxLines = 1
                                 )
                             }
-                            IconButton(
-                                onClick = { replyingToMessage = null },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "Cancel reply")
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Editing Banner
-            AnimatedVisibility(
-                visible = editingMessage != null,
-                enter = expandVertically(),
-                exit = shrinkVertically()
-            ) {
-                editingMessage?.let {
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Editing message",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                modifier = Modifier.weight(1f)
-                            )
                             IconButton(
                                 onClick = {
                                     editingMessage = null
-                                    inputText = ""
+                                    messageText = ""
                                 },
                                 modifier = Modifier.size(24.dp)
                             ) {
-                                Icon(Icons.Default.Close, contentDescription = "Cancel edit")
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Cancel Edit",
+                                    tint = TextDark
+                                )
                             }
                         }
                     }
-                }
-            }
 
-            // Input Bar
-            Surface(
-                tonalElevation = 3.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = { filePickerLauncher.launch("*/*") },
-                        enabled = !isUploading
-                    ) {
-                        if (isUploading) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        } else {
-                            Icon(Icons.Default.AttachFile, contentDescription = "Attach File")
-                        }
+                    replyingToMessage?.let { replyMsg ->
+                        ReplyComposerBanner(
+                            replyTarget = replyMsg,
+                            onCancel = { replyingToMessage = null }
+                        )
                     }
 
-                    OutlinedTextField(
-                        value = inputText,
-                        onValueChange = { inputText = it },
-                        placeholder = { Text("Type a message...") },
-                        modifier = Modifier.weight(1f),
-                        maxLines = 4,
-                        shape = RoundedCornerShape(20.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { showAttachmentSheet = true },
+                            enabled = !isUploadingAttachment,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            if (isUploadingAttachment) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = DeepGreenDark
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Attach File",
+                                    tint = TextDark.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
 
-                    Spacer(modifier = Modifier.width(4.dp))
+                        TextField(
+                            value = messageText,
+                            onValueChange = { messageText = it },
+                            placeholder = { Text("Type a message...") },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = BackgroundWhite,
+                                unfocusedContainerColor = BackgroundWhite,
+                                disabledContainerColor = BackgroundWhite,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            maxLines = 4
+                        )
 
-                    IconButton(
-                        onClick = {
-                            val textToSend = inputText.trim()
-                            if (textToSend.isNotEmpty()) {
-                                scope.launch {
-                                    val activeEdit = editingMessage
-                                    if (activeEdit != null) {
-                                        repository.editMessage(roomId, activeEdit.id, textToSend)
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        val canSend = messageText.isNotBlank()
+
+                        IconButton(
+                            onClick = {
+                                if (canSend) {
+                                    val textToSend = messageText
+                                    val currentEdit = editingMessage
+                                    val currentReplyId = replyingToMessage?.id
+
+                                    messageText = ""
+
+                                    if (currentEdit != null) {
+                                        chatViewModel.editMessage(roomId, currentEdit.id, textToSend, currentUserId)
                                         editingMessage = null
                                     } else {
-                                        repository.sendMessage(
+                                        chatViewModel.sendMessage(
                                             roomId = roomId,
                                             senderId = currentUserId,
                                             content = textToSend,
-                                            replyToId = replyingToMessage?.id
-                                        )
-                                        replyingToMessage = null
+                                            replyToId = currentReplyId
+                                        ) { success ->
+                                            if (success) {
+                                                chatViewModel.loadUserChatRooms(currentUserId)
+                                                replyingToMessage = null
+                                                coroutineScope.launch {
+                                                    if (totalLazyItems > 0) {
+                                                        listState.animateScrollToItem(totalLazyItems - 1)
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
-                                    inputText = ""
                                 }
+                            },
+                            enabled = canSend,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(if (canSend) SageGreenMain else SageGreenMain.copy(alpha = 0.4f))
+                        ) {
+                            if (isSendingMessage && editingMessage == null) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = DeepGreenDark
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Send Message",
+                                    tint = DeepGreenDark
+                                )
                             }
-                        },
-                        enabled = inputText.isNotBlank()
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
-                            tint = if (inputText.isNotBlank()) MaterialTheme.colorScheme.primary else Color.Gray
-                        )
+                        }
                     }
                 }
             }
+        },
+        containerColor = BackgroundWhite
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            when {
+                isMessagesLoading && messages.isEmpty() -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = DeepGreenDark
+                    )
+                }
+                displayedMessages.isEmpty() -> {
+                    Text(
+                        text = if (inChatSearchQuery.isNotBlank()) "No messages found matching \"$inChatSearchQuery\"" else "No messages yet. Send a message to start!",
+                        color = TextDark.copy(alpha = 0.5f),
+                        fontSize = 14.sp,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+                else -> {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (isLoadingOlderMessages && inChatSearchQuery.isBlank()) {
+                            item(key = "loading_older") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = DeepGreenDark
+                                    )
+                                }
+                            }
+                        }
+                        groupedMessages.forEach { (dateHeader: String, messageList: List<ChatMessage>) ->
+                            item(key = "header_$dateHeader") {
+                                DateHeader(dateString = dateHeader)
+                            }
+                            items(
+                                items = messageList,
+                                key = { msg: ChatMessage -> msg.id.ifBlank { "${msg.timestamp}_${msg.text.hashCode()}" } }
+                            ) { msg: ChatMessage ->
+                                val replySource = msg.replyToId?.let { replyId ->
+                                    messages.firstOrNull { it.id == replyId }
+                                }
+
+                                MessageBubble(
+                                    message = msg,
+                                    isMe = msg.senderId == currentUserId,
+                                    replySourceMessage = replySource,
+                                    onReply = { selectedMsg ->
+                                        replyingToMessage = selectedMsg
+                                    },
+                                    onEdit = { selectedMsg ->
+                                        editingMessage = selectedMsg
+                                        messageText = selectedMsg.text
+                                    },
+                                    onDelete = { selectedMsg ->
+                                        chatViewModel.deleteMessage(roomId, selectedMsg.id, currentUserId)
+                                    },
+                                    onReplyPreviewClick = { targetId ->
+                                        messageIndexMap[targetId]?.let { targetIndex ->
+                                            coroutineScope.launch {
+                                                listState.animateScrollToItem(targetIndex)
+                                            }
+                                        }
+                                    },
+                                    onReactionSelected = { emoji ->
+                                        chatViewModel.toggleReaction(roomId, msg.id, currentUserId, emoji)
+                                    },
+                                    reactions = reactionsByMessage[msg.id] ?: emptyList()
+                                )
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = !isNearBottom && inChatSearchQuery.isBlank(),
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp)
+                    ) {
+                        SmallFloatingActionButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    if (totalLazyItems > 0) {
+                                        listState.animateScrollToItem(totalLazyItems - 1)
+                                    }
+                                }
+                            },
+                            containerColor = SageGreenMain,
+                            contentColor = DeepGreenDark
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Scroll to latest message"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAttachmentSheet) {
+        AttachmentBottomSheet(
+            onDismiss = { showAttachmentSheet = false },
+            onPickImage = { imagePickerLauncher.launch("image/*") },
+            onPickDocument = { documentPickerLauncher.launch("application/*") }
+        )
+    }
+
+    selectedImageUri?.let { uri ->
+        PhotoPreviewDialog(
+            context = context,
+            imageUri = uri,
+            onDismiss = { selectedImageUri = null },
+            onSend = { file, caption ->
+                selectedImageUri = null
+                val imageUri = Uri.fromFile(file)
+                readBytesAndSendWithCaption(imageUri, MessageType.IMAGE, caption)
+            }
+        )
+    }
+
+    if (showInterviewDialog) {
+        InterviewDetailDialog(
+            companyName = displayCompanyName,
+            chatTitle = displayPosition,
+            onDismiss = { showInterviewDialog = false },
+            onNavigateToSchedule = {
+                showInterviewDialog = false
+                onNavigateToSchedule()
+            }
+        )
+    }
+}
+
+// --- Supporting Components ---
+
+@Composable
+fun ReplyComposerBanner(
+    replyTarget: ChatMessage,
+    onCancel: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SageGreenMain.copy(alpha = 0.15f))
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Replying to message",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = DeepGreenDark
+            )
+            Text(
+                text = replyTarget.text,
+                fontSize = 12.sp,
+                color = TextDark.copy(alpha = 0.7f),
+                maxLines = 1
+            )
+        }
+        IconButton(onClick = onCancel, modifier = Modifier.size(24.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Cancel Reply",
+                tint = TextDark
+            )
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(
-    message: ChatMessage,
-    replyParentMessage: ChatMessage?,
-    isFromMe: Boolean,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    onReply: () -> Unit
+fun InterviewDetailDialog(
+    companyName: String,
+    chatTitle: String,
+    onDismiss: () -> Unit,
+    onNavigateToSchedule: () -> Unit
 ) {
-    var showMenu by remember { mutableStateOf(false) }
-    val bubbleColor = if (isFromMe) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-    val textColor = if (isFromMe) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-
-    val formattedTime = remember(message.timestamp) {
-        SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(message.timestamp))
-    }
-
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = if (isFromMe) Alignment.CenterEnd else Alignment.CenterStart
-    ) {
-        Column(
-            horizontalAlignment = if (isFromMe) Alignment.End else Alignment.Start,
-            modifier = Modifier.padding(horizontal = 4.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(
-                    topStart = 16.dp,
-                    topEnd = 16.dp,
-                    bottomStart = if (isFromMe) 16.dp else 4.dp,
-                    bottomEnd = if (isFromMe) 4.dp else 16.dp
-                ),
-                color = bubbleColor,
-                modifier = Modifier
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomStart = if (isFromMe) 16.dp else 4.dp,
-                            bottomEnd = if (isFromMe) 4.dp else 16.dp
-                        )
-                    )
-                    .combinedClickable(
-                        onClick = {},
-                        onLongClick = { showMenu = true }
-                    )
-            ) {
-                Box(modifier = Modifier.padding(10.dp)) {
-                    Column {
-                        // Render Reply Snippet if message is replying to another
-                        replyParentMessage?.let { reply ->
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 6.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(3.dp)
-                                            .height(24.dp)
-                                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = reply.text,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-
-                        // Message Content
-                        if (message.isDeleted) {
-                            Text(
-                                text = "This message was deleted",
-                                style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
-                        } else {
-                            when (message.messageType) {
-                                MessageType.IMAGE -> {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            Icons.Default.Image,
-                                            contentDescription = null,
-                                            tint = textColor,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(text = "Image Attachment", color = textColor)
-                                    }
-                                }
-                                MessageType.FILE -> {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            Icons.Default.Description,
-                                            contentDescription = null,
-                                            tint = textColor,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(text = "File Attachment", color = textColor)
-                                    }
-                                }
-                                else -> {
-                                    Text(text = message.text, color = textColor)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(2.dp))
-
-                        // Time and Edited status
-                        Row(
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            if (message.isEdited && !message.isDeleted) {
-                                Text(
-                                    text = "edited • ",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = textColor.copy(alpha = 0.7f)
-                                )
-                            }
-                            Text(
-                                text = formattedTime,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = textColor.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Reply") },
-                            leadingIcon = { Icon(Icons.Default.Reply, contentDescription = null) },
-                            onClick = {
-                                showMenu = false
-                                onReply()
-                            }
-                        )
-                        if (isFromMe && !message.isDeleted) {
-                            DropdownMenuItem(
-                                text = { Text("Edit") },
-                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                                onClick = {
-                                    showMenu = false
-                                    onEdit()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Delete") },
-                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
-                                onClick = {
-                                    showMenu = false
-                                    onDelete()
-                                }
-                            )
-                        }
-                    }
-                }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Interview Details") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = "Company: $companyName", fontWeight = FontWeight.Bold)
+                Text(text = "Position: $chatTitle")
+                Text(text = "Manage your interview scheduling or view booked calendar slots below.")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onNavigateToSchedule) {
+                Text("View Schedule")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
             }
         }
-    }
+    )
 }

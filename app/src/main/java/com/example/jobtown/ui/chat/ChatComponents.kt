@@ -11,15 +11,48 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.AddReaction
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,20 +98,12 @@ fun MessageBubble(
     var showFullScreenImage by remember { mutableStateOf(false) }
     var showReactionPicker by remember { mutableStateOf(false) }
 
-    val isPending = remember(message.id) { message.id.startsWith("temp_") }
+    val isPending = message.id.startsWith("temp_")
     val alignment = if (isMe) Alignment.End else Alignment.Start
     val bubbleColor = if (isMe) SageGreenMain else Color.White
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val interactionSource = remember { MutableInteractionSource() }
-
-    val formattedTime = remember(message.timestamp) {
-        chatTimeFormatter.format(Date(message.timestamp))
-    }
-
-    val fileNameDisplay = remember(message.text) {
-        displayFileName(message.text)
-    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -99,7 +124,7 @@ fun MessageBubble(
                     indication = LocalIndication.current,
                     onClick = {},
                     onLongClick = {
-                        if (!message.isDeleted && !isPending) {
+                        if (!message.isDeleted) {
                             showMenu = true
                         }
                     }
@@ -144,12 +169,12 @@ fun MessageBubble(
                             )
                         }
                         message.messageType == MessageType.FILE && isPending -> {
-                            UploadingAttachmentPlaceholder(fileName = fileNameDisplay)
+                            UploadingAttachmentPlaceholder(fileName = displayFileName(message.text))
                         }
                         message.messageType == MessageType.FILE -> {
                             AttachmentRow(
                                 icon = Icons.AutoMirrored.Filled.InsertDriveFile,
-                                title = fileNameDisplay,
+                                title = displayFileName(message.text),
                                 subtitle = "Tap to view document",
                                 onClick = { openAttachmentUrl(context, message.text) }
                             )
@@ -180,7 +205,7 @@ fun MessageBubble(
                         }
 
                         Text(
-                            text = formattedTime,
+                            text = chatTimeFormatter.format(Date(message.timestamp)),
                             fontSize = 10.sp,
                             color = TextDark.copy(alpha = 0.5f)
                         )

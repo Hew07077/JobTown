@@ -739,21 +739,30 @@ fun AppNavGraph(
             }
 
             composable(
-                route = "chat_detail/{chatId}/{displayName}",
+                route = "chat_detail/{roomId}/{name}/{title}/{extra}",
                 arguments = listOf(
-                    navArgument("chatId") { type = NavType.StringType },
-                    navArgument("displayName") { type = NavType.StringType }
+                    navArgument("roomId") { type = NavType.StringType },
+                    navArgument("name") { type = NavType.StringType },
+                    navArgument("title") { type = NavType.StringType },
+                    navArgument("extra") { type = NavType.StringType }
                 )
             ) { backStackEntry ->
-                val chatId = backStackEntry.arguments?.getString("chatId") ?: ""
-                val displayName = backStackEntry.arguments?.getString("displayName") ?: "Chat"
+                val roomId = backStackEntry.arguments?.getString("roomId").orEmpty()
+                val encodedName = backStackEntry.arguments?.getString("name").orEmpty()
+                val encodedTitle = backStackEntry.arguments?.getString("title").orEmpty()
+
+                val recipientName = Uri.decode(encodedName)
+                val jobTitle = Uri.decode(encodedTitle)
 
                 ChatDetailScreen(
-                    roomId = chatId,
-                    titleName = Uri.decode(displayName),
+                    navController = navController,
+                    roomId = roomId,
+                    companyName = recipientName,
+                    chatTitle = jobTitle,
+                    initialQuestion = "",
                     currentUserId = loggedInUser?.id.orEmpty(),
-                    repository = messageRepository,
-                    onBackClick = { navController.popBackStack() }
+                    chatViewModel = chatViewModel,
+                    onNavigateToSchedule = { navController.navigate(Screen.Schedule.route) }
                 )
             }
         }
