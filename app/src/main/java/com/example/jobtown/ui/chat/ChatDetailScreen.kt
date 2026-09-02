@@ -174,30 +174,55 @@ fun ChatDetailScreen(
             try {
                 val resolver = context.contentResolver
                 val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-                if (bytes == null) return@launch
+                if (bytes == null || bytes.isEmpty()) {
+                    Log.e("ChatDetailScreen", "Attachment read returned no data for $uri")
+                    Toast.makeText(context, "Couldn't read the selected file. Please try again.", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
                 val mimeType = resolver.getType(uri)
                     ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString())
                         ?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
                     ?: "application/octet-stream"
-                val rawFileName = uri.lastPathSegment?.substringAfterLast("/") ?: "attachment"
-                val finalFileName = if (caption.isNotBlank()) caption else rawFileName
+                // The real file name always goes to storage - a caption is a separate
+                // piece of text, never a substitute for it.
+                val fileName = uri.lastPathSegment?.substringAfterLast("/")?.takeIf { it.isNotBlank() }
+                    ?: "attachment"
+                val trimmedCaption = caption.trim()
+                val pendingReplyId = replyingToMessage?.id
 
                 chatViewModel.sendAttachment(
                     roomId = roomId,
                     senderId = currentUserId,
                     bytes = bytes,
-                    fileName = finalFileName,
+                    fileName = fileName,
                     mimeType = mimeType,
                     type = type,
-                    replyToId = replyingToMessage?.id
+                    replyToId = pendingReplyId
                 ) { success ->
                     if (success) {
                         replyingToMessage = null
                         chatViewModel.loadUserChatRooms(currentUserId)
+
+                        // ChatMessage has no separate caption field, so a caption the
+                        // user typed is delivered as its own follow-up text message.
+                        if (trimmedCaption.isNotBlank()) {
+                            chatViewModel.sendMessage(
+                                roomId = roomId,
+                                senderId = currentUserId,
+                                content = trimmedCaption
+                            ) { captionSuccess ->
+                                if (captionSuccess) {
+                                    chatViewModel.loadUserChatRooms(currentUserId)
+                                }
+                            }
+                        }
                     }
+                    // On failure, ChatViewModel emits the specific reason via eventFlow,
+                    // which is already collected below and shown as a toast.
                 }
             } catch (e: Exception) {
                 Log.e("ChatDetailScreen", "Error reading attachment", e)
+                Toast.makeText(context, "Couldn't read the attachment: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -211,6 +236,8 @@ fun ChatDetailScreen(
     val documentPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
+        // "*/*" (not "application/*") - the previous filter silently hid non-"application"
+        // documents (text, csv, images picked as files, etc.) from the system picker.
         uri?.let { readBytesAndSendWithCaption(it, MessageType.FILE, "") }
     }
 
@@ -621,7 +648,7 @@ fun ChatDetailScreen(
         AttachmentBottomSheet(
             onDismiss = { showAttachmentSheet = false },
             onPickImage = { imagePickerLauncher.launch("image/*") },
-            onPickDocument = { documentPickerLauncher.launch("application/*") }
+            onPickDocument = { documentPickerLauncher.launch("*/*") }
         )
     }
 

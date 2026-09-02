@@ -494,9 +494,9 @@ private fun EmptyChatState(modifier: Modifier = Modifier) {
 
 private fun formatLastMessagePreview(message: String): String {
     if (message.isBlank()) return "Tap to start chatting..."
-    return when {
-        message.startsWith("http") && (message.contains(".jpg") || message.contains(".png") || message.contains(".jpeg")) -> "📷 Photo"
-        message.startsWith("http") || message.contains("attachment") -> "📄 Document"
+    return when (message) {
+        "[Photo]" -> "📷 Photo"
+        "[Document]" -> "📄 Document"
         else -> message
     }
 }

@@ -479,6 +479,9 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                         if (it.id == tempId) it.copy(isFailed = true, text = "Failed to send attachment") else it
                     }
                 }
+                _eventFlow.emit(
+                    ChatUiEvent.ShowToast("Couldn't send attachment: ${e.message ?: e.javaClass.simpleName}")
+                )
                 onComplete(false)
             } finally {
                 _isUploadingAttachment.value = false

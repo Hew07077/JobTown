@@ -32,7 +32,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 
-private const val CHAT_ATTACHMENTS_BUCKET = "chat_attachments"
+private const val CHAT_ATTACHMENTS_BUCKET = "chat-attachments"
 
 @Serializable
 private data class NewChatRoomPayload(
@@ -129,24 +129,38 @@ class MessageRepository(private val supabase: SupabaseClient) {
         companyName: String,
         jobTitle: String
     ): String = withContext(Dispatchers.IO) {
-        if (seekerId.isBlank()) return@withContext ""
+        if (seekerId.isBlank() || companyName.isBlank()) return@withContext ""
 
         try {
+            // Match on seeker + company only (not job title/application) so a seeker
+            // messaging the same company again - about a different role or enquiry -
+            // lands back in their one existing thread instead of spawning a duplicate
+            // chat room. Most-recently-active room wins if more than one legacy match exists.
             val existingRoom = supabase.from("chat_rooms")
                 .select {
                     filter {
                         eq("seeker_id", seekerId)
                         eq("company_name", companyName)
-                        eq("job_title", jobTitle)
-                        if (applicationId.isNotBlank()) {
-                            eq("application_id", applicationId)
-                        }
                     }
+                    order("last_message_time", Order.DESCENDING)
+                    limit(1)
                 }
                 .decodeList<ChatRoom>()
                 .firstOrNull()
 
             if (existingRoom != null && existingRoom.id.isNotBlank()) {
+                // Keep the room's job title current so the chat list reflects what the
+                // conversation is now about, without ever creating a second room for
+                // the same company.
+                if (jobTitle.isNotBlank() && jobTitle != existingRoom.jobTitle) {
+                    try {
+                        supabase.from("chat_rooms").update({
+                            set("job_title", jobTitle)
+                        }) { filter { eq("id", existingRoom.id) } }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error updating existing room context: ${e.localizedMessage}", e)
+                    }
+                }
                 return@withContext existingRoom.id
             }
         } catch (e: Exception) {
