@@ -598,6 +598,9 @@ fun ChatDetailScreen(
                                     onDelete = { selectedMsg ->
                                         chatViewModel.deleteMessage(roomId, selectedMsg.id, currentUserId)
                                     },
+                                    onRetry = { selectedMsg ->
+                                        chatViewModel.retryMessage(roomId, currentUserId, selectedMsg)
+                                    },
                                     onReplyPreviewClick = { targetId ->
                                         messageIndexMap[targetId]?.let { targetIndex ->
                                             coroutineScope.launch {

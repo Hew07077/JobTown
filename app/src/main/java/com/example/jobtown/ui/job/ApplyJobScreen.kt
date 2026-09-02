@@ -2,6 +2,7 @@ package com.example.jobtown.ui.job
 
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
@@ -51,7 +52,7 @@ fun ApplyJobScreen(
 ) {
     var isApplying by remember { mutableStateOf(false) }
     val alreadyApplied = existingApplication != null &&
-        !existingApplication.status.equals("Cancelled", ignoreCase = true)
+            !existingApplication.status.equals("Cancelled", ignoreCase = true)
 
     if (!isApplying) {
         JobDetailsOverviewScreen(
@@ -137,45 +138,45 @@ private fun JobDetailsOverviewScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                    OutlinedButton(
-                        onClick = onBackToHome,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.4f))
-                    ) {
-                        Text("Not Interested", fontSize = 14.sp, color = TextDark, fontWeight = FontWeight.Medium)
-                    }
-
-                    Button(
-                        onClick = if (alreadyApplied) onViewExistingApplication else onStartApplication,
-                        modifier = Modifier
-                            .weight(1.2f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
-                    ) {
-                        Text(
-                            if (alreadyApplied) {
-                                "View application"
-                            } else {
-                                "Apply Now"
-                            },
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        if (!alreadyApplied) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
+                        OutlinedButton(
+                            onClick = onBackToHome,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.4f))
+                        ) {
+                            Text("Not Interested", fontSize = 14.sp, color = TextDark, fontWeight = FontWeight.Medium)
                         }
-                    }
+
+                        Button(
+                            onClick = if (alreadyApplied) onViewExistingApplication else onStartApplication,
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .height(52.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                        ) {
+                            Text(
+                                if (alreadyApplied) {
+                                    "View application"
+                                } else {
+                                    "Apply Now"
+                                },
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            if (!alreadyApplied) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -407,8 +408,16 @@ private fun ApplicationFlowScreen(
     var selectedStartDateOption by remember { mutableStateOf("Immediate") }
     var customStartDate by remember { mutableStateOf("") }
 
-    var resumeUri by remember { mutableStateOf("") }
-    var resumeName by remember { mutableStateOf("") }
+    // If the applicant already has a resume on file (uploaded from a previous
+    // application or from their profile), pre-fill it here so they don't have
+    // to re-upload the same document every time they apply. resumeUri holds a
+    // real https:// URL in this case (as opposed to a local content:// URI
+    // from the picker below), which the submit step uses to skip re-uploading.
+    val savedProfileResumeUrl = currentUser?.resumeUrl.orEmpty()
+    var resumeUri by remember { mutableStateOf(savedProfileResumeUrl) }
+    var resumeName by remember {
+        mutableStateOf(if (savedProfileResumeUrl.isNotBlank()) extractFileNameFromUrl(savedProfileResumeUrl) else "")
+    }
 
     var coverLetterUri by remember { mutableStateOf("") }
     var coverLetterName by remember { mutableStateOf("") }
@@ -461,6 +470,10 @@ private fun ApplicationFlowScreen(
 
     val isPhoneValid = phoneNumber.isNotBlank() && phoneNumber.length >= 7
     val isResumeValid = resumeUri.isNotBlank()
+    // True while resumeUri still points at the applicant's already-hosted
+    // profile resume rather than a freshly-picked local file, so we know to
+    // skip re-uploading it and can show "saved from your profile" in the UI.
+    val isSavedProfileResume = resumeUri.startsWith("http://") || resumeUri.startsWith("https://")
 
     Scaffold(
         containerColor = BackgroundWhite,
@@ -592,6 +605,7 @@ private fun ApplicationFlowScreen(
                     1 -> Step2Documents(
                         resumeFileName = resumeName,
                         isResumeValid = isResumeValid,
+                        isSavedProfileResume = isSavedProfileResume,
                         onPickResume = { resumePickerLauncher.launch(arrayOf("application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) },
                         onRemoveResume = { resumeUri = ""; resumeName = "" },
                         coverLetterFileName = coverLetterName,
@@ -717,31 +731,49 @@ private fun ApplicationFlowScreen(
                                 isSubmitting = true
                                 coroutineScope.launch {
                                     try {
-                                        // Actually upload the resume file's bytes to Supabase
-                                        // Storage -- resumeUri up to this point is just a local
-                                        // content:// URI, which only exists on this device and
-                                        // means nothing to anyone else (e.g. the employer). We
-                                        // need the real, publicly-reachable URL back before we
-                                        // can save the application.
-                                        val resumeBytes = try {
-                                            context.contentResolver.openInputStream(Uri.parse(resumeUri))?.use { it.readBytes() }
-                                        } catch (e: Exception) {
-                                            null
-                                        }
+                                        // resumeUri is already a real, publicly-reachable URL
+                                        // when it came from the applicant's saved profile resume
+                                        // (isSavedProfileResume) -- nothing to upload, just reuse
+                                        // it directly. Otherwise it's a local content:// URI from
+                                        // the picker, which only exists on this device and means
+                                        // nothing to anyone else (e.g. the employer), so it needs
+                                        // to be uploaded to Supabase Storage first.
+                                        val uploadedResumeUrl: String
+                                        if (isSavedProfileResume) {
+                                            uploadedResumeUrl = resumeUri
+                                        } else {
+                                            val resumeBytes = try {
+                                                context.contentResolver.openInputStream(Uri.parse(resumeUri))?.use { it.readBytes() }
+                                            } catch (e: Exception) {
+                                                null
+                                            }
 
-                                        if (resumeBytes == null) {
-                                            errorMessage = "Couldn't read the resume file. Please pick it again."
-                                            showValidationErrors = true
-                                            isSubmitting = false
-                                            return@launch
-                                        }
+                                            if (resumeBytes == null) {
+                                                errorMessage = "Couldn't read the resume file. Please pick it again."
+                                                showValidationErrors = true
+                                                isSubmitting = false
+                                                return@launch
+                                            }
 
-                                        val uploadedResumeUrl = UserRepository.uploadResume(applicant.id, resumeBytes)
-                                        if (uploadedResumeUrl == null) {
-                                            errorMessage = "Failed to upload resume. Please check your connection and try again."
-                                            showValidationErrors = true
-                                            isSubmitting = false
-                                            return@launch
+                                            val newlyUploadedUrl = UserRepository.uploadResume(applicant.id, resumeBytes)
+                                            if (newlyUploadedUrl == null) {
+                                                errorMessage = "Failed to upload resume. Please check your connection and try again."
+                                                showValidationErrors = true
+                                                isSubmitting = false
+                                                return@launch
+                                            }
+                                            uploadedResumeUrl = newlyUploadedUrl
+
+                                            // Save the newly uploaded resume onto the applicant's
+                                            // profile so next time they apply it's already there
+                                            // and doesn't need to be picked/uploaded again. This is
+                                            // best-effort -- if it fails, the application itself
+                                            // still goes through with the resume attached.
+                                            try {
+                                                UserRepository.updateUserInSupabase(applicant.copy(resumeUrl = uploadedResumeUrl))
+                                            } catch (e: Exception) {
+                                                Log.e("ApplyJobScreen", "Failed to save resume to profile", e)
+                                            }
                                         }
 
                                         val finalStart = if (selectedStartDateOption == "Custom Date" && customStartDate.isNotBlank()) customStartDate else selectedStartDateOption
@@ -821,6 +853,12 @@ private fun getFileNameFromUri(context: android.content.Context, uri: android.ne
         name = uri.lastPathSegment ?: "Attached Document.pdf"
     }
     return name
+}
+
+/** Best-effort display name for an already-hosted resume URL from the applicant's profile. */
+private fun extractFileNameFromUrl(url: String): String {
+    val rawName = url.substringBefore("?").substringAfterLast("/")
+    return rawName.ifBlank { "Resume.pdf" }
 }
 
 @Composable
@@ -1061,6 +1099,7 @@ private fun Step1PersonalInfo(
 private fun Step2Documents(
     resumeFileName: String,
     isResumeValid: Boolean,
+    isSavedProfileResume: Boolean,
     onPickResume: () -> Unit,
     onRemoveResume: () -> Unit,
     coverLetterFileName: String,
@@ -1103,12 +1142,16 @@ private fun Step2Documents(
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = DeepGreenDark,
+                            color = if (isSavedProfileResume) SageGreenDark else DeepGreenDark,
                             modifier = Modifier.size(40.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = if (isResumeValid) Icons.Filled.Description else Icons.Filled.UploadFile,
+                                    imageVector = when {
+                                        isSavedProfileResume -> Icons.Filled.CheckCircle
+                                        isResumeValid -> Icons.Filled.Description
+                                        else -> Icons.Filled.UploadFile
+                                    },
                                     contentDescription = null,
                                     tint = Color.White,
                                     modifier = Modifier.size(20.dp)
@@ -1116,15 +1159,43 @@ private fun Step2Documents(
                             }
                         }
                         Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = when {
+                                        isSavedProfileResume -> "Resume on file"
+                                        isResumeValid -> resumeFileName
+                                        else -> "Upload Resume (PDF / Doc)"
+                                    },
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextDark,
+                                    maxLines = 1,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (isSavedProfileResume) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = SageGreenDark.copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = "Saved",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = SageGreenDark,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
                             Text(
-                                text = if (isResumeValid) resumeFileName else "Upload Resume (PDF / Doc)",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextDark,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = if (isResumeValid) "Tap to change document" else "Required for application submission",
+                                text = when {
+                                    isSavedProfileResume -> "From your profile · Tap to use a different file"
+                                    isResumeValid -> "Tap to change document"
+                                    else -> "Required for application submission"
+                                },
                                 fontSize = 11.sp,
                                 color = SageGreenDark
                             )

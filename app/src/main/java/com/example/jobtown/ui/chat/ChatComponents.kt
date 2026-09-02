@@ -30,14 +30,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.AddReaction
+import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Slideshow
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -48,6 +55,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +78,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import com.example.jobtown.data.model.ChatMessage
 import com.example.jobtown.data.model.MessageType
 import com.example.jobtown.data.model.ReactionGroup
@@ -90,6 +102,7 @@ fun MessageBubble(
     onReply: (ChatMessage) -> Unit,
     onEdit: (ChatMessage) -> Unit,
     onDelete: (ChatMessage) -> Unit,
+    onRetry: (ChatMessage) -> Unit = {},
     onReactionSelected: (String) -> Unit = {},
     onReplyPreviewClick: (messageId: String) -> Unit = {},
     reactions: List<ReactionGroup> = emptyList()
@@ -97,6 +110,7 @@ fun MessageBubble(
     var showMenu by remember { mutableStateOf(false) }
     var showFullScreenImage by remember { mutableStateOf(false) }
     var showReactionPicker by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val isPending = message.id.startsWith("temp_")
     val alignment = if (isMe) Alignment.End else Alignment.Start
@@ -153,29 +167,35 @@ fun MessageBubble(
                                 color = TextDark.copy(alpha = 0.5f)
                             )
                         }
+                        message.isFailed -> {
+                            FailedMessageIndicator(
+                                messageType = message.messageType,
+                                fileName = if (message.messageType != MessageType.TEXT) {
+                                    displayFileName(message.text)
+                                } else null,
+                                onRetry = { onRetry(message) },
+                                onRemove = { onDelete(message) }
+                            )
+                        }
                         message.messageType == MessageType.IMAGE && isPending -> {
-                            UploadingAttachmentPlaceholder(fileName = "Uploading image…")
+                            UploadingAttachmentPlaceholder(fileName = "Uploading image…", isImage = true)
                         }
                         message.messageType == MessageType.IMAGE -> {
-                            AsyncImage(
-                                model = message.text,
-                                contentDescription = "Attached Image",
-                                modifier = Modifier
-                                    .widthIn(max = 240.dp)
-                                    .heightIn(max = 220.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { showFullScreenImage = true },
-                                contentScale = ContentScale.Crop
+                            ChatImageBubble(
+                                imageUrl = message.text,
+                                onClick = { showFullScreenImage = true }
                             )
                         }
                         message.messageType == MessageType.FILE && isPending -> {
-                            UploadingAttachmentPlaceholder(fileName = displayFileName(message.text))
+                            UploadingAttachmentPlaceholder(fileName = displayFileName(message.text), isImage = false)
                         }
                         message.messageType == MessageType.FILE -> {
+                            val fileName = displayFileName(message.text)
                             AttachmentRow(
-                                icon = Icons.AutoMirrored.Filled.InsertDriveFile,
-                                title = displayFileName(message.text),
-                                subtitle = "Tap to view document",
+                                icon = fileTypeIcon(fileName),
+                                iconTint = fileTypeColor(fileName),
+                                title = fileName,
+                                subtitle = "${fileExtensionLabel(fileName)} · Tap to open",
                                 onClick = { openAttachmentUrl(context, message.text) }
                             )
                         }
@@ -277,7 +297,7 @@ fun MessageBubble(
                         text = { Text("Delete", color = Color.Red) },
                         onClick = {
                             showMenu = false
-                            onDelete(message)
+                            showDeleteConfirm = true
                         },
                         leadingIcon = {
                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
@@ -329,6 +349,55 @@ fun MessageBubble(
             onDismiss = { showFullScreenImage = false }
         )
     }
+
+    if (showDeleteConfirm) {
+        DeleteMessageConfirmDialog(
+            isAttachment = message.messageType == MessageType.IMAGE || message.messageType == MessageType.FILE,
+            onConfirm = {
+                showDeleteConfirm = false
+                onDelete(message)
+            },
+            onDismiss = { showDeleteConfirm = false }
+        )
+    }
+}
+
+@Composable
+private fun DeleteMessageConfirmDialog(
+    isAttachment: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = null,
+                tint = Color.Red
+            )
+        },
+        title = { Text("Delete message?") },
+        text = {
+            Text(
+                if (isAttachment) {
+                    "This will delete the attachment for everyone in this chat. This can't be undone."
+                } else {
+                    "This will delete the message for everyone in this chat. This can't be undone."
+                }
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Delete", color = Color.Red, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -462,27 +531,28 @@ private fun AttachmentRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    iconTint: Color = DeepGreenDark
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .widthIn(max = 240.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(10.dp))
             .clickable { onClick() }
             .background(Color.Black.copy(alpha = 0.05f))
-            .padding(8.dp)
+            .padding(10.dp)
     ) {
         Surface(
             shape = CircleShape,
-            color = DeepGreenDark.copy(alpha = 0.12f),
-            modifier = Modifier.size(36.dp)
+            color = iconTint.copy(alpha = 0.14f),
+            modifier = Modifier.size(38.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = icon,
                     contentDescription = title,
-                    tint = DeepGreenDark,
+                    tint = iconTint,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -502,6 +572,12 @@ private fun AttachmentRow(
                 color = TextDark.copy(alpha = 0.5f)
             )
         }
+        Icon(
+            imageVector = Icons.Default.Download,
+            contentDescription = "Open",
+            tint = TextDark.copy(alpha = 0.35f),
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
@@ -546,14 +622,41 @@ private fun ReactionsRow(
 }
 
 @Composable
-private fun UploadingAttachmentPlaceholder(fileName: String) {
+private fun UploadingAttachmentPlaceholder(fileName: String, isImage: Boolean = false) {
+    if (isImage) {
+        Box(
+            modifier = Modifier
+                .width(200.dp)
+                .height(160.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(SageGreenLight.copy(alpha = 0.5f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp),
+                    strokeWidth = 2.5.dp,
+                    color = DeepGreenDark
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Uploading image…",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = DeepGreenDark
+                )
+            }
+        }
+        return
+    }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .widthIn(max = 240.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(Color.Black.copy(alpha = 0.05f))
-            .padding(8.dp)
+            .padding(10.dp)
     ) {
         CircularProgressIndicator(
             modifier = Modifier.size(24.dp),
@@ -576,6 +679,158 @@ private fun UploadingAttachmentPlaceholder(fileName: String) {
             )
         }
     }
+}
+
+/** Chat image bubble with an inline loading spinner and a graceful broken-image fallback. */
+@Composable
+private fun ChatImageBubble(imageUrl: String, onClick: () -> Unit) {
+    SubcomposeAsyncImage(
+        model = imageUrl,
+        contentDescription = "Attached Image",
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .widthIn(max = 240.dp)
+            .heightIn(max = 220.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable { onClick() }
+    ) {
+        val state = painter.state
+        when (state) {
+            is AsyncImagePainter.State.Loading -> {
+                Box(
+                    modifier = Modifier
+                        .width(200.dp)
+                        .height(160.dp)
+                        .background(SageGreenLight.copy(alpha = 0.5f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = DeepGreenDark
+                    )
+                }
+            }
+            is AsyncImagePainter.State.Error -> {
+                Column(
+                    modifier = Modifier
+                        .width(200.dp)
+                        .height(120.dp)
+                        .background(Color.Black.copy(alpha = 0.05f)),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = "Couldn't load image",
+                        tint = TextDark.copy(alpha = 0.4f),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Couldn't load image",
+                        fontSize = 11.sp,
+                        color = TextDark.copy(alpha = 0.5f)
+                    )
+                }
+            }
+            else -> SubcomposeAsyncImageContent()
+        }
+    }
+}
+
+/** Shown for messages/attachments that failed to send, with a retry or remove action. */
+@Composable
+private fun FailedMessageIndicator(
+    messageType: MessageType,
+    fileName: String?,
+    onRetry: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .widthIn(max = 240.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.Red.copy(alpha = 0.08f))
+            .padding(10.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.Error,
+            contentDescription = "Failed to send",
+            tint = Color.Red,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = when (messageType) {
+                    MessageType.IMAGE -> "Photo failed to send"
+                    MessageType.FILE -> "Document failed to send"
+                    else -> "Message failed to send"
+                },
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.Red
+            )
+            if (!fileName.isNullOrBlank()) {
+                Text(
+                    text = fileName,
+                    fontSize = 10.sp,
+                    color = TextDark.copy(alpha = 0.6f),
+                    maxLines = 1
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(6.dp))
+        if (messageType == MessageType.TEXT) {
+            Text(
+                text = "Retry",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = DeepGreenDark,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { onRetry() }
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
+            )
+        } else {
+            // Attachment bytes aren't kept around after an upload failure, so a true
+            // retry isn't possible here -- offer to clear the failed bubble instead
+            // so the person can reattach the file from scratch.
+            Text(
+                text = "Remove",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextDark.copy(alpha = 0.6f),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { onRemove() }
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
+            )
+        }
+    }
+}
+
+private fun fileExtensionLabel(fileName: String): String =
+    fileName.substringAfterLast('.', "").uppercase().ifBlank { "FILE" }
+
+private fun fileTypeIcon(fileName: String): ImageVector = when (fileExtensionLabel(fileName)) {
+    "PDF" -> Icons.Filled.PictureAsPdf
+    "DOC", "DOCX" -> Icons.Filled.Article
+    "XLS", "XLSX", "CSV" -> Icons.Filled.TableChart
+    "PPT", "PPTX" -> Icons.Filled.Slideshow
+    "ZIP", "RAR", "7Z" -> Icons.Filled.FolderZip
+    "JPG", "JPEG", "PNG", "GIF", "WEBP" -> Icons.Filled.Image
+    else -> Icons.AutoMirrored.Filled.InsertDriveFile
+}
+
+private fun fileTypeColor(fileName: String): Color = when (fileExtensionLabel(fileName)) {
+    "PDF" -> Color(0xFFD32F2F)
+    "DOC", "DOCX" -> Color(0xFF1565C0)
+    "XLS", "XLSX", "CSV" -> Color(0xFF2E7D32)
+    "PPT", "PPTX" -> Color(0xFFE65100)
+    else -> DeepGreenDark
 }
 
 @Composable
