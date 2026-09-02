@@ -1,20 +1,24 @@
 package com.example.jobtown.ui.postjob
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -31,6 +35,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RangeSlider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -49,8 +55,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -58,7 +64,45 @@ import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.TextDark
+import java.text.NumberFormat
+import java.util.Locale
+import kotlin.math.roundToInt
 
+private val MalaysiaLocations = listOf(
+    "Kuala Lumpur, Malaysia",
+    "Selangor, Malaysia",
+    "Johor, Malaysia",
+    "Penang, Malaysia",
+    "Perak, Malaysia",
+    "Kedah, Malaysia",
+    "Melaka, Malaysia",
+    "Negeri Sembilan, Malaysia",
+    "Pahang, Malaysia",
+    "Sabah, Malaysia",
+    "Sarawak, Malaysia",
+    "Kelantan, Malaysia",
+    "Terengganu, Malaysia",
+    "Perlis, Malaysia",
+    "Putrajaya, Malaysia",
+    "Labuan, Malaysia"
+)
+
+private fun formatRm(value: Float): String {
+    if (value >= 50000f) {
+        return "RM 50,000+"
+    }
+    return "RM " + NumberFormat.getNumberInstance(Locale.US).format(value.roundToInt())
+}
+
+private fun formatSalaryPreviewText(minSalaryStr: String, maxSalaryStr: String): String {
+    val minVal = minSalaryStr.toFloatOrNull() ?: 1500f
+    val maxVal = maxSalaryStr.toFloatOrNull() ?: 10000f
+
+    val formattedMin = formatRm(minVal)
+    val formattedMax = formatRm(maxVal)
+
+    return "$formattedMin - $formattedMax / month"
+}
 
 @Composable
 private fun RequiredLabel(text: String, required: Boolean = false) {
@@ -75,6 +119,130 @@ private fun RequiredLabel(text: String, required: Boolean = false) {
             }
         }
     )
+}
+
+@Composable
+fun JobPreviewCard(
+    fields: JobFormFields,
+    companyPhotoUrl: String? = null,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = SageGreenLight,
+                    modifier = Modifier.size(48.dp),
+                    border = BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.3f))
+                ) {
+                    if (!companyPhotoUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = companyPhotoUrl,
+                            contentDescription = "Company Photo",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = fields.company.take(2).uppercase().ifBlank { "JOB" },
+                                fontWeight = FontWeight.Bold,
+                                color = DeepGreenDark,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = fields.title.ifBlank { "Job title" },
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextDark,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = fields.company.ifBlank { "Company Name" },
+                        fontSize = 13.sp,
+                        color = TextDark.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFEBF3EA)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = DeepGreenDark,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = fields.location.ifBlank { "Kuala Lumpur, Malaysia" },
+                            fontSize = 12.sp,
+                            color = DeepGreenDark,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFEBF3EA)
+                ) {
+                    Text(
+                        text = fields.type.ifBlank { "Full-time" },
+                        fontSize = 12.sp,
+                        color = DeepGreenDark,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFFF1F5F9)
+            ) {
+                Text(
+                    text = formatSalaryPreviewText(fields.minSalary, fields.maxSalary),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextDark,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,9 +265,8 @@ fun JobListingForm(
     showFeaturedToggle: Boolean = false
 ) {
     var locationDropdownExpanded by remember { mutableStateOf(false) }
-    var minSalaryExpanded by remember { mutableStateOf(false) }
-    var maxSalaryExpanded by remember { mutableStateOf(false) }
     var jobTypeExpanded by remember { mutableStateOf(false) }
+    var salaryRange by remember { mutableStateOf(1500f..10000f) }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -119,11 +286,20 @@ fun JobListingForm(
                 ) {
                     Text(text = "Job listing", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextDark)
                     TextButton(onClick = onTogglePreview, enabled = enabled) {
-                        Text(text = if (showPreview) "Hide preview" else "Show preview", fontSize = 13.sp, color = DeepGreenDark, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = if (showPreview) "Hide preview" else "Show preview",
+                            fontSize = 13.sp,
+                            color = DeepGreenDark,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
-                if (showPreview && previewContent != null) {
-                    previewContent()
+                if (showPreview) {
+                    if (previewContent != null) {
+                        previewContent()
+                    } else {
+                        JobPreviewCard(fields = fields, companyPhotoUrl = companyPhotoUrl)
+                    }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 1.dp, color = Color(0xFFE6EDE4))
                 }
             }
@@ -166,66 +342,36 @@ fun JobListingForm(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
             )
-            if (savedAddresses.isNotEmpty() && !fields.useCustomLocation) {
-                ExposedDropdownMenuBox(
-                    expanded = locationDropdownExpanded && enabled,
-                    onExpandedChange = { if (enabled) locationDropdownExpanded = it },
-                    modifier = Modifier.fillMaxWidth()
+
+            ExposedDropdownMenuBox(
+                expanded = locationDropdownExpanded && enabled,
+                onExpandedChange = { if (enabled) locationDropdownExpanded = it },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = fields.location.ifBlank { "Kuala Lumpur, Malaysia" },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { RequiredLabel("Location (Malaysia)", required = true) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = locationDropdownExpanded) },
+                    enabled = enabled,
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                ExposedDropdownMenu(
+                    expanded = locationDropdownExpanded,
+                    onDismissRequest = { locationDropdownExpanded = false }
                 ) {
-                    OutlinedTextField(
-                        value = fields.location,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { RequiredLabel("Location", required = true) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = locationDropdownExpanded) },
-                        enabled = enabled,
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    ExposedDropdownMenu(
-                        expanded = locationDropdownExpanded,
-                        onDismissRequest = { locationDropdownExpanded = false }
-                    ) {
-                        savedAddresses.forEach { address ->
-                            DropdownMenuItem(
-                                text = { Text(address) },
-                                onClick = {
-                                    fields.location = address
-                                    locationDropdownExpanded = false
-                                }
-                            )
-                        }
+                    MalaysiaLocations.forEach { state ->
                         DropdownMenuItem(
-                            text = { Text("Enter a different address...") },
+                            text = { Text(state, fontSize = 13.sp) },
                             onClick = {
-                                fields.location = ""
-                                fields.useCustomLocation = true
+                                fields.location = state
                                 locationDropdownExpanded = false
                             }
                         )
-                    }
-                }
-            } else {
-                OutlinedTextField(
-                    value = fields.location,
-                    onValueChange = { fields.location = it },
-                    label = { RequiredLabel("Location", required = true) },
-                    singleLine = true,
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                if (savedAddresses.isNotEmpty()) {
-                    TextButton(
-                        onClick = {
-                            fields.useCustomLocation = false
-                            fields.location = savedAddresses.first()
-                        },
-                        enabled = enabled
-                    ) {
-                        Text(text = "Use a saved address", fontSize = 13.sp, color = DeepGreenDark, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -242,13 +388,14 @@ fun JobListingForm(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
             )
+
             ExposedDropdownMenuBox(
                 expanded = jobTypeExpanded && enabled,
                 onExpandedChange = { if (enabled) jobTypeExpanded = it },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 OutlinedTextField(
-                    value = fields.type,
+                    value = fields.type.ifBlank { "Full-time" },
                     onValueChange = {},
                     readOnly = true,
                     enabled = enabled,
@@ -274,6 +421,7 @@ fun JobListingForm(
                     }
                 }
             }
+
             if (expiryDateText != null && onExpiryDateClick != null) {
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
@@ -300,75 +448,40 @@ fun JobListingForm(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 1.dp, color = Color(0xFFE6EDE4))
 
-            Text(text = "Salary", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DeepGreenDark)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                ExposedDropdownMenuBox(
-                    expanded = minSalaryExpanded && enabled,
-                    onExpandedChange = { if (enabled) minSalaryExpanded = it },
-                    modifier = Modifier.weight(1f)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedTextField(
-                        value = if (fields.minSalary.isNotEmpty()) "$${fields.minSalary}" else "",
-                        onValueChange = {},
-                        label = { RequiredLabel("Min salary", required = requireSalary) },
-                        readOnly = true,
-                        enabled = enabled,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = minSalaryExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                    Text(text = "Salary Range", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DeepGreenDark)
+                    Text(
+                        text = "${formatRm(salaryRange.start)} - ${formatRm(salaryRange.endInclusive)}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DeepGreenDark
                     )
-                    ExposedDropdownMenu(
-                        expanded = minSalaryExpanded,
-                        onDismissRequest = { minSalaryExpanded = false }
-                    ) {
-                        MinSalaryOptions.forEach { opt ->
-                            DropdownMenuItem(
-                                text = { Text("$$opt", fontSize = 13.sp) },
-                                onClick = {
-                                    fields.minSalary = opt
-                                    minSalaryExpanded = false
-                                }
-                            )
-                        }
-                    }
                 }
-                ExposedDropdownMenuBox(
-                    expanded = maxSalaryExpanded && enabled,
-                    onExpandedChange = { if (enabled) maxSalaryExpanded = it },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    OutlinedTextField(
-                        value = if (fields.maxSalary.isNotEmpty()) "$${fields.maxSalary}" else "",
-                        onValueChange = {},
-                        label = { RequiredLabel("Max salary", required = requireSalary) },
-                        readOnly = true,
-                        enabled = enabled,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = maxSalaryExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    ExposedDropdownMenu(
-                        expanded = maxSalaryExpanded,
-                        onDismissRequest = { maxSalaryExpanded = false }
-                    ) {
-                        MaxSalaryOptions.forEach { opt ->
-                            DropdownMenuItem(
-                                text = { Text("$$opt", fontSize = 13.sp) },
-                                onClick = {
-                                    fields.maxSalary = opt
-                                    maxSalaryExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
+
+                RangeSlider(
+                    value = salaryRange,
+                    onValueChange = { range ->
+                        val step = 500f
+                        val start = (range.start / step).roundToInt() * step
+                        val end = (range.endInclusive / step).roundToInt() * step
+                        salaryRange = start..end
+                        fields.minSalary = start.roundToInt().toString()
+                        fields.maxSalary = end.roundToInt().toString()
+                    },
+                    valueRange = 500f..50000f,
+                    enabled = enabled,
+                    colors = SliderDefaults.colors(
+                        thumbColor = DeepGreenDark,
+                        activeTrackColor = DeepGreenDark,
+                        inactiveTrackColor = SageGreenLight
+                    ),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 1.dp, color = Color(0xFFE6EDE4))
@@ -407,7 +520,7 @@ fun JobListingForm(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
             )
-//
+
             if (showFeaturedToggle) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 1.dp, color = Color(0xFFE6EDE4))
                 Row(
