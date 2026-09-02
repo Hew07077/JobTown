@@ -4,8 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -18,6 +20,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
 import com.example.jobtown.Screen
 import com.example.jobtown.data.model.InterviewSchedule
@@ -39,7 +43,7 @@ data class SchedulePrefill(
 ) {
     val isEmpty: Boolean get() = seekerId.isNullOrBlank() && title.isNullOrBlank()
 }
-
+//
 fun JobApplication.toSchedulePrefill(employerId: String, fallbackCompany: String): SchedulePrefill =
     SchedulePrefill(
         seekerId = userId,
@@ -561,8 +565,10 @@ internal fun RescheduleRequestDialog(
     val defaultDate = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
     var date by remember { mutableStateOf(defaultDate) }
     var time by remember { mutableStateOf("10:00 AM") }
+
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
+
     val datePickerState = rememberDatePickerState()
     val timePickerState = rememberTimePickerState(initialHour = 10, initialMinute = 0, is24Hour = false)
 
@@ -577,7 +583,7 @@ internal fun RescheduleRequestDialog(
                         }
                         showDatePicker = false
                     }
-                ) { Text("OK", color = DeepGreenDark) }
+                ) { Text("OK", color = DeepGreenDark, fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
                 TextButton(onClick = { showDatePicker = false }) { Text("Cancel", color = TextDark) }
@@ -600,70 +606,123 @@ internal fun RescheduleRequestDialog(
                         time = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(calendar.time)
                         showTimePicker = false
                     }
-                ) { Text("OK", color = DeepGreenDark) }
+                ) { Text("OK", color = DeepGreenDark, fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
                 TextButton(onClick = { showTimePicker = false }) { Text("Cancel", color = TextDark) }
             },
+            title = { Text("Preferred time") },
             text = { TimePicker(state = timePickerState) }
         )
     }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("Request Reschedule", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Scaffold(
+            containerColor = BackgroundWhite,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "Request Reschedule",
+                            fontWeight = FontWeight.Bold,
+                            color = DeepGreenDark
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = DeepGreenDark)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
+                )
+            },
+            bottomBar = {
+                Surface(shadowElevation = 12.dp, color = Color.White) {
+                    Button(
+                        onClick = {
+                            if (reason.isBlank()) return@Button
+                            onSubmit(reason.trim(), "$date at $time")
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                    ) {
+                        Text(
+                            text = "Send Request",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 Text(
-                    "Pick the date and time you prefer. The employer will see this and can update the interview.",
+                    text = "Pick the date and time you prefer. The employer will see this and can update the interview.",
                     fontSize = 13.sp,
                     color = TextDark.copy(alpha = 0.7f)
                 )
+
+                Text("Preferred date", fontWeight = FontWeight.SemiBold, color = DeepGreenDark, fontSize = 13.sp)
                 OutlinedTextField(
                     value = date,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Preferred date") },
+                    label = { Text("Select date") },
                     trailingIcon = {
                         IconButton(onClick = { showDatePicker = true }) {
                             Icon(Icons.Default.DateRange, contentDescription = "Pick date", tint = DeepGreenDark)
                         }
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
                 )
+
+                Text("Preferred time", fontWeight = FontWeight.SemiBold, color = DeepGreenDark, fontSize = 13.sp)
                 OutlinedTextField(
                     value = time,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Preferred time") },
+                    label = { Text("Select time") },
                     trailingIcon = {
                         IconButton(onClick = { showTimePicker = true }) {
                             Icon(Icons.Default.Schedule, contentDescription = "Pick time", tint = DeepGreenDark)
                         }
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
                 )
+
+                Text("Reason for reschedule", fontWeight = FontWeight.SemiBold, color = DeepGreenDark, fontSize = 13.sp)
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it },
-                    label = { Text("Reason for reschedule") },
-                    modifier = Modifier.fillMaxWidth()
+                    label = { Text("Why do you need to reschedule?") },
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (reason.isBlank()) return@Button
-                    onSubmit(reason.trim(), "$date at $time")
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
-            ) {
-                Text("Send Request", color = Color.White)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextDark) }
         }
-    )
+    }
 }
