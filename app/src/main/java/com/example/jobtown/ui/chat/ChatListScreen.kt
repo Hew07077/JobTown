@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.example.jobtown.data.model.ChatRoom
 import com.example.jobtown.data.model.User
 import com.example.jobtown.data.repository.UserRepository
@@ -125,14 +126,25 @@ fun ChatListScreen(
                         modifier = Modifier
                             .padding(end = 8.dp)
                             .size(40.dp)
-                            .clip(CircleShape)
-                            .background(SageGreenLight)
+
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Profile",
-                            tint = DeepGreenDark
-                        )
+                        val logoUrl = currentUser?.avatarUrl
+                        if (!logoUrl.isNullOrBlank()) {
+                            SubcomposeAsyncImage(
+                                model = logoUrl,
+                                contentDescription = "Profile",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                                    .clip(CircleShape)
+                                    .background(SageGreenLight)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Profile",
+                                tint = DeepGreenDark
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)

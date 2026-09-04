@@ -402,6 +402,7 @@ fun AppNavGraph(
 
                 ManageJobsScreen(
                     navController = navController,
+                    currentUser = loggedInUser,
                     employerJobs = employerJobs,
                     appliedViewModel = appliedViewModel,
                     onAddJobClick = { navController.navigate("post_job") },
@@ -786,11 +787,6 @@ fun AppNavGraph(
                 )
             }
 
-            // FIX: this destination was referenced by ScheduleScreen
-            // (navController.navigate(Screen.ScheduleDetail.createRoute(...)))
-            // but was never registered here, so tapping a schedule card
-            // crashed with "Navigation destination that matches request ...
-            // cannot be found in the navigation graph". Added below.
             composable(
                 route = Screen.ScheduleDetail.route,
                 arguments = listOf(navArgument("scheduleId") { type = NavType.StringType })

@@ -17,14 +17,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import coil.compose.SubcomposeAsyncImage
 import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.model.JobApplication
+import com.example.jobtown.data.model.User
 import com.example.jobtown.ui.applied.AppliedViewModel
 import com.example.jobtown.ui.theme.*
 
@@ -32,6 +35,7 @@ import com.example.jobtown.ui.theme.*
 @Composable
 fun ManageJobsScreen(
     navController: NavController,
+    currentUser: User?,
     employerJobs: List<Job>,
     appliedViewModel: AppliedViewModel,
     onAddJobClick: () -> Unit,
@@ -71,18 +75,29 @@ fun ManageJobsScreen(
                 },
                 actions = {
                     IconButton(
-                        onClick = onProfileClick,
+                        onClick = { navController.navigate("profile") },
                         modifier = Modifier
                             .padding(end = 8.dp)
                             .size(40.dp)
-                            .clip(CircleShape)
-                            .background(SageGreenLight)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Profile",
-                            tint = DeepGreenDark
-                        )
+                        val logoUrl = currentUser?.avatarUrl
+                        if (!logoUrl.isNullOrBlank()) {
+                            SubcomposeAsyncImage(
+                                model = logoUrl,
+                                contentDescription = "Profile",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(CircleShape)
+                                    .background(SageGreenLight)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Profile",
+                                tint = DeepGreenDark
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)

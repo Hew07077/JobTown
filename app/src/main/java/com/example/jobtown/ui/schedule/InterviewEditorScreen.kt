@@ -108,11 +108,37 @@ fun InterviewEditorScreen(
     val company = defaultCompany.ifBlank { existing?.company.orEmpty().ifBlank { prefill.company.orEmpty() } }
 
     val initialRange = remember(existing?.time) { parseTimeRange(existing?.time.orEmpty()) }
-    var date by remember {
-        mutableStateOf(existing?.date?.ifBlank { null } ?: SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()))
+
+    // Parse candidate preferred time string if present ("yyyy-MM-dd at hh:mm a")
+    val preferredParsed = remember(existing?.preferredTime) {
+        val pref = existing?.preferredTime.orEmpty().trim()
+        if (pref.contains(" at ")) {
+            val parts = pref.split(" at ")
+            Pair(parts.getOrNull(0)?.trim(), parts.getOrNull(1)?.trim())
+        } else {
+            Pair(null, null)
+        }
     }
-    var startTime by remember { mutableStateOf(initialRange.first) }
-    var endTime by remember { mutableStateOf(initialRange.second.ifBlank { "11:00 AM" }) }
+
+    var date by remember {
+        mutableStateOf(
+            preferredParsed.first
+                ?: existing?.date?.ifBlank { null }
+                ?: SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        )
+    }
+
+    var startTime by remember {
+        mutableStateOf(preferredParsed.second ?: initialRange.first)
+    }
+
+    // Auto-set End Time to Preferred Start Time + 1 Hour (or fall back to initial range)
+    var endTime by remember {
+        mutableStateOf(
+            preferredParsed.second?.let { addOneHour(it) }
+                ?: initialRange.second.ifBlank { "11:00 AM" }
+        )
+    }
 
     var meetingKind by remember {
         mutableStateOf(detectMeetingKind(existing?.locationOrLink.orEmpty()))
@@ -134,7 +160,7 @@ fun InterviewEditorScreen(
                 TextButton(
                     onClick = {
                         datePickerState.selectedDateMillis?.let { millis ->
-                            date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(millis))
+                            date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(millis))
                         }
                         showDatePicker = false
                     }
@@ -215,6 +241,18 @@ fun InterviewEditorScreen(
                                 Toast.makeText(context, "Job title is required.", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
+
+                            // --- TIME VALIDATION ---
+                            val startClock = parseClock(startTime)
+                            val endClock = parseClock(endTime)
+                            val startMinutes = startClock.first * 60 + startClock.second
+                            val endMinutes = endClock.first * 60 + endClock.second
+
+                            if (startMinutes >= endMinutes) {
+                                Toast.makeText(context, "Start time must be earlier than end time.", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+
                             if (meetingKind == MeetingKind.PHYSICAL && meetingValue.isBlank()) {
                                 Toast.makeText(context, "Enter the meeting address.", Toast.LENGTH_SHORT).show()
                                 return@Button
@@ -471,7 +509,7 @@ private fun TimeRangeCard(
 
 private fun parseClock(value: String): Pair<Int, Int> {
     return try {
-        val parsed = SimpleDateFormat("hh:mm a", Locale.getDefault()).parse(value.trim())
+        val parsed = SimpleDateFormat("hh:mm a", Locale.US).parse(value.trim())
         val calendar = Calendar.getInstance().apply { if (parsed != null) time = parsed }
         calendar.get(Calendar.HOUR_OF_DAY) to calendar.get(Calendar.MINUTE)
     } catch (_: Exception) {
@@ -484,5 +522,18 @@ private fun formatClock(hour: Int, minute: Int): String {
         set(Calendar.HOUR_OF_DAY, hour)
         set(Calendar.MINUTE, minute)
     }
-    return SimpleDateFormat("hh:mm a", Locale.getDefault()).format(calendar.time)
+    return SimpleDateFormat("hh:mm a", Locale.US).format(calendar.time).uppercase(Locale.US)
+}
+
+private fun addOneHour(timeStr: String): String {
+    return try {
+        val parsed = SimpleDateFormat("hh:mm a", Locale.US).parse(timeStr.trim())
+        val calendar = Calendar.getInstance().apply {
+            if (parsed != null) time = parsed
+            add(Calendar.HOUR_OF_DAY, 1)
+        }
+        SimpleDateFormat("hh:mm a", Locale.US).format(calendar.time).uppercase(Locale.US)
+    } catch (_: Exception) {
+        "11:00 AM"
+    }
 }
