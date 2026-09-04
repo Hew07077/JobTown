@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
+import coil.compose.SubcomposeAsyncImage
 import com.example.jobtown.Screen
 import com.example.jobtown.data.model.InterviewSchedule
 import com.example.jobtown.data.model.JobApplication
@@ -43,7 +45,7 @@ data class SchedulePrefill(
 ) {
     val isEmpty: Boolean get() = seekerId.isNullOrBlank() && title.isNullOrBlank()
 }
-//
+
 fun JobApplication.toSchedulePrefill(employerId: String, fallbackCompany: String): SchedulePrefill =
     SchedulePrefill(
         seekerId = userId,
@@ -88,11 +90,9 @@ fun ScheduleScreen(
             1 -> safeSchedules.filter { it.status.equals("Pending", ignoreCase = true) || it.status.equals("Scheduled", ignoreCase = true) }
             2 -> safeSchedules.filter { it.status.equals("Accepted", ignoreCase = true) }
             3 -> safeSchedules.filter { it.status.equals("Reschedule Requested", ignoreCase = true) }
-            4 -> safeSchedules.filter {
-                it.status.equals("Completed", ignoreCase = true) ||
-                    it.status.equals("Cancelled", ignoreCase = true) ||
-                    it.status.equals("Rejected", ignoreCase = true)
-            }
+            4 -> safeSchedules.filter { it.status.equals("Completed", ignoreCase = true) }
+            5 -> safeSchedules.filter { it.status.equals("Cancelled", ignoreCase = true) }
+            6 -> safeSchedules.filter { it.status.equals("Rejected", ignoreCase = true) }
             else -> safeSchedules
         }
     }
@@ -116,10 +116,24 @@ fun ScheduleScreen(
                             modifier = Modifier
                                 .padding(end = 8.dp)
                                 .size(40.dp)
-                                .clip(CircleShape)
-                                .background(SageGreenLight)
                         ) {
-                            Icon(imageVector = Icons.Default.Person, contentDescription = "Profile", tint = DeepGreenDark)
+                            val logoUrl = user?.avatarUrl
+                            if (!logoUrl.isNullOrBlank()) {
+                                SubcomposeAsyncImage(
+                                    model = logoUrl,
+                                    contentDescription = "Profile",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                        .clip(CircleShape)
+                                        .background(SageGreenLight)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = "Profile",
+                                    tint = DeepGreenDark
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
@@ -132,16 +146,16 @@ fun ScheduleScreen(
                     indicator = {},
                     divider = {}
                 ) {
-                    val tabs = listOf("All", "Pending", "Accepted", "Rescheduled", "Ended")
+                    val tabs = listOf("All", "Pending", "Accepted", "Rescheduled", "Completed", "Cancelled", "Rejected")
                     tabs.forEachIndexed { index, title ->
                         Tab(
                             selected = selectedFilterTab == index,
                             onClick = { selectedFilterTab = index },
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp, vertical = 8.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(if (selectedFilterTab == index) DeepGreenDark else SageGreenLight)
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                            modifier = Modifier
+                                .padding(horizontal = 4.dp, vertical = 8.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(if (selectedFilterTab == index) DeepGreenDark else SageGreenLight)
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
                         ) {
                             Text(
                                 text = title,
@@ -361,6 +375,7 @@ private fun ScheduleCard(
     val statusText = schedule.status.ifBlank { "Pending" }
     val cancelled = schedule.isCancelledInterview()
     val meetingKind = detectMeetingKind(schedule.locationOrLink)
+    val meetingValue = meetingDisplayValue(schedule.locationOrLink)
 
     Card(
         onClick = onCardClick,
@@ -432,6 +447,28 @@ private fun ScheduleCard(
                 Icon(Icons.Default.Schedule, contentDescription = null, tint = SageGreenDark, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(schedule.time.ifBlank { "Time not set" }, fontSize = 13.sp, color = TextDark.copy(alpha = 0.7f))
+            }
+
+            if (schedule.locationOrLink.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (meetingKind == MeetingKind.ONLINE) Icons.Default.Videocam else Icons.Default.LocationOn,
+                        contentDescription = null,
+                        tint = SageGreenDark,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = meetingValue.ifBlank {
+                            if (meetingKind == MeetingKind.ONLINE) "Google Meet" else "Location not set"
+                        },
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextDark.copy(alpha = 0.85f),
+                        maxLines = 1
+                    )
+                }
             }
 
             if (schedule.rescheduleReason.isNotBlank() || schedule.preferredTime.isNotBlank()) {
@@ -562,7 +599,7 @@ internal fun RescheduleRequestDialog(
     onSubmit: (reason: String, preferredTime: String) -> Unit
 ) {
     var reason by remember { mutableStateOf("") }
-    val defaultDate = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+    val defaultDate = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) }
     var date by remember { mutableStateOf(defaultDate) }
     var time by remember { mutableStateOf("10:00 AM") }
 
@@ -579,7 +616,7 @@ internal fun RescheduleRequestDialog(
                 TextButton(
                     onClick = {
                         datePickerState.selectedDateMillis?.let { millis ->
-                            date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(millis))
+                            date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(millis))
                         }
                         showDatePicker = false
                     }
@@ -603,7 +640,7 @@ internal fun RescheduleRequestDialog(
                             set(Calendar.HOUR_OF_DAY, timePickerState.hour)
                             set(Calendar.MINUTE, timePickerState.minute)
                         }
-                        time = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(calendar.time)
+                        time = SimpleDateFormat("hh:mm a", Locale.US).format(calendar.time).uppercase(Locale.US)
                         showTimePicker = false
                     }
                 ) { Text("OK", color = DeepGreenDark, fontWeight = FontWeight.Bold) }
@@ -715,7 +752,7 @@ internal fun RescheduleRequestDialog(
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it },
-                    label = { Text("Why do you need to reschedule?") },
+                    label = { Text("Why do you need to reschedule?*") },
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)

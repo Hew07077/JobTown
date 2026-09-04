@@ -1,5 +1,7 @@
 package com.example.jobtown.ui.auth
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,9 +12,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -34,14 +38,6 @@ import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.ui.theme.*
 import com.example.jobtown.utils.ValidationUtils
 
-/**
- * Minimal shape SignUpScreen needs from the shared signup draft that lives
- * in AppNavGraph. Declared here (rather than importing the private class
- * from NavGraph.kt) via a public interface-like data holder would add
- * complexity, so instead this screen takes the individual current values +
- * a single onDraftChange callback that receives a full copy -- see the
- * SignupFields type below for the exact shape expected.
- */
 data class SignUpFields(
     val name: String = "",
     val email: String = "",
@@ -57,6 +53,29 @@ data class SignUpFields(
     val companySize: String = "",
     val industry: String = ""
 )
+
+enum class PasswordStrength(val label: String, val color: Color, val progress: Float) {
+    EMPTY("", Color.Transparent, 0f),
+    WEAK("Weak", Color(0xFFE53935), 0.33f),
+    MEDIUM("Medium", Color(0xFFFB8C00), 0.66f),
+    STRONG("Strong", Color(0xFF43A047), 1.0f)
+}
+
+private fun calculatePasswordStrength(password: String): PasswordStrength {
+    if (password.isEmpty()) return PasswordStrength.EMPTY
+
+    var score = 0
+    if (password.length >= ValidationUtils.PASSWORD_MIN_LENGTH) score++
+    if (password.any { it.isDigit() }) score++
+    if (password.any { it.isLetter() }) score++
+    if (password.any { !it.isLetterOrDigit() }) score++
+
+    return when {
+        score <= 2 -> PasswordStrength.WEAK
+        score == 3 -> PasswordStrength.MEDIUM
+        else -> PasswordStrength.STRONG
+    }
+}
 
 @Composable
 fun SignUpScreen(
@@ -76,8 +95,20 @@ fun SignUpScreen(
     var confirmPasswordError by remember { mutableStateOf<String?>(null) }
 
     val isEmployer = draft.role == UserRole.EMPLOYER
-
     val scrollState = rememberScrollState()
+
+    val passwordStrength = remember(draft.password) {
+        calculatePasswordStrength(draft.password)
+    }
+
+    val animatedProgress by animateFloatAsState(
+        targetValue = passwordStrength.progress,
+        label = "PasswordStrengthProgress"
+    )
+    val animatedStrengthColor by animateColorAsState(
+        targetValue = passwordStrength.color,
+        label = "PasswordStrengthColor"
+    )
 
     Box(
         modifier = Modifier
@@ -136,9 +167,7 @@ fun SignUpScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    // Full Name (Job Seeker) / Company Name (Employer) -- label,
-                    // icon, keystroke filter and validation rule all switch
-                    // based on the role picked below.
+                    // Full Name / Company Name Input
                     OutlinedTextField(
                         value = draft.name,
                         onValueChange = {
@@ -195,7 +224,6 @@ fun SignUpScreen(
                             val newPassword = it.take(ValidationUtils.PASSWORD_MAX_LENGTH)
                             onDraftChange(draft.copy(password = newPassword))
                             passwordError = null
-                            // Re-check the confirm field live so a stale "match" error clears too.
                             if (draft.confirmPassword.isNotEmpty()) {
                                 confirmPasswordError = ValidationUtils.validateConfirmPassword(newPassword, draft.confirmPassword)
                             }
@@ -212,16 +240,73 @@ fun SignUpScreen(
                         singleLine = true,
                         isError = passwordError != null,
                         supportingText = {
-                            Text(
-                                text = passwordError ?: "At least ${ValidationUtils.PASSWORD_MIN_LENGTH} characters, with a letter and a number.",
-                                color = if (passwordError != null) Color.Red else TextDark.copy(alpha = 0.5f),
-                                fontSize = 12.sp
-                            )
+                            if (passwordError != null) {
+                                Text(text = passwordError!!, color = Color.Red, fontSize = 12.sp)
+                            }
                         },
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
                     )
+
+                    // Password Strength Indicator & Tips Section
+                    if (draft.password.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Password Strength:",
+                                fontSize = 12.sp,
+                                color = TextDark.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = passwordStrength.label,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = animatedStrengthColor
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        LinearProgressIndicator(
+                            progress = { animatedProgress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = animatedStrengthColor,
+                            trackColor = Color.LightGray.copy(alpha = 0.4f)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Password Requirement Tips Checklist
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(start = 4.dp)
+                        ) {
+                            PasswordTipItem(
+                                text = "At least ${ValidationUtils.PASSWORD_MIN_LENGTH} characters",
+                                isMet = draft.password.length >= ValidationUtils.PASSWORD_MIN_LENGTH,
+                                activeColor = animatedStrengthColor
+                            )
+                            PasswordTipItem(
+                                text = "Contains a letter and a number",
+                                isMet = draft.password.any { it.isLetter() } && draft.password.any { it.isDigit() },
+                                activeColor = animatedStrengthColor
+                            )
+                            PasswordTipItem(
+                                text = "Contains a special character (!@#$%...)",
+                                isMet = draft.password.any { !it.isLetterOrDigit() },
+                                activeColor = animatedStrengthColor
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -308,7 +393,6 @@ fun SignUpScreen(
                             val cleanName = draft.name.trim()
                             val cleanEmail = draft.email.trim().lowercase()
 
-                            // Validate every field before advancing to the next step.
                             val nameValidation = if (isEmployer) {
                                 ValidationUtils.validateCompanyName(cleanName)
                             } else {
@@ -358,5 +442,26 @@ fun SignUpScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun PasswordTipItem(text: String, isMet: Boolean, activeColor: Color) {
+    val icon = if (isMet) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked
+    val color = if (isMet) activeColor else TextDark.copy(alpha = 0.4f)
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = text,
+            fontSize = 11.sp,
+            color = color
+        )
     }
 }
