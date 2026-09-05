@@ -1,11 +1,10 @@
 package com.example.jobtown
 
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
+import android.net.Uri
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
-    /** Job seeker: applications they submitted. */
+    /** Jobseeker: applications they submitted. */
     object Applied : Screen("applied")
     /** Employer: jobs they posted and incoming applications. */
     object ManageJobs : Screen("manage_jobs")
@@ -27,9 +26,14 @@ sealed class Screen(val route: String) {
             title: String = "",
             initialQuestion: String = ""
         ): String {
-            val encodedCompany = URLEncoder.encode(company, StandardCharsets.UTF_8.toString())
-            val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
-            val encodedQuestion = URLEncoder.encode(initialQuestion, StandardCharsets.UTF_8.toString())
+            // Uri.encode() (not URLEncoder.encode()) -- this must match Uri.decode()
+            // on the receiving end in NavGraph.kt. URLEncoder encodes spaces as '+',
+            // but Uri.decode() only understands %XX percent-encoding and leaves a
+            // literal '+' alone, so names with spaces showed up as "ming+en" instead
+            // of "ming en" after decoding.
+            val encodedCompany = Uri.encode(company)
+            val encodedTitle = Uri.encode(title)
+            val encodedQuestion = Uri.encode(initialQuestion)
             return "chat_detail/$chatRoomId?company=$encodedCompany&title=$encodedTitle&initialQuestion=$encodedQuestion"
         }
     }
