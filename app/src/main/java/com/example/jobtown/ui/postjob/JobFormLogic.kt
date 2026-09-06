@@ -39,9 +39,9 @@ class JobFormFields(
     var errorMessage by mutableStateOf("")
 
     fun formattedSalary(blankFallback: String = "Negotiable"): String = when {
-        minSalary.isNotBlank() && maxSalary.isNotBlank() -> "$$minSalary - $$maxSalary / month"
-        minSalary.isNotBlank() -> "From $$minSalary / month"
-        maxSalary.isNotBlank() -> "Up to $$maxSalary / month"
+        minSalary.isNotBlank() && maxSalary.isNotBlank() -> "RM $minSalary - RM $maxSalary / month"
+        minSalary.isNotBlank() -> "From RM $minSalary / month"
+        maxSalary.isNotBlank() -> "Up to RM $maxSalary / month"
         else -> blankFallback
     }
 
@@ -65,11 +65,15 @@ class JobFormFields(
 }//
 
 fun parseSalaryValue(valueStr: String): Int {
-    return valueStr.replace(",", "").replace("+", "").replace("$", "").trim().toIntOrNull() ?: 0
+    return valueStr.replace(",", "").replace("+", "").replace("$", "")
+        .replace("RM", "", ignoreCase = true).trim().toIntOrNull() ?: 0
 }
 
 fun parseSalaryBounds(salary: String): Pair<String, String> {
-    val amounts = Regex("""\$([0-9,]+)""").findAll(salary).map { it.groupValues[1] }.toList()
+    // Matches both "RM 5,000" (current format) and the legacy "$5,000" format
+    // used before salaries were switched to Malaysian Ringgit, so jobs posted
+    // before this change still parse correctly when edited.
+    val amounts = Regex("""(?:RM\s*|\$)([0-9,]+)""").findAll(salary).map { it.groupValues[1] }.toList()
     val min = amounts.getOrNull(0).orEmpty()
     val max = if (salary.contains("30,000+")) "30,000+" else amounts.getOrNull(1).orEmpty()
     return min to max
