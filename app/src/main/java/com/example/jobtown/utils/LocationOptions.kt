@@ -1,67 +1,91 @@
 package com.example.jobtown.utils
 
 /**
- * Shared country list + helpers for building/parsing a "City, Country" location string
- * that can optionally hold several branch addresses (used by employers with more than
- * one office). Multiple addresses are stored as a single delimited string so no database
- * schema change is required: each address is "City, Country" and addresses are joined
- * with " | ".
+ * Malaysian states/federal territories + the cities within each, plus
+ * helpers for building/parsing a "City, State" location string that can
+ * optionally hold several branch addresses (used by employers with more
+ * than one office). Multiple addresses are stored as a single delimited
+ * string so no database schema change is required: each address is
+ * "City, State" and addresses are joined with " | ".
  */
 object LocationOptions {
 
     const val ADDRESS_DELIMITER = " | "
 
-    val COUNTRIES: List<String> = listOf(
-        "Malaysia", "Singapore", "Indonesia", "Thailand", "Vietnam", "Philippines",
-        "Brunei", "Cambodia", "Laos", "Myanmar",
-        "China", "Hong Kong", "Macau", "Taiwan", "Japan", "South Korea",
-        "India", "Pakistan", "Bangladesh", "Sri Lanka", "Nepal",
-        "Australia", "New Zealand",
-        "United States", "Canada", "Mexico", "Brazil", "Argentina",
-        "United Kingdom", "Ireland", "France", "Germany", "Netherlands",
-        "Belgium", "Switzerland", "Austria", "Spain", "Portugal", "Italy",
-        "Sweden", "Norway", "Denmark", "Finland", "Poland",
-        "United Arab Emirates", "Saudi Arabia", "Qatar", "Kuwait", "Bahrain", "Oman",
-        "South Africa", "Egypt", "Nigeria", "Kenya",
-        "Other"
+    val STATES: List<String> = listOf(
+        "Johor", "Kedah", "Kelantan", "Kuala Lumpur", "Labuan", "Malacca",
+        "Negeri Sembilan", "Pahang", "Penang", "Perak", "Perlis", "Putrajaya",
+        "Sabah", "Sarawak", "Selangor", "Terengganu", "Other"
     )
 
-    val CITIES_BY_COUNTRY: Map<String, List<String>> = mapOf(
-        "Malaysia" to listOf(
-            "Kuala Lumpur", "Petaling Jaya", "Shah Alam", "Subang Jaya", "Klang",
-            "George Town", "Johor Bahru", "Ipoh", "Melaka", "Seremban",
-            "Kota Kinabalu", "Kuching", "Kuantan", "Alor Setar", "Kuala Terengganu",
-            "Miri", "Sandakan", "Kangar", "Kota Bharu", "Cyberjaya", "Putrajaya", "Other"
+    val CITIES_BY_STATE: Map<String, List<String>> = mapOf(
+        "Johor" to listOf(
+            "Johor Bahru", "Muar", "Batu Pahat", "Kluang", "Segamat",
+            "Pontian", "Kulai", "Skudai", "Other"
         ),
-        "Singapore" to listOf("Singapore", "Other"),
-        "Indonesia" to listOf("Jakarta", "Surabaya", "Bandung", "Medan", "Bali", "Yogyakarta", "Other"),
-        "Thailand" to listOf("Bangkok", "Chiang Mai", "Phuket", "Pattaya", "Other"),
-        "Vietnam" to listOf("Ho Chi Minh City", "Hanoi", "Da Nang", "Other"),
-        "Philippines" to listOf("Manila", "Cebu", "Davao", "Quezon City", "Other"),
-        "China" to listOf("Beijing", "Shanghai", "Shenzhen", "Guangzhou", "Hangzhou", "Other"),
-        "Hong Kong" to listOf("Hong Kong", "Other"),
-        "Japan" to listOf("Tokyo", "Osaka", "Kyoto", "Yokohama", "Other"),
-        "South Korea" to listOf("Seoul", "Busan", "Incheon", "Other"),
-        "India" to listOf("Bengaluru", "Mumbai", "Delhi", "Hyderabad", "Chennai", "Pune", "Other"),
-        "Australia" to listOf("Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Other"),
-        "United States" to listOf("New York", "San Francisco", "Los Angeles", "Seattle", "Austin", "Chicago", "Other"),
-        "United Kingdom" to listOf("London", "Manchester", "Birmingham", "Edinburgh", "Other"),
-        "United Arab Emirates" to listOf("Dubai", "Abu Dhabi", "Sharjah", "Other")
+        "Kedah" to listOf(
+            "Alor Setar", "Sungai Petani", "Kulim", "Langkawi", "Jitra", "Other"
+        ),
+        "Kelantan" to listOf(
+            "Kota Bharu", "Pasir Mas", "Tanah Merah", "Machang", "Other"
+        ),
+        "Kuala Lumpur" to listOf("Kuala Lumpur", "Other"),
+        "Labuan" to listOf("Labuan", "Other"),
+        "Malacca" to listOf("Melaka", "Alor Gajah", "Jasin", "Other"),
+        "Negeri Sembilan" to listOf(
+            "Seremban", "Port Dickson", "Nilai", "Bahau", "Other"
+        ),
+        "Pahang" to listOf(
+            "Kuantan", "Temerloh", "Bentong", "Cameron Highlands", "Raub", "Other"
+        ),
+        "Penang" to listOf(
+            "George Town", "Bayan Lepas", "Butterworth", "Bukit Mertajam", "Other"
+        ),
+        "Perak" to listOf(
+            "Ipoh", "Taiping", "Teluk Intan", "Sitiawan", "Kampar", "Other"
+        ),
+        "Perlis" to listOf("Kangar", "Arau", "Other"),
+        "Putrajaya" to listOf("Putrajaya", "Other"),
+        "Sabah" to listOf(
+            "Kota Kinabalu", "Sandakan", "Tawau", "Lahad Datu", "Other"
+        ),
+        "Sarawak" to listOf(
+            "Kuching", "Miri", "Sibu", "Bintulu", "Other"
+        ),
+        "Selangor" to listOf(
+            "Shah Alam", "Petaling Jaya", "Subang Jaya", "Klang", "Cyberjaya",
+            "Kajang", "Ampang", "Puchong", "Rawang", "Other"
+        ),
+        "Terengganu" to listOf(
+            "Kuala Terengganu", "Kemaman", "Dungun", "Other"
+        )
     )
 
-    fun citiesFor(country: String): List<String> =
-        CITIES_BY_COUNTRY[country].orEmpty()
+    fun citiesFor(state: String): List<String> =
+        CITIES_BY_STATE[state].orEmpty()
 
-    data class Address(val city: String, val country: String) {
+    /**
+     * Alphabetical, but keeps a trailing "Other" pinned at the end rather
+     * than sorted in with the real place names -- it's a fallback option,
+     * not an actual place. Used wherever these lists are shown as a
+     * dropdown, so the menu is always sorted regardless of the order the
+     * list happens to be declared in above.
+     */
+    fun sortedForDisplay(options: List<String>): List<String> {
+        val (real, other) = options.partition { !it.equals("Other", ignoreCase = true) }
+        return real.sorted() + other
+    }
+
+    data class Address(val city: String, val state: String) {
         fun display(): String = when {
-            city.isBlank() && country.isBlank() -> ""
-            city.isBlank() -> country
-            country.isBlank() -> city
-            else -> "$city, $country"
+            city.isBlank() && state.isBlank() -> ""
+            city.isBlank() -> state
+            state.isBlank() -> city
+            else -> "$city, $state"
         }
     }
 
-    /** Splits a combined "City, Country | City, Country" string into individual addresses. */
+    /** Splits a combined "City, State | City, State" string into individual addresses. */
     fun parseAddresses(combined: String): List<Address> {
         if (combined.isBlank()) return emptyList()
         return combined.split(ADDRESS_DELIMITER)
@@ -73,14 +97,14 @@ object LocationOptions {
     private fun parseOneAddress(entry: String): Address {
         val parts = entry.split(",", limit = 2).map { it.trim() }.filter { it.isNotBlank() }
         return when {
-            parts.size >= 2 -> Address(city = parts[0], country = parts[1])
-            isKnownCountry(parts.first()) -> Address(city = "", country = parts.first())
-            else -> Address(city = parts.first(), country = "")
+            parts.size >= 2 -> Address(city = parts[0], state = parts[1])
+            isKnownState(parts.first()) -> Address(city = "", state = parts.first())
+            else -> Address(city = parts.first(), state = "")
         }
     }
 
-    fun isKnownCountry(value: String): Boolean =
-        COUNTRIES.any { it.equals(value.trim(), ignoreCase = true) }
+    fun isKnownState(value: String): Boolean =
+        STATES.any { it.equals(value.trim(), ignoreCase = true) }
 
     /** Joins a primary address plus any additional branch addresses into one storable string. */
     fun buildLocationString(primary: Address, branches: List<Address> = emptyList()): String {

@@ -21,10 +21,11 @@ import com.example.jobtown.utils.LocationOptions
 import com.example.jobtown.utils.ValidationUtils
 
 /**
- * Country (dropdown) + City (free text) pair, with an optional "add another branch"
- * flow so employers with more than one office location can list all of them.
- * The combined result is reported through [onLocationStringChange] as a single
- * "City, Country | City, Country" string (see [LocationOptions]).
+ * State (dropdown) + City (dropdown, filtered by the selected state) pair,
+ * with an optional "add another branch" flow so employers with more than
+ * one office location can list all of them. The combined result is
+ * reported through [onLocationStringChange] as a single
+ * "City, State | City, State" string (see [LocationOptions]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,16 +39,16 @@ fun LocationPicker(
 ) {
     val parsed = remember(locationString) { LocationOptions.parseAddresses(locationString) }
 
-    var country by remember(locationString) { mutableStateOf(parsed.getOrNull(0)?.country.orEmpty()) }
+    var state by remember(locationString) { mutableStateOf(parsed.getOrNull(0)?.state.orEmpty()) }
     var city by remember(locationString) { mutableStateOf(parsed.getOrNull(0)?.city.orEmpty()) }
     var branches by remember(locationString) {
-        mutableStateOf(parsed.drop(1).map { it.city to it.country })
+        mutableStateOf(parsed.drop(1).map { it.city to it.state })
     }
     var expanded by remember { mutableStateOf(false) }
 
     fun emit() {
-        val primary = LocationOptions.Address(city = city.trim(), country = country.trim())
-        val branchAddresses = branches.map { (c, co) -> LocationOptions.Address(city = c.trim(), country = co.trim()) }
+        val primary = LocationOptions.Address(city = city.trim(), state = state.trim())
+        val branchAddresses = branches.map { (c, st) -> LocationOptions.Address(city = c.trim(), state = st.trim()) }
         onLocationStringChange(LocationOptions.buildLocationString(primary, branchAddresses))
     }
 
@@ -59,21 +60,21 @@ fun LocationPicker(
                 modifier = Modifier.weight(1f)
             ) {
                 OutlinedTextField(
-                    value = country,
+                    value = state,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Country") },
+                    label = { Text("State") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                     isError = errorText != null,
                     modifier = Modifier.menuAnchor().fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 )
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    LocationOptions.COUNTRIES.forEach { option ->
+                    LocationOptions.sortedForDisplay(LocationOptions.STATES).forEach { option ->
                         DropdownMenuItem(
                             text = { Text(option) },
                             onClick = {
-                                country = option
+                                state = option
                                 expanded = false
                                 val allowed = LocationOptions.citiesFor(option)
                                 if (allowed.isNotEmpty() && city.isNotBlank() &&
@@ -88,11 +89,11 @@ fun LocationPicker(
                 }
             }
 
-            val cityOptions = LocationOptions.citiesFor(country)
+            val cityOptions = LocationOptions.citiesFor(state)
             if (cityOptions.isNotEmpty()) {
                 CityDropdown(
                     city = city,
-                    options = cityOptions,
+                    options = LocationOptions.sortedForDisplay(cityOptions),
                     onCityChange = {
                         city = it
                         emit()
@@ -121,16 +122,16 @@ fun LocationPicker(
         }
 
         if (allowMultipleBranches) {
-            branches.forEachIndexed { index, (branchCity, branchCountry) ->
+            branches.forEachIndexed { index, (branchCity, branchState) ->
                 BranchRow(
                     city = branchCity,
-                    country = branchCountry,
+                    state = branchState,
                     onCityChange = { newCity ->
-                        branches = branches.toMutableList().also { it[index] = newCity to branchCountry }
+                        branches = branches.toMutableList().also { it[index] = newCity to branchState }
                         emit()
                     },
-                    onCountryChange = { newCountry ->
-                        branches = branches.toMutableList().also { it[index] = branchCity to newCountry }
+                    onStateChange = { newState ->
+                        branches = branches.toMutableList().also { it[index] = branchCity to newState }
                         emit()
                     },
                     onRemove = {
@@ -179,6 +180,9 @@ private fun CityDropdown(
                 shape = RoundedCornerShape(12.dp)
             )
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                // Caller is expected to have already sorted `options` via
+                // LocationOptions.sortedForDisplay(...) -- kept as plain
+                // iteration here so this stays a dumb, reusable dropdown.
                 options.forEach { option ->
                     DropdownMenuItem(
                         text = { Text(option) },
@@ -214,9 +218,9 @@ private fun CityDropdown(
 @Composable
 private fun BranchRow(
     city: String,
-    country: String,
+    state: String,
     onCityChange: (String) -> Unit,
-    onCountryChange: (String) -> Unit,
+    onStateChange: (String) -> Unit,
     onRemove: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -234,21 +238,21 @@ private fun BranchRow(
             modifier = Modifier.weight(1f)
         ) {
             OutlinedTextField(
-                value = country,
+                value = state,
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Country") },
+                label = { Text("State") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 modifier = Modifier.menuAnchor().fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
             )
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                LocationOptions.COUNTRIES.forEach { option ->
+                LocationOptions.sortedForDisplay(LocationOptions.STATES).forEach { option ->
                     DropdownMenuItem(
                         text = { Text(option) },
                         onClick = {
-                            onCountryChange(option)
+                            onStateChange(option)
                             expanded = false
                         }
                     )
@@ -256,11 +260,11 @@ private fun BranchRow(
             }
         }
 
-        val branchCities = LocationOptions.citiesFor(country)
+        val branchCities = LocationOptions.citiesFor(state)
         if (branchCities.isNotEmpty()) {
             CityDropdown(
                 city = city,
-                options = branchCities,
+                options = LocationOptions.sortedForDisplay(branchCities),
                 onCityChange = onCityChange,
                 modifier = Modifier.weight(1f)
             )
