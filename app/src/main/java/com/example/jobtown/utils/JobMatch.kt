@@ -42,6 +42,23 @@ data class JobMatchResult(
  *  - Recency boost (10%): newer listings are nudged up slightly so equally
  *    good matches don't go stale at the top of the feed forever.
  *
+ * OKU (Orang Kurang Upaya) support: [Job.isOkuFriendly] is surfaced as an
+ * informational reason ("Employer marked as OKU-friendly") whenever it's
+ * true, and [filterOKUFriendly] lets the UI offer a dedicated "OKU-friendly
+ * jobs" toggle. This is purely informational right now - it does NOT affect
+ * [score] or the weights above, because UserProfile currently has no field
+ * indicating a seeker identifies as OKU or what their accessibility needs
+ * are. If you want scoring/ranking to actually favor OKU-friendly jobs for
+ * seekers who opt in, UserProfile needs a field like:
+ *
+ *   val isOku: Boolean? = false
+ *   val accessibilityNeeds: List<String> = emptyList()
+ *
+ * (and, for finer-grained matching, Job would need an
+ * `accessibilityFeatures: List<String>?` alongside isOkuFriendly). Say the
+ * word and I'll wire that version back in once those fields are on the
+ * model - it's a small diff on top of this file.
+ *
  * All matching is done locally against already-fetched data - no network
  * calls - so it's cheap to recompute whenever the job list or profile
  * changes.
@@ -74,14 +91,9 @@ object JobMatchUtils {
         // --- Skills (55%) ---
         val jobSkills = job.skills.orEmpty().ifEmpty { job.requirements.orEmpty() }
 
-        // Handle skills safely whether provided as a String or List representation
-        val rawSeekerSkills: List<String> = when (val skillsObj = profile.skills as Any?) {
-            is List<*> -> skillsObj.mapNotNull { it?.toString() }
-            is String -> skillsObj.split(",")
-            else -> emptyList()
-        }
-
-        val seekerSkillsNormalized = rawSeekerSkills
+        // UserProfile.skills is a comma-separated String.
+        val seekerSkillsNormalized = profile.skills.orEmpty()
+            .split(",")
             .map { normalizeSkill(it) }
             .filter { it.isNotBlank() }
             .toSet()
@@ -106,7 +118,7 @@ object JobMatchUtils {
 
         // --- Experience level (20%) ---
         val seekerLevel = experienceKeyword(profile.experienceLevel)
-        val jobText = "${job.title} ${job.description.orEmpty()} ${job.requirements.orEmpty().joinToString(" ")}".lowercase()
+        val jobText = "${job.title} ${job.description} ${job.requirements.orEmpty().joinToString(" ")}".lowercase()
         val jobLevel = experienceOrder.firstOrNull { jobText.contains(it) }
         val experienceScore: Double = when {
             seekerLevel == null || jobLevel == null -> 70.0 // Unknown - neutral, don't penalize
@@ -123,9 +135,9 @@ object JobMatchUtils {
         }
 
         // --- Location (15%) ---
-        val jobLocation = job.location.orEmpty().trim().lowercase()
+        val jobLocation = job.location.trim().lowercase()
         val seekerLocation = profile.location?.trim()?.lowercase().orEmpty()
-        val isRemote = jobLocation.contains("remote") || job.type.orEmpty().contains("remote", ignoreCase = true)
+        val isRemote = jobLocation.contains("remote") || job.type.contains("remote", ignoreCase = true)
         val locationScore: Double = when {
             isRemote -> 100.0
             seekerLocation.isBlank() || jobLocation.isBlank() -> 60.0
@@ -135,6 +147,11 @@ object JobMatchUtils {
         }
         if (isRemote) reasons += "Remote - work from anywhere"
         else if (seekerLocation.isNotBlank() && (jobLocation == seekerLocation)) reasons += "Same location as your profile"
+
+        // --- OKU-friendly (informational only, no weight - see class doc) ---
+        if (job.isOkuFriendly == true) {
+            reasons += "Employer marked as OKU-friendly"
+        }
 
         // --- Recency boost (10%) ---
         val recencyScore: Double = 70.0 // Neutral baseline
@@ -157,6 +174,10 @@ object JobMatchUtils {
                 .thenByDescending { it.createdAt.orEmpty() }
         )
     }
+
+    /** Convenience filter for a dedicated "OKU-friendly jobs" view/toggle. */
+    fun filterOKUFriendly(jobs: List<Job>): List<Job> =
+        jobs.filter { it.isOkuFriendly == true }
 
     private fun experienceKeyword(level: String?): String? {
         if (level.isNullOrBlank()) return null
