@@ -101,7 +101,8 @@ fun AppNavGraph(
 
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
-            snackbarHostState.showSnackbar(message = it, duration = SnackbarDuration.Long)
+            // Short avoids notifications like "Interview removed." lingering on screen.
+            snackbarHostState.showSnackbar(message = it, duration = SnackbarDuration.Short)
             snackbarMessage = null
         }
     }
@@ -411,13 +412,23 @@ fun AppNavGraph(
                         navController.navigate(Screen.ApplicationDetail.createRoute(applicationId))
                     },
                     onScheduleInterview = { application ->
-                        scheduleViewModel.setPrefill(
-                            application.toSchedulePrefill(
-                                employerId = loggedInUser?.id.orEmpty(),
-                                fallbackCompany = loggedInUser?.companyName.orEmpty()
+                        val alreadyScheduled = scheduleViewModel.schedulesList.any { existing ->
+                            existing.userId == application.userId &&
+                                (application.jobId.isBlank() || existing.jobId == application.jobId) &&
+                                !existing.status.equals("Cancelled", ignoreCase = true) &&
+                                !existing.status.equals("Rejected", ignoreCase = true)
+                        }
+                        if (alreadyScheduled) {
+                            snackbarMessage = "An interview is already scheduled for this candidate. Cancel it first to schedule a new one."
+                        } else {
+                            scheduleViewModel.setPrefill(
+                                application.toSchedulePrefill(
+                                    employerId = loggedInUser?.id.orEmpty(),
+                                    fallbackCompany = loggedInUser?.companyName.orEmpty()
+                                )
                             )
-                        )
-                        showInterviewEditor = true
+                            showInterviewEditor = true
+                        }
                     },
                     onStartChat = { application ->
                         startOrOpenChat(
@@ -491,7 +502,7 @@ fun AppNavGraph(
                             appliedViewModel.findApplicationForJob(uid, selectedJob.id)
                         },
                         onApplySubmit = { application ->
-                            appliedViewModel.submitNewApplication(application) { success ->
+                            appliedViewModel.submitNewApplication(application) { success, message ->
                                 if (success) {
                                     navController.navigate(Screen.Applied.route) {
                                         popUpTo(Screen.Home.route) { saveState = true }
@@ -499,7 +510,7 @@ fun AppNavGraph(
                                         restoreState = true
                                     }
                                 } else {
-                                    snackbarMessage = "Failed to submit application. Please try again."
+                                    snackbarMessage = message ?: "Failed to submit application. Please try again."
                                 }
                             }
                         },
@@ -629,17 +640,30 @@ fun AppNavGraph(
                         },
                         onScheduleClick = { appId, applicantId, applicantName, jobTitle, companyName ->
                             val application = appliedViewModel.applicationsList.find { it.id == appId || it.id == applicationId }
-                            scheduleViewModel.setPrefill(
-                                SchedulePrefill(
-                                    seekerId = applicantId,
-                                    seekerName = applicantName,
-                                    employerId = loggedInUser?.id.orEmpty(),
-                                    company = companyName.ifBlank { loggedInUser?.companyName.orEmpty() },
-                                    title = jobTitle,
-                                    jobId = application?.jobId.orEmpty()
+                            val jobId = application?.jobId.orEmpty()
+                            // Once a live schedule exists for this candidate + job, lock out
+                            // creating another one — cancel the existing one first instead.
+                            val alreadyScheduled = scheduleViewModel.schedulesList.any { existing ->
+                                existing.userId == applicantId &&
+                                    (jobId.isBlank() || existing.jobId == jobId) &&
+                                    !existing.status.equals("Cancelled", ignoreCase = true) &&
+                                    !existing.status.equals("Rejected", ignoreCase = true)
+                            }
+                            if (alreadyScheduled) {
+                                snackbarMessage = "An interview is already scheduled for this candidate. Cancel it first to schedule a new one."
+                            } else {
+                                scheduleViewModel.setPrefill(
+                                    SchedulePrefill(
+                                        seekerId = applicantId,
+                                        seekerName = applicantName,
+                                        employerId = loggedInUser?.id.orEmpty(),
+                                        company = companyName.ifBlank { loggedInUser?.companyName.orEmpty() },
+                                        title = jobTitle,
+                                        jobId = jobId
+                                    )
                                 )
-                            )
-                            showInterviewEditor = true
+                                showInterviewEditor = true
+                            }
                         },
                         onStatusChange = { targetAppId, newStatus ->
                             appliedViewModel.updateApplicationStatus(targetAppId, newStatus) { success ->

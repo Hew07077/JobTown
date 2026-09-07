@@ -70,6 +70,7 @@ import com.example.jobtown.ui.theme.SageGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.SageGreenMain
 import com.example.jobtown.ui.theme.TextDark
+import com.example.jobtown.utils.formatDateWithTimeZone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -402,7 +403,7 @@ fun ApplicationCard(
                 )
                 MetaItem(
                     icon = Icons.Default.CalendarToday,
-                    text = application.appliedDate
+                    text = formatDateWithTimeZone(application.appliedAt)
                 )
             }
 

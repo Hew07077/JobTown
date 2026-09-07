@@ -65,6 +65,7 @@ import com.example.jobtown.ui.theme.SageGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.SageGreenMain
 import com.example.jobtown.ui.theme.TextDark
+import com.example.jobtown.utils.currentTimeZoneLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -217,7 +218,7 @@ fun ScheduleDetailScreen(
                             Icon(Icons.Default.Schedule, contentDescription = null, tint = DeepGreenDark)
                         }
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text("Time", fontSize = 12.sp, color = TextDark.copy(alpha = 0.55f))
+                        Text("Time (${currentTimeZoneLabel()})", fontSize = 12.sp, color = TextDark.copy(alpha = 0.55f))
                         Text(
                             text = timeParts.first,
                             fontWeight = FontWeight.Bold,

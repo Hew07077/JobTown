@@ -30,6 +30,7 @@ import com.example.jobtown.data.model.InterviewSchedule
 import com.example.jobtown.data.model.JobApplication
 import com.example.jobtown.data.model.User
 import com.example.jobtown.ui.theme.*
+import com.example.jobtown.utils.currentTimeZoneLabel
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -446,7 +447,11 @@ private fun ScheduleCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Schedule, contentDescription = null, tint = SageGreenDark, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(schedule.time.ifBlank { "Time not set" }, fontSize = 13.sp, color = TextDark.copy(alpha = 0.7f))
+                Text(
+                    text = if (schedule.time.isBlank()) "Time not set" else "${schedule.time} (${currentTimeZoneLabel()})",
+                    fontSize = 13.sp,
+                    color = TextDark.copy(alpha = 0.7f)
+                )
             }
 
             if (schedule.locationOrLink.isNotBlank()) {
@@ -524,12 +529,32 @@ private fun ScheduleCard(
                     Text("Delete from list", fontSize = 12.sp)
                 }
             } else if (isEmployer) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = onEditSchedule,
-                        colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
-                    ) {
-                        Text("Edit", fontSize = 12.sp, color = Color.White)
+                // Once the candidate has confirmed (Accepted) or the interview has
+                // already happened (Completed), the schedule is locked from direct
+                // edits — cancel and re-create instead if it truly needs to change.
+                val isLocked = statusText.equals("Accepted", ignoreCase = true) ||
+                    statusText.equals("Completed", ignoreCase = true)
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (isLocked) {
+                        OutlinedButton(
+                            onClick = {},
+                            enabled = false,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                disabledContentColor = TextDark.copy(alpha = 0.4f)
+                            )
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Locked", fontSize = 12.sp)
+                        }
+                    } else {
+                        Button(
+                            onClick = onEditSchedule,
+                            colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                        ) {
+                            Text("Edit", fontSize = 12.sp, color = Color.White)
+                        }
                     }
                     if (statusText.equals("Pending", ignoreCase = true) || statusText.equals("Accepted", ignoreCase = true)) {
                         OutlinedButton(onClick = { onUpdateStatus(schedule.id, "Completed") }) {

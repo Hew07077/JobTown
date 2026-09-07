@@ -54,6 +54,7 @@ import com.example.jobtown.ui.theme.BackgroundWhite
 import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenMain
 import com.example.jobtown.ui.theme.TextDark
+import com.example.jobtown.utils.formatTimestampWithTimeZone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -157,7 +158,7 @@ fun JobseekerApplicationDetailScreen(
                         ApplicationDetailRow(
                             icon = Icons.Default.CalendarToday,
                             label = "Applied on",
-                            value = application.appliedDate
+                            value = formatTimestampWithTimeZone(application.appliedAt)
                         )
 
                         AppliedDivider(verticalPadding = 18.dp)

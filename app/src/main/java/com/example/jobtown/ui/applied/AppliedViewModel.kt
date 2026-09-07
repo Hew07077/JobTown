@@ -64,7 +64,20 @@ class AppliedViewModel(
         }
     }
 
-    fun submitNewApplication(application: JobApplication, onComplete: (Boolean) -> Unit) {
+    fun submitNewApplication(application: JobApplication, onComplete: (Boolean, String?) -> Unit) {
+        // Guard against the same person applying to the same job twice —
+        // checked against whatever they already have loaded, regardless of
+        // which screen the apply flow was reached from.
+        val duplicate = _applicationsList.value.any { existing ->
+            existing.userId == application.userId &&
+                existing.jobId == application.jobId &&
+                !existing.status.equals("Cancelled", ignoreCase = true)
+        }
+        if (duplicate) {
+            onComplete(false, "You've already applied for this job.")
+            return
+        }
+
         viewModelScope.launch {
             _isLoading.value = true
             val success = applicationRepository.submitApplication(application)
@@ -72,7 +85,7 @@ class AppliedViewModel(
                 loadApplications(application.userId, forceRefresh = true)
             }
             _isLoading.value = false
-            onComplete(success)
+            onComplete(success, if (success) null else "Failed to submit application. Please try again.")
         }
     }
 
