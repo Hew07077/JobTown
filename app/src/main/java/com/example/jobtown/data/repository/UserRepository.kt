@@ -74,6 +74,14 @@ object UserRepository {
                 }
             }
 
+            // Persists education/experience/certification entries (and the
+            // rest of the extended profile fields) to the `profiles` table.
+            // Best-effort: a failure here shouldn't fail the whole save if
+            // the core user/job-seeker/employer row already went through.
+            if (user.role != UserRole.EMPLOYER && upsertUserProfileRow(user.toUserProfile())) {
+                saved = true
+            }
+
             if (!saved) {
                 lastUserSaveError = lastUserSaveError
                     ?: lastError?.let { describeDbError(it) }
@@ -100,14 +108,14 @@ object UserRepository {
         // default JOB_SEEKER role from the auth trigger, even after signup
         // as a company.
         if (cleanId.isNotBlank()) {
-            fetchEmployerById(cleanId)?.let { return@withContext it }
+            fetchEmployerById(cleanId)?.let { return@withContext mergeProfile(it) }
             fetchUserById(cleanId)?.let { return@withContext it }
-            fetchJobSeekerById(cleanId)?.let { return@withContext it }
+            fetchJobSeekerById(cleanId)?.let { return@withContext mergeProfile(it) }
         }
         if (cleanEmail.isNotBlank()) {
-            fetchEmployerByEmail(cleanEmail)?.let { return@withContext it }
-            findUserByEmail(cleanEmail)?.let { return@withContext it }
-            fetchJobSeekerByEmail(cleanEmail)?.let { return@withContext it }
+            fetchEmployerByEmail(cleanEmail)?.let { return@withContext mergeProfile(it) }
+            findUserByEmail(cleanEmail)?.let { return@withContext mergeProfile(it) }
+            fetchJobSeekerByEmail(cleanEmail)?.let { return@withContext mergeProfile(it) }
         }
         null
     }
@@ -190,24 +198,33 @@ object UserRepository {
 
     private suspend fun upsertUserProfileRow(profile: UserProfile): Boolean {
         if (profile.id.isBlank()) return false
-        val core = UserProfileCore(
-            id = profile.id,
-            phone = profile.phone,
-            location = profile.location,
-            tagline = profile.tagline,
-            websiteUrl = profile.websiteUrl,
-            perks = profile.perks,
-            skills = profile.skills,
-            experienceLevel = profile.experienceLevel,
-            portfolioUrl = profile.portfolioUrl,
-            bio = profile.bio
-        )
         return try {
-            SupabaseClient.client.from("profiles").upsert(core)
+            // Try the full payload first -- this includes the education,
+            // experience and certification entries.
+            SupabaseClient.client.from("profiles").upsert(profile)
             true
         } catch (e: Exception) {
-            e.printStackTrace()
-            false
+            // Falls back to the entry-less payload in case this Supabase
+            // project's `profiles` table predates the entries columns.
+            val core = UserProfileCore(
+                id = profile.id,
+                phone = profile.phone,
+                location = profile.location,
+                tagline = profile.tagline,
+                websiteUrl = profile.websiteUrl,
+                perks = profile.perks,
+                skills = profile.skills,
+                experienceLevel = profile.experienceLevel,
+                portfolioUrl = profile.portfolioUrl,
+                bio = profile.bio
+            )
+            try {
+                SupabaseClient.client.from("profiles").upsert(core)
+                true
+            } catch (fallback: Exception) {
+                fallback.printStackTrace()
+                false
+            }
         }
     }
 
@@ -372,9 +389,14 @@ object UserRepository {
 
     suspend fun fetchUserById(userId: String): User? = withContext(Dispatchers.IO) {
         if (userId.isBlank()) return@withContext null
-        fetchEmployerById(userId)
+        val user = fetchEmployerById(userId)
             ?: fetchUsersTableById(userId)
             ?: fetchJobSeekerById(userId)
+        // experienceEntries/educationEntries/certificationEntries are
+        // @Transient on User, so they never come back from the users/
+        // job_seekers/employers tables directly -- merge them in from the
+        // `profiles` table here.
+        user?.let { mergeProfile(it) }
     }
 
     private suspend fun fetchUsersTableById(userId: String): User? = try {

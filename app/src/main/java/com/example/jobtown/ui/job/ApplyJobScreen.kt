@@ -34,8 +34,10 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.model.JobApplication
+import com.example.jobtown.data.model.ProfileEntry
 import com.example.jobtown.data.model.User
 import com.example.jobtown.data.repository.UserRepository
+import com.example.jobtown.ui.profile.ProfileOptions
 import com.example.jobtown.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -430,6 +432,48 @@ private fun ApplicationFlowScreen(
     var showValidationErrors by remember { mutableStateOf(false) }
     var currentStep by remember { mutableStateOf(0) }
 
+    // Education / Experience / Certification entries. Pre-filled from the
+    // applicant's saved profile when available; if the profile has none yet,
+    // the applicant fills them in on this step and they get saved back to
+    // their profile (via UserRepository) so future applications don't ask
+    // again.
+    val originalEducationEntries = remember { currentUser?.educationEntries.orEmpty() }
+    val originalExperienceEntries = remember { currentUser?.experienceEntries.orEmpty() }
+    val originalCertificationEntries = remember { currentUser?.certificationEntries.orEmpty() }
+    var educationEntries by remember { mutableStateOf(originalEducationEntries) }
+    var experienceEntries by remember { mutableStateOf(originalExperienceEntries) }
+    var certificationEntries by remember { mutableStateOf(originalCertificationEntries) }
+    var isSavingQualifications by remember { mutableStateOf(false) }
+    var isUploadingQualCertificate by remember { mutableStateOf(false) }
+
+    val onAddQualificationEntry: (String, ProfileEntry) -> Unit = { category, entry ->
+        when (category) {
+            "Education" -> educationEntries = educationEntries + entry
+            "Experience" -> experienceEntries = experienceEntries + entry
+            "Certification" -> certificationEntries = certificationEntries + entry
+        }
+    }
+    val onRemoveQualificationEntry: (String, ProfileEntry) -> Unit = { category, entry ->
+        when (category) {
+            "Education" -> educationEntries = educationEntries.filterNot { it.id == entry.id }
+            "Experience" -> experienceEntries = experienceEntries.filterNot { it.id == entry.id }
+            "Certification" -> certificationEntries = certificationEntries.filterNot { it.id == entry.id }
+        }
+    }
+    val onUploadQualificationCertificate: (ByteArray, String, (String?) -> Unit) -> Unit = { bytes, ext, onDone ->
+        val userId = currentUser?.id
+        if (userId.isNullOrBlank()) {
+            onDone(null)
+        } else {
+            coroutineScope.launch {
+                isUploadingQualCertificate = true
+                val url = UserRepository.uploadCertificate(userId, bytes, ext)
+                isUploadingQualCertificate = false
+                onDone(url)
+            }
+        }
+    }
+
     // File Pickers
     val resumePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -460,7 +504,7 @@ private fun ApplicationFlowScreen(
     }
 
     val animatedProgress by animateFloatAsState(
-        targetValue = (currentStep + 1) / 3f,
+        targetValue = (currentStep + 1) / 4f,
         animationSpec = tween(400, easing = FastOutSlowInEasing),
         label = "progress"
     )
@@ -497,7 +541,7 @@ private fun ApplicationFlowScreen(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = "${currentStep + 1}/3",
+                                    text = "${currentStep + 1}/4",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = DeepGreenDark
@@ -522,7 +566,7 @@ private fun ApplicationFlowScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        repeat(3) { index ->
+                        repeat(4) { index ->
                             Box(
                                 modifier = Modifier
                                     .size(if (index == currentStep) 10.dp else 8.dp)
@@ -579,8 +623,9 @@ private fun ApplicationFlowScreen(
 
                 when (currentStep) {
                     0 -> StepTitle(icon = Icons.Filled.Person, title = "Personal & Expectations", subtitle = "Set your contact info, salary range & start date")
-                    1 -> StepTitle(icon = Icons.Filled.Description, title = "Documents Upload", subtitle = "Attach your resume & optional cover letter")
-                    2 -> StepTitle(icon = Icons.Filled.CheckCircle, title = "Review Application", subtitle = "Final check before sending your details")
+                    1 -> StepTitle(icon = Icons.Filled.School, title = "Education & Experience", subtitle = "Add your education, work experience & certificates")
+                    2 -> StepTitle(icon = Icons.Filled.Description, title = "Documents Upload", subtitle = "Attach your resume & optional cover letter")
+                    3 -> StepTitle(icon = Icons.Filled.CheckCircle, title = "Review Application", subtitle = "Final check before sending your details")
                 }
 
                 when (currentStep) {
@@ -602,7 +647,17 @@ private fun ApplicationFlowScreen(
                         showValidationErrors = showValidationErrors,
                         isPhoneValid = isPhoneValid
                     )
-                    1 -> Step2Documents(
+                    1 -> StepQualifications(
+                        educationEntries = educationEntries,
+                        experienceEntries = experienceEntries,
+                        certificationEntries = certificationEntries,
+                        onAddEntry = onAddQualificationEntry,
+                        onRemoveEntry = onRemoveQualificationEntry,
+                        isUploadingCertificate = isUploadingQualCertificate,
+                        onUploadCertificate = onUploadQualificationCertificate,
+                        showValidationErrors = showValidationErrors
+                    )
+                    2 -> Step2Documents(
                         resumeFileName = resumeName,
                         isResumeValid = isResumeValid,
                         isSavedProfileResume = isSavedProfileResume,
@@ -615,7 +670,7 @@ private fun ApplicationFlowScreen(
                         onAdditionalNotesChange = { additionalNotes = it },
                         showValidationErrors = showValidationErrors
                     )
-                    2 -> Step3Review(
+                    3 -> Step3Review(
                         jobTitle = displayTitle,
                         companyName = displayCompany,
                         resumeFileName = resumeName.ifBlank { "No resume attached" },
@@ -692,7 +747,7 @@ private fun ApplicationFlowScreen(
 
                     Button(
                         onClick = {
-                            if (currentStep < 2) {
+                            if (currentStep < 3) {
                                 when (currentStep) {
                                     0 -> {
                                         showValidationErrors = true
@@ -705,6 +760,40 @@ private fun ApplicationFlowScreen(
                                         }
                                     }
                                     1 -> {
+                                        showValidationErrors = true
+                                        if (educationEntries.isEmpty()) {
+                                            errorMessage = "Please add at least one education entry to continue."
+                                        } else {
+                                            errorMessage = ""
+                                            showValidationErrors = false
+                                            val entriesChanged =
+                                                educationEntries != originalEducationEntries ||
+                                                    experienceEntries != originalExperienceEntries ||
+                                                    certificationEntries != originalCertificationEntries
+                                            if (entriesChanged && currentUser != null && currentUser.id.isNotBlank()) {
+                                                isSavingQualifications = true
+                                                coroutineScope.launch {
+                                                    try {
+                                                        UserRepository.updateUserInSupabase(
+                                                            currentUser.copy(
+                                                                educationEntries = educationEntries,
+                                                                experienceEntries = experienceEntries,
+                                                                certificationEntries = certificationEntries
+                                                            )
+                                                        )
+                                                    } catch (e: Exception) {
+                                                        Log.e("ApplyJobScreen", "Failed to save qualifications to profile", e)
+                                                    } finally {
+                                                        isSavingQualifications = false
+                                                        currentStep++
+                                                    }
+                                                }
+                                            } else {
+                                                currentStep++
+                                            }
+                                        }
+                                    }
+                                    2 -> {
                                         showValidationErrors = true
                                         if (!isResumeValid) {
                                             errorMessage = "Please attach your resume document to proceed."
@@ -808,19 +897,26 @@ private fun ApplicationFlowScreen(
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (currentStep == 2) DeepGreenDark else SageGreenMain
+                            containerColor = if (currentStep == 3) DeepGreenDark else SageGreenMain
                         ),
-                        enabled = !isSubmitting
+                        enabled = !isSubmitting && !isSavingQualifications
                     ) {
                         when {
-                            isSubmitting && currentStep == 2 -> {
+                            isSubmitting && currentStep == 3 -> {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(22.dp),
                                     color = Color.White,
                                     strokeWidth = 2.5.dp
                                 )
                             }
-                            currentStep == 2 -> {
+                            isSavingQualifications && currentStep == 1 -> {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    color = DeepGreenDark,
+                                    strokeWidth = 2.5.dp
+                                )
+                            }
+                            currentStep == 3 -> {
                                 Icon(imageVector = Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text("Submit", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -1090,6 +1186,413 @@ private fun Step1PersonalInfo(
                         shape = RoundedCornerShape(12.dp)
                     )
                 }
+            }
+        }
+    }
+}
+
+// ==================== Step: Education / Experience / Certifications ====================
+
+@Composable
+private fun StepQualifications(
+    educationEntries: List<ProfileEntry>,
+    experienceEntries: List<ProfileEntry>,
+    certificationEntries: List<ProfileEntry>,
+    onAddEntry: (String, ProfileEntry) -> Unit,
+    onRemoveEntry: (String, ProfileEntry) -> Unit,
+    isUploadingCertificate: Boolean,
+    onUploadCertificate: (ByteArray, String, (String?) -> Unit) -> Unit,
+    showValidationErrors: Boolean
+) {
+    var addDialogFor by remember { mutableStateOf<String?>(null) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Text(
+            text = "We'll use this for your application, and save it to your profile so you don't need to re-enter it next time.",
+            fontSize = 12.sp,
+            color = TextDark.copy(alpha = 0.6f),
+            lineHeight = 16.sp
+        )
+
+        QualificationSection(
+            icon = Icons.Filled.School,
+            title = "Education",
+            entries = educationEntries,
+            addLabel = "Add education",
+            emptyText = "Add your highest qualification so employers know your background.",
+            onAddClick = { addDialogFor = "Education" },
+            onRemove = { onRemoveEntry("Education", it) },
+            isError = showValidationErrors && educationEntries.isEmpty(),
+            errorText = "Please add at least one education entry."
+        )
+
+        QualificationSection(
+            icon = Icons.Filled.WorkHistory,
+            title = "Work Experience (optional)",
+            entries = experienceEntries,
+            addLabel = "Add experience",
+            emptyText = "Add relevant work experience, if any.",
+            onAddClick = { addDialogFor = "Experience" },
+            onRemove = { onRemoveEntry("Experience", it) }
+        )
+
+        QualificationSection(
+            icon = Icons.Filled.WorkspacePremium,
+            title = "Certifications (optional)",
+            entries = certificationEntries,
+            addLabel = "Add certification",
+            emptyText = "Add any certifications relevant to this role.",
+            onAddClick = { addDialogFor = "Certification" },
+            onRemove = { onRemoveEntry("Certification", it) }
+        )
+    }
+
+    addDialogFor?.let { category ->
+        AddQualificationDialog(
+            category = category,
+            isUploadingFile = isUploadingCertificate,
+            onDismiss = { addDialogFor = null },
+            onSave = { entry ->
+                onAddEntry(category, entry)
+                addDialogFor = null
+            },
+            onUploadCertificate = onUploadCertificate
+        )
+    }
+}
+
+@Composable
+private fun QualificationSection(
+    icon: ImageVector,
+    title: String,
+    entries: List<ProfileEntry>,
+    addLabel: String,
+    emptyText: String,
+    onAddClick: () -> Unit,
+    onRemove: (ProfileEntry) -> Unit,
+    isError: Boolean = false,
+    errorText: String = ""
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(icon, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(18.dp))
+            Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextDark)
+        }
+
+        if (entries.isEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = SageGreenLight.copy(alpha = 0.25f),
+                border = androidx.compose.foundation.BorderStroke(
+                    width = 1.dp,
+                    color = if (isError) MaterialTheme.colorScheme.error.copy(alpha = 0.6f) else SageGreenDark.copy(alpha = 0.2f)
+                ),
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onAddClick)
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = emptyText, fontSize = 12.sp, color = TextDark.copy(alpha = 0.6f), lineHeight = 16.sp)
+                        if (isError) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(text = errorText, fontSize = 11.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                    Icon(Icons.Filled.Add, contentDescription = addLabel, tint = DeepGreenDark, modifier = Modifier.size(20.dp))
+                }
+            }
+        } else {
+            entries.forEach { entry ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Top) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = entry.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextDark)
+                            if (entry.subtitle.isNotBlank()) Text(text = entry.subtitle, fontSize = 12.sp, color = DeepGreenDark)
+                            if (entry.period.isNotBlank()) Text(text = entry.period, fontSize = 11.sp, color = TextDark.copy(alpha = 0.5f))
+                        }
+                        IconButton(onClick = { onRemove(entry) }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = TextDark.copy(alpha = 0.35f), modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+            OutlinedButton(
+                onClick = onAddClick,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = DeepGreenDark)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(addLabel, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddQualificationDialog(
+    category: String,
+    isUploadingFile: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (ProfileEntry) -> Unit,
+    onUploadCertificate: (ByteArray, String, (String?) -> Unit) -> Unit
+) {
+    val context = LocalContext.current
+    var title by remember { mutableStateOf("") }
+    var subtitle by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var titleError by remember { mutableStateOf<String?>(null) }
+    var fileError by remember { mutableStateOf<String?>(null) }
+    var employmentType by remember { mutableStateOf(ProfileOptions.EMPLOYMENT_TYPES.first()) }
+    var educationLevel by remember { mutableStateOf(ProfileOptions.EDUCATION_LEVELS.first()) }
+    var issuer by remember { mutableStateOf(ProfileOptions.CERTIFICATE_ISSUERS.first()) }
+    var customIssuer by remember { mutableStateOf("") }
+    var startYear by remember { mutableStateOf(ProfileOptions.YEARS.getOrElse(1) { "" }) }
+    var endYear by remember { mutableStateOf("Present") }
+    var year by remember { mutableStateOf(ProfileOptions.YEARS.getOrElse(1) { "" }) }
+    var fileUrl by remember { mutableStateOf("") }
+    var fileName by remember { mutableStateOf("") }
+
+    val certificatePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val mimeType = context.contentResolver.getType(uri).orEmpty()
+        val extension = when {
+            mimeType.contains("pdf") -> "pdf"
+            mimeType.contains("png") -> "png"
+            mimeType.contains("webp") -> "webp"
+            mimeType.contains("jpeg") || mimeType.contains("jpg") -> "jpg"
+            else -> null
+        }
+        if (extension == null) {
+            fileError = "Please upload a PDF or image file."
+            return@rememberLauncherForActivityResult
+        }
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        if (bytes == null) {
+            fileError = "Couldn't read the selected file."
+            return@rememberLauncherForActivityResult
+        }
+        fileError = null
+        onUploadCertificate(bytes, extension) { url ->
+            if (url != null) {
+                fileUrl = url
+                fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "certificate.$extension"
+            } else {
+                fileError = "Failed to upload certificate. Please try again."
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!isUploadingFile) onDismiss() },
+        title = { Text("Add $category", fontWeight = FontWeight.Bold, color = DeepGreenDark) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                when (category) {
+                    "Experience" -> {
+                        OutlinedTextField(
+                            value = title,
+                            onValueChange = { title = it.take(100); titleError = null },
+                            label = { Text("Job Title") },
+                            singleLine = true,
+                            isError = titleError != null,
+                            supportingText = { titleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = subtitle,
+                            onValueChange = { subtitle = it.take(100) },
+                            label = { Text("Company") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        QualDropdownField(label = "Employment type", value = employmentType, options = ProfileOptions.EMPLOYMENT_TYPES, onSelect = { employmentType = it })
+                        QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
+                        QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = { description = it.take(300) },
+                            label = { Text("Description (optional)") },
+                            modifier = Modifier.fillMaxWidth().height(90.dp)
+                        )
+                    }
+                    "Education" -> {
+                        QualDropdownField(
+                            label = "Qualification",
+                            value = educationLevel,
+                            options = ProfileOptions.EDUCATION_LEVELS,
+                            onSelect = { educationLevel = it }
+                        )
+                        OutlinedTextField(
+                            value = subtitle,
+                            onValueChange = { subtitle = it.take(100) },
+                            label = { Text("Institution") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
+                        QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = { description = it.take(300) },
+                            label = { Text("Field of study (optional)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    else -> {
+                        OutlinedTextField(
+                            value = title,
+                            onValueChange = { title = it.take(100); titleError = null },
+                            label = { Text("Certification name") },
+                            singleLine = true,
+                            isError = titleError != null,
+                            supportingText = { titleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        QualDropdownField(
+                            label = "Issued by",
+                            value = issuer,
+                            options = ProfileOptions.CERTIFICATE_ISSUERS,
+                            onSelect = { issuer = it }
+                        )
+                        if (issuer == "Other") {
+                            OutlinedTextField(
+                                value = customIssuer,
+                                onValueChange = { customIssuer = it.take(100) },
+                                label = { Text("Issuer name") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        QualDropdownField(
+                            label = "Year",
+                            value = year,
+                            options = ProfileOptions.YEARS.filter { it != "Present" },
+                            onSelect = { year = it }
+                        )
+                        OutlinedButton(
+                            onClick = { certificatePicker.launch(arrayOf("application/pdf", "image/*")) },
+                            enabled = !isUploadingFile,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            if (isUploadingFile) {
+                                CircularProgressIndicator(color = DeepGreenDark, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Uploading...")
+                            } else {
+                                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (fileUrl.isBlank()) "Upload certificate file (optional)" else "Replace file")
+                            }
+                        }
+                        if (fileName.isNotBlank()) {
+                            Text(fileName, fontSize = 12.sp, color = DeepGreenDark)
+                        }
+                        fileError?.let { Text(it, color = Color.Red, fontSize = 12.sp) }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !isUploadingFile,
+                onClick = {
+                    when (category) {
+                        "Experience" -> {
+                            if (title.trim().isBlank()) {
+                                titleError = "This field is required."
+                                return@TextButton
+                            }
+                            onSave(
+                                ProfileEntry(
+                                    title = title.trim(),
+                                    subtitle = subtitle.trim(),
+                                    period = "$startYear - $endYear · $employmentType",
+                                    description = description.trim()
+                                )
+                            )
+                        }
+                        "Education" -> {
+                            onSave(
+                                ProfileEntry(
+                                    title = educationLevel,
+                                    subtitle = subtitle.trim(),
+                                    period = "$startYear - $endYear",
+                                    description = description.trim()
+                                )
+                            )
+                        }
+                        else -> {
+                            if (title.trim().isBlank()) {
+                                titleError = "This field is required."
+                                return@TextButton
+                            }
+                            val issuerName = if (issuer == "Other") customIssuer.trim().ifBlank { "Other" } else issuer
+                            onSave(
+                                ProfileEntry(
+                                    title = title.trim(),
+                                    subtitle = issuerName,
+                                    period = year,
+                                    fileUrl = fileUrl
+                                )
+                            )
+                        }
+                    }
+                }
+            ) {
+                Text("Add", color = DeepGreenDark, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isUploadingFile) {
+                Text("Cancel", color = TextDark.copy(alpha = 0.6f))
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QualDropdownField(
+    label: String,
+    value: String,
+    options: List<String>,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor()
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(text = { Text(option) }, onClick = { onSelect(option); expanded = false })
             }
         }
     }
