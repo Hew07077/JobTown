@@ -2,6 +2,7 @@ package com.example.jobtown.ui.applied
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,12 +19,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Work
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -70,6 +75,7 @@ fun JobseekerApplicationDetailScreen(
     val applications by viewModel.applicationsListState.collectAsState()
     val application = applications.find { it.id == applicationId }
     var showCancelDialog by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -123,6 +129,8 @@ fun JobseekerApplicationDetailScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 22.dp, vertical = 24.dp)) {
+
+                        // Header: Company, Job Title, and Status Badge
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -149,6 +157,7 @@ fun JobseekerApplicationDetailScreen(
 
                         AppliedDivider(verticalPadding = 18.dp)
 
+                        // Job Overview Details
                         ApplicationDetailRow(
                             icon = Icons.Default.LocationOn,
                             label = "Location",
@@ -161,21 +170,62 @@ fun JobseekerApplicationDetailScreen(
                             value = formatTimestampWithTimeZone(application.appliedAt)
                         )
 
+                        // Submitted Profile Section
                         AppliedDivider(verticalPadding = 18.dp)
                         AppliedSectionTitle("Submitted profile")
                         Spacer(modifier = Modifier.height(14.dp))
                         ApplicationDetailRow(
                             icon = Icons.Default.Person,
                             label = "Full name",
-                            value = application.applicantName
+                            value = application.applicantName.ifBlank { "Not specified" }
                         )
                         AppliedDivider()
                         ApplicationDetailRow(
                             icon = Icons.Default.Email,
                             label = "Email address",
-                            value = application.applicantEmail
+                            value = application.applicantEmail.ifBlank { "Not specified" }
                         )
 
+                        // Submitted Qualifications & Attached Documents Section
+                        AppliedDivider(verticalPadding = 18.dp)
+                        AppliedSectionTitle("Qualifications & Documents")
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        val eduVal = application.education.ifBlank { "Not specified" }
+                        ApplicationDetailRow(
+                            icon = Icons.Default.School,
+                            label = "Education",
+                            value = eduVal
+                        )
+
+                        AppliedDivider()
+
+                        val expVal = application.experience.ifBlank { "Not specified" }
+                        ApplicationDetailRow(
+                            icon = Icons.Default.Work,
+                            label = "Experience",
+                            value = expVal
+                        )
+
+                        AppliedDivider()
+
+                        val certVal = application.certificates.ifBlank { "None attached" }
+                        ApplicationDetailRow(
+                            icon = Icons.Default.Description,
+                            label = "Certificates",
+                            value = certVal
+                        )
+
+                        if (application.resumeUrl.isNotBlank()) {
+                            AppliedDivider()
+                            ApplicationDetailRow(
+                                icon = Icons.Default.AttachFile,
+                                label = "Resume URL",
+                                value = application.resumeUrl
+                            )
+                        }
+
+                        // Cover Letter Section
                         if (application.coverLetter.isNotBlank()) {
                             AppliedDivider(verticalPadding = 18.dp)
                             AppliedSectionTitle("Cover letter")
@@ -188,10 +238,9 @@ fun JobseekerApplicationDetailScreen(
                             )
                         }
 
+                        // Resume View Button
                         if (application.resumeUrl.isNotBlank()) {
-                            AppliedDivider(verticalPadding = 18.dp)
-                            AppliedSectionTitle("Resume")
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
                             OutlinedButton(
                                 onClick = {
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(application.resumeUrl))
@@ -200,43 +249,49 @@ fun JobseekerApplicationDetailScreen(
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(50.dp)
+                                    .height(48.dp),
+                                border = BorderStroke(1.dp, DeepGreenDark)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Description,
+                                    imageVector = Icons.Default.AttachFile,
                                     contentDescription = null,
-                                    modifier = Modifier.size(20.dp)
+                                    tint = DeepGreenDark,
+                                    modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "View / download resume",
                                     fontWeight = FontWeight.SemiBold,
+                                    color = DeepGreenDark,
                                     fontSize = 14.sp
                                 )
                             }
                         }
 
+                        // Jobseeker Actions Section
                         AppliedDivider(verticalPadding = 18.dp)
+                        AppliedSectionTitle("Actions")
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         Button(
                             onClick = { onChatWithEmployerClick(application) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(50.dp),
+                                .height(48.dp),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Chat,
+                                imageVector = Icons.AutoMirrored.Filled.Chat,
                                 contentDescription = null,
                                 tint = Color.White,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Chat with employer",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
                                 color = Color.White
                             )
                         }
@@ -247,14 +302,15 @@ fun JobseekerApplicationDetailScreen(
                                 onClick = { showCancelDialog = true },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(50.dp),
+                                    .height(48.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
+                                border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.5f))
                             ) {
                                 Text(
                                     text = "Cancel application",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
@@ -265,7 +321,7 @@ fun JobseekerApplicationDetailScreen(
     }
 
     if (showCancelDialog && application != null) {
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { showCancelDialog = false },
             title = { Text("Cancel application?", fontWeight = FontWeight.Bold) },
             text = { Text("This withdraws your application for ${application.jobTitle}. You can apply again later if the job is still open.") },

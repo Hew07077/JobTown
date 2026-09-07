@@ -17,11 +17,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -40,20 +44,20 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import com.example.jobtown.data.model.NotificationType
-import com.example.jobtown.data.repository.NotificationRepository
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.jobtown.data.model.NotificationType
+import com.example.jobtown.data.repository.NotificationRepository
 import com.example.jobtown.ui.theme.BackgroundWhite
 import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenMain
 import com.example.jobtown.ui.theme.TextDark
 import com.example.jobtown.utils.formatTimestampWithTimeZone
-//
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ApplicationDetailScreen(
@@ -189,6 +193,45 @@ fun ApplicationDetailScreen(
                             value = formatTimestampWithTimeZone(application.appliedAt)
                         )
 
+                        // Qualifications & Documents
+                        AppliedDivider(verticalPadding = 18.dp)
+                        AppliedSectionTitle("Qualifications & Documents")
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        val eduVal: String = application.education.ifBlank { "Not specified" }
+                        ApplicationDetailRow(
+                            icon = Icons.Default.School,
+                            label = "Education",
+                            value = eduVal
+                        )
+
+                        AppliedDivider()
+
+                        val expVal: String = application.experience.ifBlank { "Not specified" }
+                        ApplicationDetailRow(
+                            icon = Icons.Default.Work,
+                            label = "Experience",
+                            value = expVal
+                        )
+
+                        AppliedDivider()
+
+                        val certVal: String = application.certificates.ifBlank { "None attached" }
+                        ApplicationDetailRow(
+                            icon = Icons.Default.Description,
+                            label = "Certificates",
+                            value = certVal
+                        )
+
+                        AppliedDivider()
+
+                        val resumeVal: String = application.resumeUrl.ifBlank { "No resume attached" }
+                        ApplicationDetailRow(
+                            icon = Icons.Default.AttachFile,
+                            label = "Resume",
+                            value = resumeVal
+                        )
+
                         if (application.coverLetter.isNotBlank()) {
                             AppliedDivider(verticalPadding = 18.dp)
                             AppliedSectionTitle("Cover letter")
@@ -217,7 +260,7 @@ fun ApplicationDetailScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Chat", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             }

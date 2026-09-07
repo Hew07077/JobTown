@@ -37,6 +37,15 @@ data class JobApplication(
     @SerialName("cover_letter")
     val coverLetter: String = "",
 
+    @SerialName("education")
+    val education: String = "",
+
+    @SerialName("experience")
+    val experience: String = "",
+
+    @SerialName("certificates")
+    val certificates: String = "",
+
     @SerialName("status")
     val status: String = "Pending",
 
