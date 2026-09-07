@@ -64,6 +64,20 @@ class ScheduleViewModel(
         isEmployer: Boolean,
         onResult: (Boolean, String?) -> Unit
     ) {
+        // Guard against scheduling the same candidate for the same job twice —
+        // enforced here so it applies no matter which screen/button started
+        // the creation flow.
+        val duplicate = schedulesList.any { existing ->
+            existing.userId == newSchedule.userId &&
+                (newSchedule.jobId.isBlank() || existing.jobId == newSchedule.jobId) &&
+                !existing.status.equals("Cancelled", ignoreCase = true) &&
+                !existing.status.equals("Rejected", ignoreCase = true)
+        }
+        if (duplicate) {
+            onResult(false, "An interview is already scheduled for this candidate. Cancel it first to schedule a new one.")
+            return
+        }
+
         viewModelScope.launch {
             isSaving = true
             val scheduleWithId = newSchedule.copy(id = UUID.randomUUID().toString())

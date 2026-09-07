@@ -102,18 +102,6 @@ fun ManageJobsScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
             )
-        },
-        floatingActionButton = {
-            if (selectedTabIndex == 0) {
-                FloatingActionButton(
-                    onClick = onAddJobClick,
-                    containerColor = DeepGreenDark,
-                    contentColor = Color.White,
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = "Post New Job")
-                }
-            }
         }
     ) { paddingValues ->
         Column(
@@ -161,7 +149,7 @@ fun ManageJobsScreen(
                         EmptyStateView(
                             icon = Icons.Default.WorkOutline,
                             title = "No Jobs Posted Yet",
-                            subtitle = "Tap the + button below to create your first listing."
+                            subtitle = "Use the + button on your Home tab to create your first listing."
                         )
                     } else {
                         LazyColumn(
