@@ -436,6 +436,16 @@ class MessageRepository(private val supabase: SupabaseClient) {
                 filter { eq("id", messageId); eq("chat_room_id", roomId) }
             }
 
+            // A deleted message shouldn't keep showing reaction pills, so clear
+            // any reactions left on it too.
+            try {
+                supabase.from("message_reactions").delete {
+                    filter { eq("message_id", messageId) }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error clearing reactions for deleted message: ${e.localizedMessage}", e)
+            }
+
             if (wasLatest) {
                 supabase.from("chat_rooms").update({
                     set("last_message", deletedText)

@@ -1,5 +1,7 @@
 package com.example.jobtown.ui.job
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -671,7 +674,9 @@ fun Step3Review(
     jobTitle: String,
     companyName: String,
     resumeFileName: String,
+    resumeUri: String = "",
     coverLetterFileName: String,
+    coverLetterUri: String = "",
     additionalNotes: String,
     phoneNumber: String,
     linkedInUrl: String,
@@ -681,6 +686,7 @@ fun Step3Review(
     experienceSummary: String,
     certificatesSummary: String
 ) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -701,10 +707,46 @@ fun Step3Review(
             HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 1.dp)
             ReviewRow(label = "Education", value = educationSummary.ifBlank { "Not specified" })
             ReviewRow(label = "Experience", value = experienceSummary.ifBlank { "Not specified" })
-            ReviewRow(label = "Certificates", value = formatCertificatesForDisplay(certificatesSummary).first.ifBlank { "None attached" })
+            run {
+                val (certDisplayText, certUrl) = formatCertificatesForDisplay(certificatesSummary)
+                ReviewRow(
+                    label = if (certUrl != null) "Certificates (Tap to open)" else "Certificates",
+                    value = certDisplayText.ifBlank { "None attached" },
+                    onClick = if (certUrl != null) {
+                        {
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(certUrl)))
+                            } catch (_: Exception) {
+                            }
+                        }
+                    } else null
+                )
+            }
             HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 1.dp)
-            ReviewRow(label = "Attached Resume", value = resumeFileName)
-            ReviewRow(label = "Cover Letter Document", value = coverLetterFileName)
+            ReviewRow(
+                label = if (resumeUri.isNotBlank()) "Attached Resume (Tap to open)" else "Attached Resume",
+                value = resumeFileName,
+                onClick = if (resumeUri.isNotBlank()) {
+                    {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(resumeUri)))
+                        } catch (_: Exception) {
+                        }
+                    }
+                } else null
+            )
+            ReviewRow(
+                label = if (coverLetterUri.isNotBlank()) "Cover Letter Document (Tap to open)" else "Cover Letter Document",
+                value = coverLetterFileName,
+                onClick = if (coverLetterUri.isNotBlank()) {
+                    {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(coverLetterUri)))
+                        } catch (_: Exception) {
+                        }
+                    }
+                } else null
+            )
             if (additionalNotes.isNotBlank()) {
                 ReviewRow(label = "Additional Notes", value = additionalNotes)
             }
@@ -713,9 +755,16 @@ fun Step3Review(
 }
 
 @Composable
-private fun ReviewRow(label: String, value: String) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+private fun ReviewRow(label: String, value: String, onClick: (() -> Unit)? = null) {
+    Column(
+        modifier = if (onClick != null) Modifier.fillMaxWidth().clickable { onClick() } else Modifier.fillMaxWidth()
+    ) {
         Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SageGreenDark)
-        Text(text = value, fontSize = 13.sp, color = TextDark, maxLines = 5)
+        Text(
+            text = value,
+            fontSize = 13.sp,
+            color = if (onClick != null) Color(0xFF1E88E5) else TextDark,
+            maxLines = 5
+        )
     }
 }

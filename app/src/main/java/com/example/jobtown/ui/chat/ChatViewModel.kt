@@ -554,6 +554,10 @@ class ChatViewModel(private val messageRepository: MessageRepository) : ViewMode
                 }
             }
 
+            // Clear any reactions on this message immediately so the pills
+            // disappear right away instead of waiting for the realtime sync.
+            _reactionsList.update { current -> current.filterNot { it.messageId == messageId } }
+
             if (wasLatest) {
                 updateLocalRoomPreview(roomId, deletedText, System.currentTimeMillis())
             }
