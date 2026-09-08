@@ -34,11 +34,9 @@ import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.model.User
 import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.ui.components.JobCard
-import com.example.jobtown.utils.JobMatchResult
 import com.example.jobtown.ui.theme.*
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.example.jobtown.utils.JobMatchResult
+import com.example.jobtown.utils.isJobListingExpired
 
 @Composable
 fun HomeScreen(
@@ -84,21 +82,9 @@ fun HomeScreen(
         currentUser?.name.orEmpty().ifBlank { "Job Finder" }
     }
 
-    // Helper to check if a job is expired based on explicit status or `expiredAt` ISO timestamp
-    fun isJobExpired(job: Job): Boolean {
-        if (job.status?.equals("expired", ignoreCase = true) == true) return true
-        val expiredAtStr = job.expiredAt ?: return false
-        return try {
-            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-            val expiryDate = sdf.parse(expiredAtStr)
-            expiryDate != null && Date().after(expiryDate)
-        } catch (e: Exception) {
-            false
-        }
-    }
-
     // STRICT ROLE SCOPING:
-    // Employers see only their own posted jobs. Job Seekers see all listings.
+    // Employers see only their own posted jobs. Job seekers see open listings
+    // and never see cards after the expiry date.
     val roleScopedJobs = remember(jobsList, currentUser?.id, currentUser?.companyName, currentUser?.name, isEmployer) {
         if (isEmployer) {
             val currentUserId = currentUser?.id.orEmpty()
@@ -117,18 +103,21 @@ fun HomeScreen(
                 }
             }
         } else {
-            jobsList
+            jobsList.filter { !isJobListingExpired(it) }
         }
     }
 
-    // Comprehensive category and job type filters including EXPIRED tab
-    val categories = listOf("All", "Full-Time", "Part-Time", "Contract", "Internship", "Freelance", "Remote", "Expired")
+    val categories = if (isEmployer) {
+        listOf("All", "Full-Time", "Part-Time", "Contract", "Internship", "Freelance", "Remote", "Expired")
+    } else {
+        listOf("All", "Full-Time", "Part-Time", "Contract", "Internship", "Freelance", "Remote")
+    }
 
     // Search and Category/Expired Filter Logic
     val filteredJobs = remember(roleScopedJobs, searchQuery, selectedFilter) {
         roleScopedJobs.filter { job ->
             val jobType = job.type
-            val jobExpired = isJobExpired(job)
+            val jobExpired = isJobListingExpired(job)
 
             val matchesFilter = when (selectedFilter.lowercase()) {
                 "all" -> !jobExpired // Default ALL hides expired items to keep feed clean

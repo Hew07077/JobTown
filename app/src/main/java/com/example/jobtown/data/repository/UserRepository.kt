@@ -7,9 +7,9 @@ import com.example.jobtown.data.SupabaseClient
 import com.example.jobtown.data.model.InterviewSchedule
 import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.model.JobApplication
+import com.example.jobtown.data.model.ProfileEntry
 import com.example.jobtown.data.model.User
 import com.example.jobtown.data.model.UserProfile
-import com.example.jobtown.data.model.UserProfileCore
 import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.data.model.UserWritePayload
 import com.example.jobtown.data.model.toUserProfile
@@ -33,8 +33,8 @@ data class AvatarHistoryItem(
 
 object UserRepository {
 
-    // public.users holds the account row (same format as the original app).
-    // Extra match fields and certificates go to public.user_profiles.
+    // public.users holds the account / profile row.
+    // Experience, education and certifications live in tables keyed by users.id.
 
     var lastUserSaveError: String? = null
         private set
@@ -74,18 +74,22 @@ object UserRepository {
                 }
             }
 
-            // Persists education/experience/certification entries (and the
-            // rest of the extended profile fields) to the `profiles` table.
-            // Best-effort: a failure here shouldn't fail the whole save if
-            // the core user/job-seeker/employer row already went through.
-            if (user.role != UserRole.EMPLOYER && upsertUserProfileRow(user.toUserProfile())) {
-                saved = true
+            // Education / experience / certification are @Transient on User
+            // and stored in profile_* tables that reference users.id.
+            if (user.role != UserRole.EMPLOYER) {
+                if (persistProfileEntries(user)) {
+                    saved = true
+                } else if (saved) {
+                    lastUserSaveError = lastUserSaveError
+                        ?: "Account saved, but education/experience/certificates could not be saved."
+                    return@withContext false
+                }
             }
 
             if (!saved) {
                 lastUserSaveError = lastUserSaveError
                     ?: lastError?.let { describeDbError(it) }
-                    ?: "Failed to save profile details. Please try again."
+                            ?: "Failed to save profile details. Please try again."
             }
             saved
         } catch (e: Exception) {
@@ -134,20 +138,14 @@ object UserRepository {
     }
 
     private suspend fun mergeProfile(user: User): User {
-        val profile = fetchProfileRow(user.id) ?: return user
+        val experience = fetchExperienceEntries(user.id)
+        val education = fetchEducationEntries(user.id)
+        val certifications = fetchCertificationEntries(user.id)
+        if (experience.isEmpty() && education.isEmpty() && certifications.isEmpty()) return user
         return user.copy(
-            phone = profile.phone ?: user.phone,
-            location = profile.location ?: user.location,
-            tagline = profile.tagline ?: user.tagline,
-            websiteUrl = profile.websiteUrl ?: user.websiteUrl,
-            perks = profile.perks.ifEmpty { user.perks },
-            skills = profile.skills ?: user.skills,
-            experienceLevel = profile.experienceLevel ?: user.experienceLevel,
-            portfolioUrl = profile.portfolioUrl ?: user.portfolioUrl,
-            bio = profile.bio ?: user.bio,
-            experienceEntries = profile.experienceEntries.ifEmpty { user.experienceEntries },
-            educationEntries = profile.educationEntries.ifEmpty { user.educationEntries },
-            certificationEntries = profile.certificationEntries.ifEmpty { user.certificationEntries }
+            experienceEntries = experience.ifEmpty { user.experienceEntries },
+            educationEntries = education.ifEmpty { user.educationEntries },
+            certificationEntries = certifications.ifEmpty { user.certificationEntries }
         )
     }
 
@@ -163,22 +161,22 @@ object UserRepository {
     private fun isMissingRelation(e: Exception): Boolean {
         val message = e.message.orEmpty()
         return message.contains("42P01") ||
-            message.contains("does not exist", ignoreCase = true) ||
-            message.contains("PGRST205", ignoreCase = true) ||
-            message.contains("Could not find the table", ignoreCase = true)
+                message.contains("does not exist", ignoreCase = true) ||
+                message.contains("PGRST205", ignoreCase = true) ||
+                message.contains("Could not find the table", ignoreCase = true)
     }
 
     private fun isJwtDecodeError(e: Exception): Boolean {
         val message = e.message.orEmpty()
         return message.contains("PGRST301", ignoreCase = true) ||
-            message.contains("No suitable key", ignoreCase = true) ||
-            message.contains("wrong key type", ignoreCase = true)
+                message.contains("No suitable key", ignoreCase = true) ||
+                message.contains("wrong key type", ignoreCase = true)
     }
 
     private fun describeDbError(e: Exception): String {
         val message = e.message.orEmpty()
         val firstLine = message.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
-        
+
         return when {
             message.contains("PGRST301", ignoreCase = true) ->
                 "Database session expired or token invalid. Please try logging in again."
@@ -196,87 +194,107 @@ object UserRepository {
         }
     }
 
-    private suspend fun upsertUserProfileRow(profile: UserProfile): Boolean {
-        if (profile.id.isBlank()) return false
+    private suspend fun persistProfileEntries(user: User): Boolean {
+        if (user.id.isBlank()) return false
         return try {
-            // Try the full payload first -- this includes the education,
-            // experience and certification entries.
-            SupabaseClient.client.from("profiles").upsert(profile)
+            replaceExperienceEntries(user.id, user.experienceEntries)
+            replaceEducationEntries(user.id, user.educationEntries)
+            replaceCertificationEntries(user.id, user.certificationEntries)
             true
         } catch (e: Exception) {
-            // Falls back to the entry-less payload in case this Supabase
-            // project's `profiles` table predates the entries columns.
-            val core = UserProfileCore(
-                id = profile.id,
-                phone = profile.phone,
-                location = profile.location,
-                tagline = profile.tagline,
-                websiteUrl = profile.websiteUrl,
-                perks = profile.perks,
-                skills = profile.skills,
-                experienceLevel = profile.experienceLevel,
-                portfolioUrl = profile.portfolioUrl,
-                bio = profile.bio
-            )
-            try {
-                SupabaseClient.client.from("profiles").upsert(core)
-                true
-            } catch (fallback: Exception) {
-                fallback.printStackTrace()
-                false
-            }
+            e.printStackTrace()
+            lastUserSaveError = describeDbError(e)
+            false
         }
     }
 
-    private suspend fun fetchProfileRow(userId: String): UserProfile? = try {
-        if (userId.isBlank()) null
-        else SupabaseClient.client.from("profiles")
-            .select { filter { eq("id", userId) } }
-            .decodeSingleOrNull<UserProfile>()
+    private suspend fun replaceExperienceEntries(userId: String, entries: List<ProfileEntry>) {
+        val table = SupabaseClient.client.from("profile_experiences")
+        table.delete { filter { eq("user_id", userId) } }
+        if (entries.isEmpty()) return
+        table.insert(entries.map { entry ->
+            ProfileExperienceRow(
+                id = entry.id.ifBlank { UUID.randomUUID().toString() },
+                userId = userId,
+                title = entry.title,
+                company = entry.subtitle,
+                period = entry.period,
+                description = entry.description
+            )
+        })
+    }
+
+    private suspend fun replaceEducationEntries(userId: String, entries: List<ProfileEntry>) {
+        val table = SupabaseClient.client.from("profile_educations")
+        table.delete { filter { eq("user_id", userId) } }
+        if (entries.isEmpty()) return
+        table.insert(entries.map { entry ->
+            ProfileEducationRow(
+                id = entry.id.ifBlank { UUID.randomUUID().toString() },
+                userId = userId,
+                qualification = entry.title,
+                institution = entry.subtitle,
+                period = entry.period,
+                description = entry.description
+            )
+        })
+    }
+
+    private suspend fun replaceCertificationEntries(userId: String, entries: List<ProfileEntry>) {
+        val table = SupabaseClient.client.from("profile_certifications")
+        table.delete { filter { eq("user_id", userId) } }
+        if (entries.isEmpty()) return
+        table.insert(entries.map { entry ->
+            ProfileCertificationRow(
+                id = entry.id.ifBlank { UUID.randomUUID().toString() },
+                userId = userId,
+                title = entry.title,
+                issueBy = entry.subtitle,
+                valid = entry.period,
+                fileUrl = entry.fileUrl
+            )
+        })
+    }
+
+    private suspend fun fetchExperienceEntries(userId: String): List<ProfileEntry> = try {
+        if (userId.isBlank()) emptyList()
+        else SupabaseClient.client.from("profile_experiences")
+            .select { filter { eq("user_id", userId) } }
+            .decodeList<ProfileExperienceRow>()
+            .map { it.toProfileEntry() }
     } catch (e: Exception) {
         e.printStackTrace()
-        try {
-            SupabaseClient.client.from("profiles")
-                .select { filter { eq("id", userId) } }
-                .decodeSingleOrNull<UserProfileCore>()
-                ?.let {
-                    UserProfile(
-                        id = it.id,
-                        phone = it.phone,
-                        location = it.location,
-                        tagline = it.tagline,
-                        websiteUrl = it.websiteUrl,
-                        perks = it.perks,
-                        skills = it.skills,
-                        experienceLevel = it.experienceLevel,
-                        portfolioUrl = it.portfolioUrl,
-                        bio = it.bio
-                    )
-                }
-        } catch (fallback: Exception) {
-            fallback.printStackTrace()
-            null
-        }
+        emptyList()
+    }
+
+    private suspend fun fetchEducationEntries(userId: String): List<ProfileEntry> = try {
+        if (userId.isBlank()) emptyList()
+        else SupabaseClient.client.from("profile_educations")
+            .select { filter { eq("user_id", userId) } }
+            .decodeList<ProfileEducationRow>()
+            .map { it.toProfileEntry() }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        emptyList()
+    }
+
+    private suspend fun fetchCertificationEntries(userId: String): List<ProfileEntry> = try {
+        if (userId.isBlank()) emptyList()
+        else SupabaseClient.client.from("profile_certifications")
+            .select { filter { eq("user_id", userId) } }
+            .decodeList<ProfileCertificationRow>()
+            .map { it.toProfileEntry() }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        emptyList()
     }
 
     // --- AVATAR ---
-    // Uploads image bytes to the "avatars" Storage bucket (must already exist
-    // and be set to Public in the Supabase dashboard) and returns its public
-    // URL, or null on failure. Stored under "logos/{userId}/" (same bucket
-    // company logos use) so both job-seeker avatars and employer logos live
-    // together. Unlike before, this does NOT overwrite the previous photo --
-    // each upload gets its own timestamped filename inside the user's own
-    // subfolder, so old photos stay in Storage and the user can switch back
-    // to one later via listAvatarHistory() / can remove one via deleteAvatar().
     suspend fun uploadAvatar(userId: String, bytes: ByteArray, fileExtension: String): String? =
         withContext(Dispatchers.IO) {
             try {
                 val bucket = SupabaseClient.client.storage.from("avatars")
                 val path = "logos/$userId/${System.currentTimeMillis()}.$fileExtension"
-                // NOTE: storage-kt 2.0.0 does NOT have the { upsert = true }
-                // options DSL -- that was added in 3.0.0. In 2.0.0, upsert is
-                // a plain named Boolean parameter on upload() itself. upsert
-                // is false here since every filename is already unique.
                 bucket.upload(path, bytes, upsert = false)
                 bucket.publicUrl(path)
             } catch (e: Exception) {
@@ -285,17 +303,11 @@ object UserRepository {
             }
         }
 
-    // Lists every photo previously uploaded for this user (newest first --
-    // filenames are millis-since-epoch, so a plain descending string sort
-    // works), so the profile screen can offer "switch back to an old photo"
-    // instead of only ever letting you upload a brand new one.
     suspend fun listAvatarHistory(userId: String): List<AvatarHistoryItem> = withContext(Dispatchers.IO) {
         if (userId.isBlank()) return@withContext emptyList()
         try {
             val bucket = SupabaseClient.client.storage.from("avatars")
             val folder = "logos/$userId"
-            // Positional arg (not named) -- avoids relying on the exact
-            // parameter name, which isn't confirmed for this pinned version.
             bucket.list(folder)
                 .mapNotNull { item -> item.name?.takeIf { it.isNotBlank() } }
                 .sortedDescending()
@@ -309,7 +321,6 @@ object UserRepository {
         }
     }
 
-    // Permanently removes one previously-uploaded photo from Storage.
     suspend fun deleteAvatar(path: String): Boolean = withContext(Dispatchers.IO) {
         try {
             SupabaseClient.client.storage.from("avatars").delete(path)
@@ -321,12 +332,6 @@ object UserRepository {
     }
 
     // --- RESUME ---
-    // Uploads a PDF to the "resumes" Storage bucket (create it in the
-    // Supabase dashboard, set to Public, before this will work) and returns
-    // its public URL, or null on failure. Path is keyed by userId with
-    // upsert = true, so re-uploading replaces the previous resume in place
-    // rather than accumulating old versions (unlike the avatar history
-    // feature above -- a resume only needs to keep the latest copy).
     suspend fun uploadResume(userId: String, bytes: ByteArray): String? =
         withContext(Dispatchers.IO) {
             try {
@@ -341,8 +346,6 @@ object UserRepository {
         }
 
     // --- CERTIFICATES ---
-    // Uploads a certificate PDF or image to the "certificates" bucket.
-    // Path is {userId}/{uuid}.ext so RLS (name LIKE auth.uid() || '/%') matches.
     suspend fun uploadCertificate(userId: String, bytes: ByteArray, fileExtension: String): String? =
         withContext(Dispatchers.IO) {
             try {
@@ -357,17 +360,14 @@ object UserRepository {
             }
         }
 
-    // Fetches extra profile fields from user_profiles, falling back to the users row.
+    // Fetches extra profile fields from the users row.
     suspend fun fetchUserProfile(userId: String): UserProfile? = withContext(Dispatchers.IO) {
         if (userId.isBlank()) return@withContext null
-        // Since everything is in the 'users' table now, fetch the user and convert it
         fetchUserById(userId)?.toUserProfile()
     }
 
     suspend fun updateUserProfile(profile: UserProfile): Boolean = withContext(Dispatchers.IO) {
         try {
-            // Map UserProfile back to the users table payload if needed, 
-            // but saveUserToSupabase is already doing this.
             val user = fetchUserById(profile.id) ?: return@withContext false
             val updatedUser = user.copy(
                 phone = profile.phone ?: user.phone,
@@ -392,10 +392,6 @@ object UserRepository {
         val user = fetchEmployerById(userId)
             ?: fetchUsersTableById(userId)
             ?: fetchJobSeekerById(userId)
-        // experienceEntries/educationEntries/certificationEntries are
-        // @Transient on User, so they never come back from the users/
-        // job_seekers/employers tables directly -- merge them in from the
-        // `profiles` table here.
         user?.let { mergeProfile(it) }
     }
 
@@ -507,7 +503,6 @@ object UserRepository {
     }
 
     // --- JOBS ---
-    // Fetch all active jobs for Job Seekers
     suspend fun fetchAllJobs(): List<Job> = withContext(Dispatchers.IO) {
         try {
             SupabaseClient.client.from("jobs")
@@ -519,7 +514,6 @@ object UserRepository {
         }
     }
 
-    // Fetch only jobs posted by a specific Employer
     suspend fun fetchJobsByEmployer(employerId: String): List<Job> = withContext(Dispatchers.IO) {
         try {
             SupabaseClient.client.from("jobs")
@@ -545,19 +539,29 @@ object UserRepository {
         }
     }
 
+    suspend fun deleteJob(jobId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            SupabaseClient.client.from("jobs").delete {
+                filter { eq("id", jobId) }
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
     // --- APPLICATIONS ---
     suspend fun fetchApplicationsForUser(userId: String, isEmployer: Boolean): List<JobApplication> =
         withContext(Dispatchers.IO) {
             try {
                 if (isEmployer) {
-                    // Filters applications by the employer's ID
                     SupabaseClient.client.from("applications")
                         .select {
                             filter { eq("employer_id", userId) }
                         }
                         .decodeList<JobApplication>()
                 } else {
-                    // Job Seekers see applications where they are the applicant
                     SupabaseClient.client.from("applications")
                         .select {
                             filter { eq("user_id", userId) }
@@ -581,7 +585,6 @@ object UserRepository {
             }
         }
 
-    // Allow Employers to update application status (e.g., Pending -> Shortlisted / Rejected)
     suspend fun updateApplicationStatus(applicationId: String, newStatus: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
@@ -598,8 +601,6 @@ object UserRepository {
         }
 
     // --- SCHEDULES ---
-    // Live table is public.interview_schedules (not "schedules").
-    // Seeker column is user_id (not applicant_id).
     suspend fun fetchSchedulesForUser(userId: String, isEmployer: Boolean): List<InterviewSchedule> =
         withContext(Dispatchers.IO) {
             try {
@@ -726,4 +727,58 @@ private data class JobSeekerWritePayload(
     @SerialName("avatar_url") val avatarUrl: String = "",
     @SerialName("resume_url") val resumeUrl: String = "",
     @SerialName("is_oku") val isOku: Boolean = false
+)
+
+@Serializable
+private data class ProfileExperienceRow(
+    val id: String,
+    @SerialName("user_id") val userId: String,
+    val title: String = "",
+    val company: String = "",
+    val period: String = "",
+    val description: String = ""
+)
+
+private fun ProfileExperienceRow.toProfileEntry() = ProfileEntry(
+    id = id,
+    title = title,
+    subtitle = company,
+    period = period,
+    description = description
+)
+
+@Serializable
+private data class ProfileEducationRow(
+    val id: String,
+    @SerialName("user_id") val userId: String,
+    val qualification: String = "",
+    val institution: String = "",
+    val period: String = "",
+    val description: String = ""
+)
+
+private fun ProfileEducationRow.toProfileEntry() = ProfileEntry(
+    id = id,
+    title = qualification,
+    subtitle = institution,
+    period = period,
+    description = description
+)
+
+@Serializable
+private data class ProfileCertificationRow(
+    val id: String,
+    @SerialName("user_id") val userId: String,
+    val title: String = "",
+    @SerialName("issue_by") val issueBy: String = "",
+    val valid: String = "",
+    @SerialName("file_url") val fileUrl: String = ""
+)
+
+private fun ProfileCertificationRow.toProfileEntry() = ProfileEntry(
+    id = id,
+    title = title,
+    subtitle = issueBy,
+    period = valid,
+    fileUrl = fileUrl
 )

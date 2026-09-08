@@ -253,6 +253,11 @@ fun InterviewEditorScreen(
                                 return@Button
                             }
 
+                            if (meetingKind == MeetingKind.ONLINE && meetingValue.isBlank()) {
+                                Toast.makeText(context, "Google Meet link is required.", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+
                             if (meetingKind == MeetingKind.PHYSICAL && meetingValue.isBlank()) {
                                 Toast.makeText(context, "Enter the meeting address.", Toast.LENGTH_SHORT).show()
                                 return@Button
@@ -447,10 +452,10 @@ fun InterviewEditorScreen(
                     OutlinedTextField(
                         value = meetingValue,
                         onValueChange = { meetingValue = it },
-                        label = { Text("Google Meet link (optional)") },
+                        label = { Text("Google Meet link") },
                         placeholder = { Text("https://meet.google.com/...") },
                         leadingIcon = { Icon(Icons.Default.Link, contentDescription = null, tint = DeepGreenDark) },
-                        supportingText = { Text("Leave empty to open a new Google Meet room") },
+                        supportingText = { Text("Enter a valid Google Meet room link") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )

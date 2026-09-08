@@ -32,6 +32,7 @@ import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.model.User
 import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.*
+import com.example.jobtown.utils.isJobListingExpired
 
 data class CompanyProfile(
     val id: String = "",
@@ -111,8 +112,10 @@ fun CompanyDetailScreen(
             emptyList()
         } else {
             openJobs.filter {
-                it.employerId == loadedCompany.id ||
+                !isJobListingExpired(it) && (
+                    it.employerId == loadedCompany.id ||
                         it.companyName.equals(loadedCompany.name, ignoreCase = true)
+                )
             }
         }
     }

@@ -2,6 +2,7 @@ package com.example.jobtown.navigation
 
 import android.net.Uri
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -11,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,10 +56,13 @@ import com.example.jobtown.ui.home.HomeViewModelFactory
 import com.example.jobtown.ui.home.SavedJobsScreen
 import com.example.jobtown.ui.job.ApplyJobScreen
 import com.example.jobtown.ui.postjob.EmployerJobDetailScreen
+import com.example.jobtown.ui.postjob.EmployerJobDetailViewModel
+import com.example.jobtown.ui.postjob.JobDetailUiEvent
 import com.example.jobtown.ui.postjob.PostJobScreen
 import com.example.jobtown.ui.profile.NotificationsScreen
 import com.example.jobtown.ui.profile.ProfileScreen
 import com.example.jobtown.ui.schedule.ScheduleScreen
+import com.example.jobtown.utils.isJobListingExpired
 import com.example.jobtown.ui.schedule.ScheduleDetailScreen
 import com.example.jobtown.ui.schedule.ScheduleViewModel
 import com.example.jobtown.ui.schedule.SchedulePrefill
@@ -340,6 +345,9 @@ fun AppNavGraph(
                     jobsList = homeViewModel.jobsList,
                     isLoading = homeViewModel.isLoading,
                     onJobClick = { selectedJob ->
+                        if (loggedInUser?.role != UserRole.EMPLOYER && isJobListingExpired(selectedJob)) {
+                            return@HomeScreen
+                        }
                         homeViewModel.selectJob(selectedJob)
                         if (loggedInUser?.role == UserRole.EMPLOYER) {
                             navController.navigate("employer_job_detail/${selectedJob.id}")
@@ -378,6 +386,7 @@ fun AppNavGraph(
                     allJobs = homeViewModel.jobsList,
                     savedJobIds = homeViewModel.savedJobIds,
                     onJobClick = { job ->
+                        if (isJobListingExpired(job)) return@SavedJobsScreen
                         homeViewModel.selectJob(job)
                         navController.navigate("apply_job")
                     },
@@ -470,23 +479,43 @@ fun AppNavGraph(
                 val currentJob = homeViewModel.jobsList.find { it.id == jobId } ?: homeViewModel.selectedJob
 
                 if (currentJob != null) {
-                    EmployerJobDetailScreen(
-                        job = currentJob,
-                        navController = navController,
-                        currentUser = loggedInUser,
-                        onUpdateJob = { updatedJob ->
-                            homeViewModel.updateJob(updatedJob) { success, message ->
-                                if (success) {
+                    // Instantiate the screen's ViewModel
+                    val detailViewModel: EmployerJobDetailViewModel = viewModel()
+                    val context = LocalContext.current
+
+                    // Listen for events emitted by EmployerJobDetailViewModel
+                    LaunchedEffect(Unit) {
+                        detailViewModel.eventFlow.collect { event ->
+                            when (event) {
+                                is JobDetailUiEvent.JobUpdated -> {
+                                    // Sync with main HomeViewModel list and navigate back
+                                    homeViewModel.loadJobs() // Or update local state
+                                    Toast.makeText(context, "Job listing updated", Toast.LENGTH_SHORT).show()
+                                }
+                                is JobDetailUiEvent.JobDeleted -> {
+                                    // Remove from main HomeViewModel list and pop backstack
+                                    homeViewModel.loadJobs()
+                                    Toast.makeText(context, "Job deleted successfully", Toast.LENGTH_SHORT).show()
                                     navController.popBackStack()
-                                } else {
-                                    snackbarMessage = message ?: "Failed to update job. Please try again."
+                                }
+                                is JobDetailUiEvent.ShowError -> {
+                                    snackbarMessage = event.message
                                 }
                             }
-                        },
+                        }
+                    }
+
+                    EmployerJobDetailScreen(
+                        initialJob = currentJob,
+                        navController = navController,
+                        currentUser = loggedInUser,
+                        viewModel = detailViewModel,
                         onBackClick = { navController.popBackStack() }
                     )
                 } else {
-                    navController.popBackStack()
+                    LaunchedEffect(Unit) {
+                        navController.popBackStack()
+                    }
                 }
             }
 
@@ -543,6 +572,9 @@ fun AppNavGraph(
                     companyIdOrName = companyId,
                     openJobs = homeViewModel.jobsList,
                     onJobClick = { selectedJob ->
+                        if (loggedInUser?.role != UserRole.EMPLOYER && isJobListingExpired(selectedJob)) {
+                            return@CompanyDetailScreen
+                        }
                         homeViewModel.selectJob(selectedJob)
                         if (loggedInUser?.role == UserRole.EMPLOYER) {
                             navController.navigate("employer_job_detail/${selectedJob.id}")

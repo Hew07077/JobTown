@@ -12,11 +12,9 @@ import com.example.jobtown.data.model.UserProfile
 import com.example.jobtown.data.repository.JobListingEvent
 import com.example.jobtown.data.repository.JobRepository
 import com.example.jobtown.data.repository.UserRepository
-import com.example.jobtown.utils.JobMatchUtils
 import com.example.jobtown.utils.JobMatchResult
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.example.jobtown.utils.JobMatchUtils
+import com.example.jobtown.utils.isJobListingExpired
 import kotlinx.coroutines.Job as CoroutineJob
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
@@ -84,15 +82,20 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
                 newListingsAvailable = 0
 
                 if (!currentUserId.isNullOrBlank()) {
-                    val userJobs = repository.getJobsByUserId(currentUserId)
-                    myPostedJobs = if (userJobs.isNotEmpty()) {
-                        userJobs
-                    } else {
-                        fetchedJobs.filter { job ->
-                            val ownerId = job.employerId.orEmpty().ifBlank { job.postedByUserId.orEmpty() }
-                            ownerId == currentUserId
-                        }
+                    val userJobs = try {
+                        repository.getJobsByUserId(currentUserId)
+                    } catch (e: Exception) {
+                        emptyList()
                     }
+
+                    val filteredFetched = fetchedJobs.filter { job ->
+                        val ownerId = job.employerId.orEmpty().ifBlank { job.postedByUserId.orEmpty() }
+                        ownerId == currentUserId
+                    }
+
+                    val combinedMyJobs = (userJobs + filteredFetched).distinctBy { it.id }
+                    myPostedJobs = combinedMyJobs
+
                     refreshMatchScores(currentUserId, fetchedJobs)
                     loadSavedJobs(currentUserId)
                 } else {
@@ -205,7 +208,6 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
     fun toggleSaveJob(userId: String, jobId: String) {
         if (userId.isBlank() || jobId.isBlank()) return
         val wasSaved = savedJobIds.contains(jobId)
-        // Optimistic update so the bookmark icon responds instantly.
         savedJobIds = if (wasSaved) savedJobIds - jobId else savedJobIds + jobId
 
         viewModelScope.launch {
@@ -214,7 +216,6 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
                 savedJobIds = if (nowSaved) savedJobIds + jobId else savedJobIds - jobId
             } catch (e: Exception) {
                 Log.e("HomeViewModel", "Error toggling saved job", e)
-                // Revert the optimistic update on failure.
                 savedJobIds = if (wasSaved) savedJobIds + jobId else savedJobIds - jobId
             }
         }
@@ -224,7 +225,6 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
         selectedJob = job
     }
 
-    /** Optimized method to post jobs directly to Supabase and update state safely. */
     fun postJob(job: Job, onResult: (success: Boolean, message: String?) -> Unit) {
         if (isPostingJob) return
         viewModelScope.launch {
@@ -235,7 +235,6 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
             result.fold(
                 onSuccess = { inserted ->
                     Log.d("HomeViewModel", "Job posted successfully with ID: ${inserted.id}")
-                    // Instantly update local feeds
                     jobsList = listOf(inserted) + jobsList.filter { it.id != inserted.id }
                     myPostedJobs = listOf(inserted) + myPostedJobs.filter { it.id != inserted.id }
 
@@ -255,11 +254,9 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
         }
     }
 
-    /** Compatibility helper function for navigation callbacks. */
     fun addJob(newJob: Job) {
         postJob(newJob) { success, _ ->
             if (!success) {
-                // If insertion fails, reload feed to remove unpersisted local optimistic state
                 loadJobs(currentUserId)
             }
         }
@@ -318,25 +315,35 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
         }
     }
 
+    fun deleteJob(jobId: String, onResult: ((success: Boolean, message: String?) -> Unit)? = null) {
+        viewModelScope.launch {
+            try {
+                val success = UserRepository.deleteJob(jobId)
+                if (success) {
+                    handleRemoval(jobId)
+                    if (selectedJob?.id == jobId) {
+                        selectedJob = null
+                    }
+                    onResult?.invoke(true, null)
+                } else {
+                    onResult?.invoke(false, "Failed to delete job listing from database.")
+                }
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "Error deleting job", e)
+                onResult?.invoke(false, e.localizedMessage ?: "An error occurred while deleting job.")
+            }
+        }
+    }
+
     fun getActivePostedJobs(): List<Job> {
         return myPostedJobs.filter { !isJobExpired(it) }
     }
 
     fun getExpiredPostedJobs(): List<Job> {
-        return myPostedJobs.filter { !isJobExpired(it) }
+        return myPostedJobs.filter { isJobExpired(it) }
     }
 
-    fun isJobExpired(job: Job): Boolean {
-        if (job.status?.equals("expired", ignoreCase = true) == true) return true
-        val expiredAtStr = job.expiredAt ?: return false
-        return try {
-            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-            val expiryDate = sdf.parse(expiredAtStr)
-            expiryDate != null && Date().after(expiryDate)
-        } catch (e: Exception) {
-            false
-        }
-    }
+    fun isJobExpired(job: Job): Boolean = isJobListingExpired(job)
 
     override fun onCleared() {
         super.onCleared()
