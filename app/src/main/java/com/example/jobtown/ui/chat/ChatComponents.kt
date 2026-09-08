@@ -357,7 +357,7 @@ fun MessageBubble(
                         )
                         // Recently-used custom picks surface first so they act like a
                         // personal quick-list, capped so the sheet doesn't grow unbounded.
-                        val quickEmojis = recentCustomEmojis.filterNot { it in baseEmojis }.take(8) + baseEmojis
+                        val quickEmojis = recentCustomEmojis.filterNot { it in baseEmojis }.take(10) + baseEmojis
 
                         quickEmojis.forEach { emoji ->
                             Text(
@@ -419,7 +419,7 @@ fun MessageBubble(
                         ) {
                             OutlinedTextField(
                                 value = customEmojiText,
-                                onValueChange = { customEmojiText = it },
+                                onValueChange = { customEmojiText = filterToEmojiOnly(it) },
                                 modifier = Modifier
                                     .weight(1f)
                                     .focusRequester(focusRequester),
@@ -912,6 +912,41 @@ private fun FailedMessageIndicator(
             )
         }
     }
+}
+
+/**
+ * Keeps only emoji codepoints (plus the invisible joiners/modifiers/variation
+ * selectors that combine into multi-part emoji like 👨‍👩‍👧 or 👍🏽) and drops
+ * everything else, so the custom-emoji field can't be used to type plain words.
+ */
+private fun isEmojiCodePoint(codePoint: Int): Boolean = when (codePoint) {
+    in 0x1F300..0x1FAFF -> true // pictographs, emoticons, transport, symbols A/B
+    in 0x1F1E6..0x1F1FF -> true // regional indicators (flag letters)
+    in 0x2600..0x27BF -> true   // misc symbols & dingbats (☀ ✂ ❤ etc.)
+    in 0x2B00..0x2BFF -> true   // misc symbols and arrows (⭐ ⬆ etc.)
+    in 0x2300..0x23FF -> true   // misc technical (⌚ ⏰ ⏱ etc.)
+    in 0x1F000..0x1F0FF -> true // mahjong/dominoes/playing cards
+    0x203C, 0x2049 -> true      // ‼ ⁉
+    0x2122, 0x2139, 0x2194, 0x2195, 0x2196, 0x2197, 0x2198, 0x2199 -> true
+    0xFE0F -> true              // variation selector-16 (emoji presentation)
+    0x200D -> true              // zero-width joiner (combines multi-part emoji)
+    0x20E3 -> true              // combining enclosing keycap (1️⃣, #️⃣, *️⃣)
+    in 0x1F3FB..0x1F3FF -> true // skin tone modifiers
+    in 0xE0020..0xE007F -> true // tag characters (used in England/Scotland/Wales flags)
+    else -> false
+}
+
+private fun filterToEmojiOnly(input: String): String {
+    val builder = StringBuilder()
+    var i = 0
+    while (i < input.length) {
+        val codePoint = input.codePointAt(i)
+        if (isEmojiCodePoint(codePoint)) {
+            builder.appendCodePoint(codePoint)
+        }
+        i += Character.charCount(codePoint)
+    }
+    return builder.toString()
 }
 
 private fun fileExtensionLabel(fileName: String): String =

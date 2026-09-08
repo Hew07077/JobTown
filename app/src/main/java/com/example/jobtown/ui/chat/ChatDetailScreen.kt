@@ -102,7 +102,7 @@ fun ChatDetailScreen(
     val recentEmojiPrefs = remember { context.getSharedPreferences("chat_reactions", Context.MODE_PRIVATE) }
     var recentCustomEmojis by remember { mutableStateOf(loadRecentCustomEmojis(recentEmojiPrefs)) }
     val onCustomEmojiUsed: (String) -> Unit = { emoji ->
-        val updated = (listOf(emoji) + recentCustomEmojis.filterNot { it == emoji }).take(8)
+        val updated = (listOf(emoji) + recentCustomEmojis.filterNot { it == emoji }).take(10)
         recentCustomEmojis = updated
         saveRecentCustomEmojis(recentEmojiPrefs, updated)
     }
