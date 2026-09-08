@@ -59,8 +59,16 @@ internal fun JobApplication.isClosed(): Boolean {
 }
 
 internal fun JobApplication.canCancel(): Boolean {
-    val normalized = status.lowercase()
-    return normalized in setOf("pending", "viewed", "shortlisted", "interview")
+    val normalized = status.trim().lowercase()
+    if (normalized.isBlank()) return true
+    return normalized in setOf(
+        "pending",
+        "applied",
+        "submitted",
+        "viewed",
+        "shortlisted",
+        "interview"
+    )
 }
 
 @Composable

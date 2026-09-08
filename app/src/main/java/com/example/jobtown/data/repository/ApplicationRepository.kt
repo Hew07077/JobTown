@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -153,15 +155,26 @@ class ApplicationRepository(private val supabase: SupabaseClient) {
     suspend fun cancelApplication(applicationId: String): Boolean =
         updateApplicationStatus(applicationId, "Cancelled")
 
-    /** Lets an employer move an application through the pipeline (Pending -> Shortlisted / Interview / Rejected / Accepted). */
+    /** Lets an employer move an application through the pipeline, or a seeker withdraw it. */
     suspend fun updateApplicationStatus(applicationId: String, newStatus: String): Boolean = withContext(Dispatchers.IO) {
+        if (applicationId.isBlank() || newStatus.isBlank()) return@withContext false
         try {
             supabase.postgrest["applications"].update(
-                mapOf("status" to newStatus)
+                ApplicationStatusUpdate(status = newStatus)
             ) {
                 filter { eq("id", applicationId) }
             }
-            true
+            val saved = supabase.postgrest["applications"]
+                .select { filter { eq("id", applicationId) } }
+                .decodeSingleOrNull<JobApplication>()
+            val didUpdate = saved?.status.equals(newStatus, ignoreCase = true) == true
+            if (!didUpdate) {
+                Log.e(
+                    "ApplicationRepository",
+                    "Status update did not persist for $applicationId (wanted $newStatus, got ${saved?.status})"
+                )
+            }
+            didUpdate
         } catch (e: Exception) {
             println("DEBUG_SUPABASE_ERROR (Status update): ${e.localizedMessage}")
             e.printStackTrace()
@@ -217,3 +230,8 @@ class ApplicationRepository(private val supabase: SupabaseClient) {
         return applyForJob(application)
     }
 }
+
+@Serializable
+private data class ApplicationStatusUpdate(
+    @SerialName("status") val status: String
+)

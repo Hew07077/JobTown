@@ -19,6 +19,7 @@ class ProfileViewModel : ViewModel() {
         private set
 
     private var boundUserId: String? = null
+    private var refreshGeneration = 0
 
     var isEditing by mutableStateOf(false)
         private set
@@ -333,8 +334,11 @@ class ProfileViewModel : ViewModel() {
     private fun refreshUser() {
         val userId = user?.id ?: return
         if (isEmployer) return
+        val generation = ++refreshGeneration
         viewModelScope.launch {
             val fresh = UserRepository.fetchUserById(userId) ?: return@launch
+            // Ignore stale fetches that finish after a local save/bind.
+            if (generation != refreshGeneration) return@launch
             user = fresh
         }
     }
@@ -353,10 +357,15 @@ class ProfileViewModel : ViewModel() {
             try {
                 val isSaved = UserRepository.updateUserInSupabase(updated)
                 if (isSaved) {
+                    // Invalidate any in-flight refreshUser() so it cannot
+                    // overwrite this save with a pre-save snapshot.
+                    refreshGeneration++
                     user = updated
                     onUpdated?.invoke(updated)
                 } else {
-                    val message = failMessage ?: "Failed to save profile. Please try again."
+                    val message = UserRepository.lastUserSaveError
+                        ?: failMessage
+                        ?: "Failed to save profile. Please try again."
                     if (savingProfile) saveErrorMessage = message else certificateError = message
                 }
             } catch (e: Exception) {

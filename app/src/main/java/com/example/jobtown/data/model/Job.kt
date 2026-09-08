@@ -2,6 +2,7 @@
 
 package com.example.jobtown.data.model
 
+import com.example.jobtown.utils.isJobListingExpired
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -72,5 +73,5 @@ data class Job(
 
     @Transient
     val isExpired: Boolean
-        get() = status?.equals("expired", ignoreCase = true) == true
+        get() = isJobListingExpired(this)
 }

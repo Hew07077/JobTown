@@ -1,6 +1,9 @@
 package com.example.jobtown.ui.applied
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,6 +73,7 @@ fun ApplicationDetailScreen(
     onStatusChange: (applicationId: String, newStatus: String) -> Unit = { _, _ -> },
     viewerCompanyName: String = ""
 ) {
+    val context = LocalContext.current
     val applications by viewModel.applicationsListState.collectAsState()
     val application = applications.find { it.id == applicationId }
     val notifiedViewKey = remember(applicationId) { mutableStateOf(false) }
@@ -225,12 +230,59 @@ fun ApplicationDetailScreen(
 
                         AppliedDivider()
 
-                        val resumeVal: String = application.resumeUrl.ifBlank { "No resume attached" }
-                        ApplicationDetailRow(
-                            icon = Icons.Default.AttachFile,
-                            label = "Resume",
-                            value = resumeVal
-                        )
+                        val hasResume = application.resumeUrl.isNotBlank()
+                        val resumeVal: String = if (hasResume) application.resumeUrl else "No resume attached"
+
+                        if (hasResume) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(application.resumeUrl))
+                                        context.startActivity(intent)
+                                    }
+                            ) {
+                                ApplicationDetailRow(
+                                    icon = Icons.Default.AttachFile,
+                                    label = "Resume (Tap to open)",
+                                    value = resumeVal
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            OutlinedButton(
+                                onClick = {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(application.resumeUrl))
+                                    context.startActivity(intent)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                border = BorderStroke(1.dp, DeepGreenDark)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AttachFile,
+                                    contentDescription = null,
+                                    tint = DeepGreenDark,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "View / download resume",
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = DeepGreenDark,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        } else {
+                            ApplicationDetailRow(
+                                icon = Icons.Default.AttachFile,
+                                label = "Resume",
+                                value = resumeVal
+                            )
+                        }
 
                         if (application.coverLetter.isNotBlank()) {
                             AppliedDivider(verticalPadding = 18.dp)

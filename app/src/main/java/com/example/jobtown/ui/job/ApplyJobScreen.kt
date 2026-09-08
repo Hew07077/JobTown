@@ -27,10 +27,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
 import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.model.JobApplication
@@ -39,6 +42,7 @@ import com.example.jobtown.data.model.User
 import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.profile.ProfileOptions
 import com.example.jobtown.ui.theme.*
+import com.example.jobtown.utils.isJobListingExpired
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -55,11 +59,13 @@ fun ApplyJobScreen(
     var isApplying by remember { mutableStateOf(false) }
     val alreadyApplied = existingApplication != null &&
             !existingApplication.status.equals("Cancelled", ignoreCase = true)
+    val listingExpired = isJobListingExpired(job)
 
     if (!isApplying) {
         JobDetailsOverviewScreen(
             job = job,
             alreadyApplied = alreadyApplied,
+            listingExpired = listingExpired,
             existingStatus = existingApplication?.status.orEmpty(),
             onBackToHome = { navController.popBackStack() },
             onStartApplication = { isApplying = true },
@@ -84,6 +90,7 @@ fun ApplyJobScreen(
 private fun JobDetailsOverviewScreen(
     job: Job,
     alreadyApplied: Boolean,
+    listingExpired: Boolean,
     existingStatus: String,
     onBackToHome: () -> Unit,
     onStartApplication: () -> Unit,
@@ -127,7 +134,15 @@ private fun JobDetailsOverviewScreen(
                 color = Color.White
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                    if (alreadyApplied) {
+                    if (listingExpired) {
+                        Text(
+                            text = "This job listing has expired and is no longer accepting applications.",
+                            fontSize = 12.sp,
+                            color = Color(0xFFC62828),
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        )
+                    } else if (alreadyApplied) {
                         Text(
                             text = "You already applied · ${existingStatus.ifBlank { "Pending" }}. Only one application is allowed per job.",
                             fontSize = 12.sp,
@@ -153,6 +168,7 @@ private fun JobDetailsOverviewScreen(
 
                         Button(
                             onClick = if (alreadyApplied) onViewExistingApplication else onStartApplication,
+                            enabled = alreadyApplied || !listingExpired,
                             modifier = Modifier
                                 .weight(1.2f)
                                 .height(52.dp),
@@ -160,16 +176,16 @@ private fun JobDetailsOverviewScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
                         ) {
                             Text(
-                                if (alreadyApplied) {
-                                    "View application"
-                                } else {
-                                    "Apply Now"
+                                when {
+                                    listingExpired && !alreadyApplied -> "Expired"
+                                    alreadyApplied -> "View application"
+                                    else -> "Apply Now"
                                 },
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
-                            if (!alreadyApplied) {
+                            if (!alreadyApplied && !listingExpired) {
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
@@ -432,21 +448,37 @@ private fun ApplicationFlowScreen(
     var showValidationErrors by remember { mutableStateOf(false) }
     var currentStep by remember { mutableStateOf(0) }
 
-    // Education / Experience / Certification entries. Pre-filled from the
-    // applicant's saved profile when available; if the profile has none yet,
-    // the applicant fills them in on this step and they get saved back to
-    // their profile (via UserRepository) so future applications don't ask
-    // again.
-    val originalEducationEntries = remember { currentUser?.educationEntries.orEmpty() }
-    val originalExperienceEntries = remember { currentUser?.experienceEntries.orEmpty() }
-    val originalCertificationEntries = remember { currentUser?.certificationEntries.orEmpty() }
-    var educationEntries by remember { mutableStateOf(originalEducationEntries) }
-    var experienceEntries by remember { mutableStateOf(originalExperienceEntries) }
-    var certificationEntries by remember { mutableStateOf(originalCertificationEntries) }
+    var educationEntries by remember { mutableStateOf<List<ProfileEntry>>(emptyList()) }
+    var experienceEntries by remember { mutableStateOf<List<ProfileEntry>>(emptyList()) }
+    var certificationEntries by remember { mutableStateOf<List<ProfileEntry>>(emptyList()) }
+    var originalEducationEntries by remember { mutableStateOf<List<ProfileEntry>>(emptyList()) }
+    var originalExperienceEntries by remember { mutableStateOf<List<ProfileEntry>>(emptyList()) }
+    var originalCertificationEntries by remember { mutableStateOf<List<ProfileEntry>>(emptyList()) }
+    var isLoadingQualifications by remember { mutableStateOf(true) }
+    var qualificationsEdited by remember { mutableStateOf(false) }
     var isSavingQualifications by remember { mutableStateOf(false) }
     var isUploadingQualCertificate by remember { mutableStateOf(false) }
 
+    LaunchedEffect(currentUser?.id) {
+        isLoadingQualifications = true
+        qualificationsEdited = false
+        val userId = currentUser?.id.orEmpty()
+        val fresh = if (userId.isNotBlank()) {
+            UserRepository.fetchUserById(userId) ?: currentUser
+        } else {
+            currentUser
+        }
+        educationEntries = fresh?.educationEntries.orEmpty()
+        experienceEntries = fresh?.experienceEntries.orEmpty()
+        certificationEntries = fresh?.certificationEntries.orEmpty()
+        originalEducationEntries = educationEntries
+        originalExperienceEntries = experienceEntries
+        originalCertificationEntries = certificationEntries
+        isLoadingQualifications = false
+    }
+
     val onAddQualificationEntry: (String, ProfileEntry) -> Unit = { category, entry ->
+        qualificationsEdited = true
         when (category) {
             "Education" -> educationEntries = educationEntries + entry
             "Experience" -> experienceEntries = experienceEntries + entry
@@ -454,6 +486,7 @@ private fun ApplicationFlowScreen(
         }
     }
     val onRemoveQualificationEntry: (String, ProfileEntry) -> Unit = { category, entry ->
+        qualificationsEdited = true
         when (category) {
             "Education" -> educationEntries = educationEntries.filterNot { it.id == entry.id }
             "Experience" -> experienceEntries = experienceEntries.filterNot { it.id == entry.id }
@@ -655,7 +688,8 @@ private fun ApplicationFlowScreen(
                         onRemoveEntry = onRemoveQualificationEntry,
                         isUploadingCertificate = isUploadingQualCertificate,
                         onUploadCertificate = onUploadQualificationCertificate,
-                        showValidationErrors = showValidationErrors
+                        showValidationErrors = showValidationErrors,
+                        isLoading = isLoadingQualifications
                     )
                     2 -> Step2Documents(
                         resumeFileName = resumeName,
@@ -766,10 +800,10 @@ private fun ApplicationFlowScreen(
                                         } else {
                                             errorMessage = ""
                                             showValidationErrors = false
-                                            val entriesChanged =
+                                            val entriesChanged = qualificationsEdited ||
                                                 educationEntries != originalEducationEntries ||
-                                                    experienceEntries != originalExperienceEntries ||
-                                                    certificationEntries != originalCertificationEntries
+                                                experienceEntries != originalExperienceEntries ||
+                                                certificationEntries != originalCertificationEntries
                                             if (entriesChanged && currentUser != null && currentUser.id.isNotBlank()) {
                                                 isSavingQualifications = true
                                                 coroutineScope.launch {
@@ -781,6 +815,10 @@ private fun ApplicationFlowScreen(
                                                                 certificationEntries = certificationEntries
                                                             )
                                                         )
+                                                        originalEducationEntries = educationEntries
+                                                        originalExperienceEntries = experienceEntries
+                                                        originalCertificationEntries = certificationEntries
+                                                        qualificationsEdited = false
                                                     } catch (e: Exception) {
                                                         Log.e("ApplyJobScreen", "Failed to save qualifications to profile", e)
                                                     } finally {
@@ -1202,49 +1240,70 @@ private fun StepQualifications(
     onRemoveEntry: (String, ProfileEntry) -> Unit,
     isUploadingCertificate: Boolean,
     onUploadCertificate: (ByteArray, String, (String?) -> Unit) -> Unit,
-    showValidationErrors: Boolean
+    showValidationErrors: Boolean,
+    isLoading: Boolean
 ) {
     var addDialogFor by remember { mutableStateOf<String?>(null) }
+    val uriHandler = LocalUriHandler.current
 
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Text(
-            text = "We'll use this for your application, and save it to your profile so you don't need to re-enter it next time.",
+            text = "Loaded from your profile. Add or remove anything for this application — changes are saved back to your profile.",
             fontSize = 12.sp,
             color = TextDark.copy(alpha = 0.6f),
             lineHeight = 16.sp
         )
 
-        QualificationSection(
-            icon = Icons.Filled.School,
-            title = "Education",
-            entries = educationEntries,
-            addLabel = "Add education",
-            emptyText = "Add your highest qualification so employers know your background.",
-            onAddClick = { addDialogFor = "Education" },
-            onRemove = { onRemoveEntry("Education", it) },
-            isError = showValidationErrors && educationEntries.isEmpty(),
-            errorText = "Please add at least one education entry."
-        )
+        if (isLoading) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White,
+                shadowElevation = 1.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(color = DeepGreenDark, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    Text("Loading your education and experience…", fontSize = 13.sp, color = TextDark.copy(alpha = 0.7f))
+                }
+            }
+        } else {
+            QualificationSection(
+                icon = Icons.Filled.School,
+                title = "Education",
+                entries = educationEntries,
+                addLabel = "Add education",
+                emptyText = "Add your highest qualification so employers know your background.",
+                onAddClick = { addDialogFor = "Education" },
+                onRemove = { onRemoveEntry("Education", it) },
+                isError = showValidationErrors && educationEntries.isEmpty(),
+                errorText = "Please add at least one education entry."
+            )
 
-        QualificationSection(
-            icon = Icons.Filled.WorkHistory,
-            title = "Work Experience (optional)",
-            entries = experienceEntries,
-            addLabel = "Add experience",
-            emptyText = "Add relevant work experience, if any.",
-            onAddClick = { addDialogFor = "Experience" },
-            onRemove = { onRemoveEntry("Experience", it) }
-        )
+            QualificationSection(
+                icon = Icons.Filled.WorkHistory,
+                title = "Work Experience (optional)",
+                entries = experienceEntries,
+                addLabel = "Add experience",
+                emptyText = "Add relevant work experience, if any.",
+                onAddClick = { addDialogFor = "Experience" },
+                onRemove = { onRemoveEntry("Experience", it) }
+            )
 
-        QualificationSection(
-            icon = Icons.Filled.WorkspacePremium,
-            title = "Certifications (optional)",
-            entries = certificationEntries,
-            addLabel = "Add certification",
-            emptyText = "Add any certifications relevant to this role.",
-            onAddClick = { addDialogFor = "Certification" },
-            onRemove = { onRemoveEntry("Certification", it) }
-        )
+            QualificationSection(
+                icon = Icons.Filled.WorkspacePremium,
+                title = "Certifications (optional)",
+                entries = certificationEntries,
+                addLabel = "Add certification",
+                emptyText = "Add any certifications relevant to this role.",
+                onAddClick = { addDialogFor = "Certification" },
+                onRemove = { onRemoveEntry("Certification", it) },
+                onViewFile = { url -> uriHandler.openUri(url) }
+            )
+        }
     }
 
     addDialogFor?.let { category ->
@@ -1271,17 +1330,29 @@ private fun QualificationSection(
     onAddClick: () -> Unit,
     onRemove: (ProfileEntry) -> Unit,
     isError: Boolean = false,
-    errorText: String = ""
+    errorText: String = "",
+    onViewFile: ((String) -> Unit)? = null
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(icon, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(18.dp))
             Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextDark)
+            if (entries.isNotEmpty()) {
+                Surface(shape = CircleShape, color = SageGreenLight) {
+                    Text(
+                        text = "${entries.size}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DeepGreenDark,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
         }
 
         if (entries.isEmpty()) {
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(16.dp),
                 color = SageGreenLight.copy(alpha = 0.25f),
                 border = androidx.compose.foundation.BorderStroke(
                     width = 1.dp,
@@ -1290,7 +1361,7 @@ private fun QualificationSection(
                 modifier = Modifier.fillMaxWidth().clickable(onClick = onAddClick)
             ) {
                 Row(
-                    modifier = Modifier.padding(14.dp),
+                    modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -1301,24 +1372,45 @@ private fun QualificationSection(
                             Text(text = errorText, fontSize = 11.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
                         }
                     }
-                    Icon(Icons.Filled.Add, contentDescription = addLabel, tint = DeepGreenDark, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.Add, contentDescription = addLabel, tint = DeepGreenDark, modifier = Modifier.size(22.dp))
                 }
             }
         } else {
             entries.forEach { entry ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Top) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(SageGreenLight),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(icon, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(text = entry.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextDark)
                             if (entry.subtitle.isNotBlank()) Text(text = entry.subtitle, fontSize = 12.sp, color = DeepGreenDark)
                             if (entry.period.isNotBlank()) Text(text = entry.period, fontSize = 11.sp, color = TextDark.copy(alpha = 0.5f))
+                            if (entry.description.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(text = entry.description, fontSize = 12.sp, color = TextDark.copy(alpha = 0.75f), lineHeight = 16.sp)
+                            }
+                            if (entry.fileUrl.isNotBlank() && onViewFile != null) {
+                                TextButton(onClick = { onViewFile(entry.fileUrl) }, contentPadding = PaddingValues(0.dp)) {
+                                    Icon(Icons.Default.AttachFile, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("View file", color = DeepGreenDark, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
                         }
-                        IconButton(onClick = { onRemove(entry) }, modifier = Modifier.size(24.dp)) {
+                        IconButton(onClick = { onRemove(entry) }, modifier = Modifier.size(28.dp)) {
                             Icon(Icons.Default.Close, contentDescription = "Remove", tint = TextDark.copy(alpha = 0.35f), modifier = Modifier.size(16.dp))
                         }
                     }
@@ -1326,13 +1418,13 @@ private fun QualificationSection(
             }
             OutlinedButton(
                 onClick = onAddClick,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = DeepGreenDark)
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(addLabel, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(addLabel, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }
     }
@@ -1352,9 +1444,10 @@ private fun AddQualificationDialog(
     var subtitle by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var titleError by remember { mutableStateOf<String?>(null) }
+    var subtitleError by remember { mutableStateOf<String?>(null) }
     var fileError by remember { mutableStateOf<String?>(null) }
     var employmentType by remember { mutableStateOf(ProfileOptions.EMPLOYMENT_TYPES.first()) }
-    var educationLevel by remember { mutableStateOf(ProfileOptions.EDUCATION_LEVELS.first()) }
+    var educationLevel by remember { mutableStateOf(ProfileOptions.EDUCATION_LEVELS.getOrElse(2) { ProfileOptions.EDUCATION_LEVELS.first() }) }
     var issuer by remember { mutableStateOf(ProfileOptions.CERTIFICATE_ISSUERS.first()) }
     var customIssuer by remember { mutableStateOf("") }
     var startYear by remember { mutableStateOf(ProfileOptions.YEARS.getOrElse(1) { "" }) }
@@ -1362,6 +1455,17 @@ private fun AddQualificationDialog(
     var year by remember { mutableStateOf(ProfileOptions.YEARS.getOrElse(1) { "" }) }
     var fileUrl by remember { mutableStateOf("") }
     var fileName by remember { mutableStateOf("") }
+
+    val headerIcon = when (category) {
+        "Education" -> Icons.Filled.School
+        "Experience" -> Icons.Filled.WorkHistory
+        else -> Icons.Filled.WorkspacePremium
+    }
+    val headerSubtitle = when (category) {
+        "Education" -> "School, college, or university details"
+        "Experience" -> "Role, company, and the years you worked there"
+        else -> "Certificate name, issuer, and an optional file"
+    }
 
     val certificatePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -1395,177 +1499,290 @@ private fun AddQualificationDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = { if (!isUploadingFile) onDismiss() },
-        title = { Text("Add $category", fontWeight = FontWeight.Bold, color = DeepGreenDark) },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                when (category) {
-                    "Experience" -> {
-                        OutlinedTextField(
-                            value = title,
-                            onValueChange = { title = it.take(100); titleError = null },
-                            label = { Text("Job Title") },
-                            singleLine = true,
-                            isError = titleError != null,
-                            supportingText = { titleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = subtitle,
-                            onValueChange = { subtitle = it.take(100) },
-                            label = { Text("Company") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        QualDropdownField(label = "Employment type", value = employmentType, options = ProfileOptions.EMPLOYMENT_TYPES, onSelect = { employmentType = it })
-                        QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
-                        QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
-                        OutlinedTextField(
-                            value = description,
-                            onValueChange = { description = it.take(300) },
-                            label = { Text("Description (optional)") },
-                            modifier = Modifier.fillMaxWidth().height(90.dp)
-                        )
-                    }
-                    "Education" -> {
-                        QualDropdownField(
-                            label = "Qualification",
-                            value = educationLevel,
-                            options = ProfileOptions.EDUCATION_LEVELS,
-                            onSelect = { educationLevel = it }
-                        )
-                        OutlinedTextField(
-                            value = subtitle,
-                            onValueChange = { subtitle = it.take(100) },
-                            label = { Text("Institution") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
-                        QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
-                        OutlinedTextField(
-                            value = description,
-                            onValueChange = { description = it.take(300) },
-                            label = { Text("Field of study (optional)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    else -> {
-                        OutlinedTextField(
-                            value = title,
-                            onValueChange = { title = it.take(100); titleError = null },
-                            label = { Text("Certification name") },
-                            singleLine = true,
-                            isError = titleError != null,
-                            supportingText = { titleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        QualDropdownField(
-                            label = "Issued by",
-                            value = issuer,
-                            options = ProfileOptions.CERTIFICATE_ISSUERS,
-                            onSelect = { issuer = it }
-                        )
-                        if (issuer == "Other") {
-                            OutlinedTextField(
-                                value = customIssuer,
-                                onValueChange = { customIssuer = it.take(100) },
-                                label = { Text("Issuer name") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        QualDropdownField(
-                            label = "Year",
-                            value = year,
-                            options = ProfileOptions.YEARS.filter { it != "Present" },
-                            onSelect = { year = it }
-                        )
-                        OutlinedButton(
-                            onClick = { certificatePicker.launch(arrayOf("application/pdf", "image/*")) },
-                            enabled = !isUploadingFile,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            if (isUploadingFile) {
-                                CircularProgressIndicator(color = DeepGreenDark, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Uploading...")
-                            } else {
-                                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(if (fileUrl.isBlank()) "Upload certificate file (optional)" else "Replace file")
-                            }
-                        }
-                        if (fileName.isNotBlank()) {
-                            Text(fileName, fontSize = 12.sp, color = DeepGreenDark)
-                        }
-                        fileError?.let { Text(it, color = Color.Red, fontSize = 12.sp) }
-                    }
+    fun trySave() {
+        when (category) {
+            "Experience" -> {
+                if (title.trim().isBlank()) {
+                    titleError = "Job title is required."
+                    return
                 }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = !isUploadingFile,
-                onClick = {
-                    when (category) {
-                        "Experience" -> {
-                            if (title.trim().isBlank()) {
-                                titleError = "This field is required."
-                                return@TextButton
-                            }
-                            onSave(
-                                ProfileEntry(
-                                    title = title.trim(),
-                                    subtitle = subtitle.trim(),
-                                    period = "$startYear - $endYear · $employmentType",
-                                    description = description.trim()
-                                )
-                            )
-                        }
-                        "Education" -> {
-                            onSave(
-                                ProfileEntry(
-                                    title = educationLevel,
-                                    subtitle = subtitle.trim(),
-                                    period = "$startYear - $endYear",
-                                    description = description.trim()
-                                )
-                            )
-                        }
-                        else -> {
-                            if (title.trim().isBlank()) {
-                                titleError = "This field is required."
-                                return@TextButton
-                            }
-                            val issuerName = if (issuer == "Other") customIssuer.trim().ifBlank { "Other" } else issuer
-                            onSave(
-                                ProfileEntry(
-                                    title = title.trim(),
-                                    subtitle = issuerName,
-                                    period = year,
-                                    fileUrl = fileUrl
-                                )
-                            )
-                        }
-                    }
+                if (subtitle.trim().isBlank()) {
+                    subtitleError = "Company is required."
+                    return
                 }
-            ) {
-                Text("Add", color = DeepGreenDark, fontWeight = FontWeight.Bold)
+                onSave(
+                    ProfileEntry(
+                        title = title.trim(),
+                        subtitle = subtitle.trim(),
+                        period = "$startYear - $endYear · $employmentType",
+                        description = description.trim()
+                    )
+                )
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isUploadingFile) {
-                Text("Cancel", color = TextDark.copy(alpha = 0.6f))
+            "Education" -> {
+                if (subtitle.trim().isBlank()) {
+                    subtitleError = "Institution is required."
+                    return
+                }
+                onSave(
+                    ProfileEntry(
+                        title = educationLevel,
+                        subtitle = subtitle.trim(),
+                        period = "$startYear - $endYear",
+                        description = description.trim()
+                    )
+                )
+            }
+            else -> {
+                if (title.trim().isBlank()) {
+                    titleError = "Certification name is required."
+                    return
+                }
+                val issuerName = if (issuer == "Other") customIssuer.trim().ifBlank { "Other" } else issuer
+                onSave(
+                    ProfileEntry(
+                        title = title.trim(),
+                        subtitle = issuerName,
+                        period = year,
+                        fileUrl = fileUrl
+                    )
+                )
             }
         }
-    )
+    }
+
+    Dialog(
+        onDismissRequest = { if (!isUploadingFile) onDismiss() },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = !isUploadingFile,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = BackgroundWhite,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("Add $category", fontWeight = FontWeight.Bold, color = DeepGreenDark, fontSize = 18.sp)
+                            Text(headerSubtitle, fontSize = 12.sp, color = TextDark.copy(alpha = 0.55f))
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss, enabled = !isUploadingFile) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = DeepGreenDark)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
+                )
+            },
+            bottomBar = {
+                Surface(color = Color.White, shadowElevation = 12.dp) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            enabled = !isUploadingFile,
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("Cancel", fontWeight = FontWeight.Medium)
+                        }
+                        Button(
+                            onClick = { trySave() },
+                            enabled = !isUploadingFile,
+                            modifier = Modifier.weight(1.3f).height(52.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Save", fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+            }
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .verticalScroll(rememberScrollState())
+                    .imePadding()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = SageGreenLight.copy(alpha = 0.45f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color.White),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(headerIcon, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(24.dp))
+                        }
+                        Column {
+                            Text("New $category", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextDark)
+                            Text(headerSubtitle, fontSize = 12.sp, color = TextDark.copy(alpha = 0.6f), lineHeight = 16.sp)
+                        }
+                    }
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        when (category) {
+                            "Experience" -> {
+                                OutlinedTextField(
+                                    value = title,
+                                    onValueChange = { title = it.take(100); titleError = null },
+                                    label = { Text("Job title") },
+                                    placeholder = { Text("e.g. Marketing Intern") },
+                                    singleLine = true,
+                                    isError = titleError != null,
+                                    supportingText = { titleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                OutlinedTextField(
+                                    value = subtitle,
+                                    onValueChange = { subtitle = it.take(100); subtitleError = null },
+                                    label = { Text("Company") },
+                                    placeholder = { Text("e.g. JobTown Sdn Bhd") },
+                                    singleLine = true,
+                                    isError = subtitleError != null,
+                                    supportingText = { subtitleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                QualDropdownField(label = "Employment type", value = employmentType, options = ProfileOptions.EMPLOYMENT_TYPES, onSelect = { employmentType = it })
+                                QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
+                                QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
+                                OutlinedTextField(
+                                    value = description,
+                                    onValueChange = { description = it.take(300) },
+                                    label = { Text("Description (optional)") },
+                                    placeholder = { Text("What did you work on?") },
+                                    modifier = Modifier.fillMaxWidth().height(110.dp),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                            }
+                            "Education" -> {
+                                QualDropdownField(
+                                    label = "Qualification",
+                                    value = educationLevel,
+                                    options = ProfileOptions.EDUCATION_LEVELS,
+                                    onSelect = { educationLevel = it }
+                                )
+                                OutlinedTextField(
+                                    value = subtitle,
+                                    onValueChange = { subtitle = it.take(100); subtitleError = null },
+                                    label = { Text("Institution") },
+                                    placeholder = { Text("e.g. Universiti Malaya") },
+                                    singleLine = true,
+                                    isError = subtitleError != null,
+                                    supportingText = { subtitleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
+                                QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
+                                OutlinedTextField(
+                                    value = description,
+                                    onValueChange = { description = it.take(300) },
+                                    label = { Text("Field of study (optional)") },
+                                    placeholder = { Text("e.g. Computer Science") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                            }
+                            else -> {
+                                OutlinedTextField(
+                                    value = title,
+                                    onValueChange = { title = it.take(100); titleError = null },
+                                    label = { Text("Certification name") },
+                                    placeholder = { Text("e.g. Google UX Design") },
+                                    singleLine = true,
+                                    isError = titleError != null,
+                                    supportingText = { titleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                QualDropdownField(
+                                    label = "Issued by",
+                                    value = issuer,
+                                    options = ProfileOptions.CERTIFICATE_ISSUERS,
+                                    onSelect = { issuer = it }
+                                )
+                                if (issuer == "Other") {
+                                    OutlinedTextField(
+                                        value = customIssuer,
+                                        onValueChange = { customIssuer = it.take(100) },
+                                        label = { Text("Issuer name") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(14.dp)
+                                    )
+                                }
+                                QualDropdownField(
+                                    label = "Year",
+                                    value = year,
+                                    options = ProfileOptions.YEARS.filter { it != "Present" },
+                                    onSelect = { year = it }
+                                )
+                                OutlinedButton(
+                                    onClick = { certificatePicker.launch(arrayOf("application/pdf", "image/*")) },
+                                    enabled = !isUploadingFile,
+                                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    if (isUploadingFile) {
+                                        CircularProgressIndicator(color = DeepGreenDark, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Uploading…")
+                                    } else {
+                                        Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(if (fileUrl.isBlank()) "Upload certificate file (optional)" else "Replace file")
+                                    }
+                                }
+                                if (fileName.isNotBlank()) {
+                                    Text(fileName, fontSize = 12.sp, color = DeepGreenDark)
+                                }
+                                fileError?.let { Text(it, color = Color.Red, fontSize = 12.sp) }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

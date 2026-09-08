@@ -1,6 +1,8 @@
 package com.example.jobtown.utils
 
+import com.example.jobtown.data.model.Job
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 
@@ -34,7 +36,12 @@ private val incomingTimestampPatterns = listOf(
     "yyyy-MM-dd'T'HH:mm:ssXXX",
     "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'",
     "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-    "yyyy-MM-dd'T'HH:mm:ss'Z'"
+    "yyyy-MM-dd'T'HH:mm:ss'Z'",
+    "yyyy-MM-dd HH:mm:ss.SSSSSSXXX",
+    "yyyy-MM-dd HH:mm:ss.SSSXXX",
+    "yyyy-MM-dd HH:mm:ssXXX",
+    "yyyy-MM-dd HH:mm:ss",
+    "yyyy-MM-dd"
 )
 
 private fun parseIncomingTimestamp(rawTimestamp: String): java.util.Date? {
@@ -46,7 +53,7 @@ private fun parseIncomingTimestamp(rawTimestamp: String): java.util.Date? {
             // Patterns ending in a literal 'Z' represent UTC, so the parser
             // needs to be told that explicitly; the offset-suffixed (XXX)
             // patterns already carry their own offset and don't need this.
-            if (pattern.endsWith("'Z'")) {
+            if (pattern.endsWith("'Z'") || pattern == "yyyy-MM-dd" || pattern == "yyyy-MM-dd HH:mm:ss") {
                 parser.timeZone = TimeZone.getTimeZone("UTC")
             }
             parser.parse(trimmed)?.let { return it }
@@ -84,4 +91,35 @@ fun formatDateWithTimeZone(rawTimestamp: String): String {
         timeZone = malaysiaTimeZone
     }
     return "${outFormat.format(parsed)} (${currentTimeZoneLabel()})"
+}
+
+/**
+ * True when a listing should no longer be shown to job seekers.
+ * Uses `status = expired` or an `expired_at` date that is already past
+ * in Malaysia time. The selected expiry day itself stays visible.
+ */
+fun isJobListingExpired(job: Job, nowMillis: Long = System.currentTimeMillis()): Boolean {
+    val status = job.status.orEmpty()
+    if (status.equals("expired", ignoreCase = true) ||
+        status.equals("closed", ignoreCase = true) ||
+        status.equals("inactive", ignoreCase = true)
+    ) {
+        return true
+    }
+    val raw = job.expiredAt?.trim().orEmpty()
+    if (raw.isBlank()) return false
+    val expiry = parseIncomingTimestamp(raw) ?: return false
+    val expiryDay = malaysiaCalendarDay(expiry.time)
+    val today = malaysiaCalendarDay(nowMillis)
+    return today.after(expiryDay)
+}
+
+private fun malaysiaCalendarDay(millis: Long): Calendar {
+    return Calendar.getInstance(malaysiaTimeZone).apply {
+        timeInMillis = millis
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
 }

@@ -1,5 +1,6 @@
 package com.example.jobtown.ui.postjob
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,22 +22,29 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Work
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,9 +55,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.jobtown.data.model.Job
@@ -66,15 +76,46 @@ import com.example.jobtown.ui.theme.TextDark
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmployerJobDetailScreen(
-    job: Job,
+    initialJob: Job,
     navController: NavController? = null,
     currentUser: User? = null,
     avatarUrl: String? = null,
-    onUpdateJob: (Job) -> Unit = {},
+    viewModel: EmployerJobDetailViewModel = viewModel(),
     onBackClick: () -> Unit = { navController?.popBackStack() }
 ) {
+    val context = LocalContext.current
+
+    // Initialize state in ViewModel
+    LaunchedEffect(initialJob) {
+        viewModel.setInitialJob(initialJob)
+    }
+
+    val currentJobState by viewModel.jobState.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val job = currentJobState ?: initialJob
+
     var isEditing by remember { mutableStateOf(false) }
     var fetchedAvatarUrl by remember { mutableStateOf<String?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    // Listen for events (e.g. deletion, updates, errors)
+    LaunchedEffect(Unit) {
+        viewModel.eventFlow.collect { event ->
+            when (event) {
+                is JobDetailUiEvent.JobUpdated -> {
+                    Toast.makeText(context, "Job listing updated", Toast.LENGTH_SHORT).show()
+                    isEditing = false
+                }
+                is JobDetailUiEvent.JobDeleted -> {
+                    Toast.makeText(context, "Job deleted successfully", Toast.LENGTH_SHORT).show()
+                    onBackClick()
+                }
+                is JobDetailUiEvent.ShowError -> {
+                    Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     val savedAddresses = remember(currentUser?.location) {
         LocationOptions.parseAddresses(currentUser?.location.orEmpty())
@@ -116,6 +157,34 @@ fun EmployerJobDetailScreen(
             }
     }
 
+    // Delete Confirmation Dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isLoading) showDeleteDialog = false },
+            title = { Text(text = "Delete Job Listing", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to delete this job post? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !isLoading,
+                    onClick = {
+                        showDeleteDialog = false
+                        viewModel.deleteJob(job.id)
+                    }
+                ) {
+                    Text("Delete", color = Color.Red, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isLoading,
+                    onClick = { showDeleteDialog = false }
+                ) {
+                    Text("Cancel", color = TextDark)
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -132,6 +201,15 @@ fun EmployerJobDetailScreen(
                     }
                 },
                 actions = {
+                    if (!isEditing) {
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete listing",
+                                tint = Color(0xFFC62828)
+                            )
+                        }
+                    }
                     IconButton(onClick = { isEditing = !isEditing }) {
                         Icon(
                             imageVector = if (isEditing) Icons.Default.Close else Icons.Default.Edit,
@@ -145,26 +223,29 @@ fun EmployerJobDetailScreen(
         },
         containerColor = BackgroundWhite
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            if (isEditing) {
-                JobListingForm(
-                    fields = fields,
-                    submitLabel = "Save changes",
-                    companyPhotoUrl = displayAvatarUrl,
-                    requireSalary = false,
-                    savedAddresses = savedAddresses,
-                    showFeaturedToggle = true,
-                    onSubmit = {
-                        val salary = fields.formattedSalary(blankFallback = job.salary)
-                        onUpdateJob(
-                            job.copy(
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                if (isEditing) {
+                    JobListingForm(
+                        fields = fields,
+                        submitLabel = "Save changes",
+                        companyPhotoUrl = displayAvatarUrl,
+                        requireSalary = false,
+                        savedAddresses = savedAddresses,
+                        showFeaturedToggle = true,
+                        onSubmit = {
+                            val salary = fields.formattedSalary(blankFallback = job.salary)
+                            val updatedJob = job.copy(
                                 title = fields.title.trim(),
                                 company = fields.company.trim(),
                                 location = fields.location.trim(),
@@ -177,14 +258,35 @@ fun EmployerJobDetailScreen(
                                 isFeatured = fields.isFeatured,
                                 isOkuFriendly = fields.isOkuFriendly
                             )
-                        )
-                        isEditing = false
+                            viewModel.updateJob(updatedJob)
+                        }
+                    )
+                } else {
+                    JobDetailsReadView(
+                        job = job,
+                        displayAvatarUrl = displayAvatarUrl
+                    )
+
+                    OutlinedButton(
+                        onClick = { showDeleteDialog = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFFE57373)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
+                    ) {
+                        Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(text = "Delete Job Listing", fontWeight = FontWeight.Bold)
                     }
-                )
-            } else {
-                JobDetailsReadView(
-                    job = job,
-                    displayAvatarUrl = displayAvatarUrl
+                }
+            }
+
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = SageGreenDark
                 )
             }
         }
@@ -335,7 +437,7 @@ private fun RequirementRow(text: String) {
         Text(text = text, fontSize = 14.sp, color = TextDark.copy(alpha = 0.78f), lineHeight = 21.sp)
     }
 }
-//
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SkillChips(skills: List<String>) {

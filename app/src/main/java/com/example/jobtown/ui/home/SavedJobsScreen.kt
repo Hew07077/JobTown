@@ -17,6 +17,7 @@ import androidx.navigation.NavController
 import com.example.jobtown.data.model.Job
 import com.example.jobtown.ui.components.JobCard
 import com.example.jobtown.ui.theme.*
+import com.example.jobtown.utils.isJobListingExpired
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,7 +28,9 @@ fun SavedJobsScreen(
     onJobClick: (Job) -> Unit,
     onToggleSaveJob: (String) -> Unit
 ) {
-    val savedJobs = allJobs.filter { savedJobIds.contains(it.id.orEmpty()) }
+    val savedJobs = allJobs.filter {
+        savedJobIds.contains(it.id.orEmpty()) && !isJobListingExpired(it)
+    }
 
     Scaffold(
         topBar = {
