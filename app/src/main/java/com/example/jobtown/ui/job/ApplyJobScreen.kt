@@ -1031,6 +1031,11 @@ private fun formatProfileEntries(entries: List<ProfileEntry>): String {
             append(entry.title)
             if (entry.subtitle.isNotBlank()) append(" — ${entry.subtitle}")
             if (entry.period.isNotBlank()) append(" (${entry.period})")
+            // Certification entries carry an uploaded file (PDF/image). Include the
+            // URL so the applicant's "Application status" screen and the employer's
+            // view can detect it and render it as a "Tap to open file" link, the
+            // same way the resume already does.
+            if (entry.fileUrl.isNotBlank()) append(" ${entry.fileUrl}")
         }
     }
 }

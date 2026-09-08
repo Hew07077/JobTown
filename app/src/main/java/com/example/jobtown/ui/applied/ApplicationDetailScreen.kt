@@ -227,14 +227,13 @@ fun ApplicationDetailScreen(
 
                         // Certificate with Tap to Open feature
                         val certVal: String = application.certificates.ifBlank { "None attached" }
-                        val hasCertUrl = certVal.contains("http://", ignoreCase = true) || certVal.contains("https://", ignoreCase = true)
+                        val (certDisplayText, certUrl) = formatCertificatesForDisplay(certVal)
 
-                        if (hasCertUrl) {
-                            val certUrl = certVal.split(" ", "\n").firstOrNull { it.startsWith("http", ignoreCase = true) } ?: certVal
+                        if (certUrl != null) {
                             ApplicationDetailRow(
                                 icon = Icons.Default.Description,
                                 label = "Certificates (Tap to open file)",
-                                value = certVal,
+                                value = certDisplayText,
                                 valueFontSize = 12.sp,
                                 valueLineHeight = 16.sp,
                                 valueColor = Color(0xFF1E88E5),
@@ -247,7 +246,7 @@ fun ApplicationDetailScreen(
                             ApplicationDetailRow(
                                 icon = Icons.Default.Description,
                                 label = "Certificates",
-                                value = certVal,
+                                value = certDisplayText,
                                 valueFontSize = 12.sp,
                                 valueLineHeight = 16.sp
                             )
@@ -359,17 +358,30 @@ fun ApplicationDetailScreen(
                                 Text("Shortlist", color = DeepGreenDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             }
 
-                            OutlinedButton(
-                                onClick = { onStatusChange(application.id, "Rejected") },
+                            Button(
+                                onClick = { onStatusChange(application.id, "Offered") },
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(48.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
-                                border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.5f))
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                             ) {
-                                Text("Reject", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Offer", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedButton(
+                            onClick = { onStatusChange(application.id, "Rejected") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
+                            border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.5f))
+                        ) {
+                            Text("Reject", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }

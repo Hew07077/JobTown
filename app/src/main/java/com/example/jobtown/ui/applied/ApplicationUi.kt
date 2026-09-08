@@ -36,12 +36,33 @@ import com.example.jobtown.ui.theme.TextDark
 
 internal val AppliedDividerColor = Color(0xFFE6EDE4)
 
+// Certificate entries are stored as "<title> — <issuer> (<year>) <fileUrl>" (see
+// formatProfileEntries in ApplyJobScreen.kt), one per line. Raw applicants/employers
+// don't need to see the actual URL text -- it should read like the resume row does,
+// e.g. "ccna — Google (2026) · Certificate (PDF)". This strips the URL out of what's
+// shown and returns the first URL found (if any) so the row can still be made
+// tappable to open it.
+internal fun formatCertificatesForDisplay(certificates: String): Pair<String, String?> {
+    val urlRegex = Regex("https?://\\S+")
+    val firstUrl = urlRegex.find(certificates)?.value
+    val displayText = certificates.lines().joinToString("\n") { line ->
+        val url = urlRegex.find(line)?.value
+        if (url == null) {
+            line
+        } else {
+            val withoutUrl = line.replace(url, "").trim().trim('-', '—', '·', ' ')
+            if (withoutUrl.isBlank()) "Certificate (PDF)" else "$withoutUrl · Certificate (PDF)"
+        }
+    }
+    return displayText to firstUrl
+}
+
 internal fun applicationStatusBackground(status: String): Color {
     return when (status.lowercase()) {
         "shortlisted", "viewed" -> SageGreenMain.copy(alpha = 0.45f)
         "interview" -> SageGreenDark.copy(alpha = 0.2f)
         "rejected", "cancelled" -> Color(0xFFFFEBEE)
-        "accepted" -> Color(0xFFE8F5E9)
+        "offered", "accepted" -> Color(0xFFE8F5E9)
         else -> SageGreenMain.copy(alpha = 0.35f)
     }
 }
@@ -49,7 +70,7 @@ internal fun applicationStatusBackground(status: String): Color {
 internal fun applicationStatusTextColor(status: String): Color {
     return when (status.lowercase()) {
         "rejected", "cancelled" -> Color(0xFFC62828)
-        "accepted" -> Color(0xFF2E7D32)
+        "offered", "accepted" -> Color(0xFF2E7D32)
         else -> DeepGreenDark
     }
 }
@@ -69,7 +90,8 @@ internal fun JobApplication.canCancel(): Boolean {
         "submitted",
         "viewed",
         "shortlisted",
-        "interview"
+        "interview",
+        "offered"
     )
 }
 

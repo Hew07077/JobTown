@@ -215,14 +215,13 @@ fun JobseekerApplicationDetailScreen(
 
                         // Certificate section with Tap to open link detection
                         val certVal = application.certificates.ifBlank { "None attached" }
-                        val hasCertUrl = certVal.contains("http://", ignoreCase = true) || certVal.contains("https://", ignoreCase = true)
+                        val (certDisplayText, certUrl) = formatCertificatesForDisplay(certVal)
 
-                        if (hasCertUrl) {
-                            val certUrl = certVal.split(" ", "\n").firstOrNull { it.startsWith("http", ignoreCase = true) } ?: certVal
+                        if (certUrl != null) {
                             ApplicationDetailRow(
                                 icon = Icons.Default.Description,
                                 label = "Certificates (Tap to open file)",
-                                value = certVal,
+                                value = certDisplayText,
                                 valueFontSize = 12.sp,
                                 valueLineHeight = 16.sp,
                                 valueColor = Color(0xFF1E88E5),
@@ -235,7 +234,7 @@ fun JobseekerApplicationDetailScreen(
                             ApplicationDetailRow(
                                 icon = Icons.Default.Description,
                                 label = "Certificates",
-                                value = certVal,
+                                value = certDisplayText,
                                 valueFontSize = 12.sp,
                                 valueLineHeight = 16.sp
                             )

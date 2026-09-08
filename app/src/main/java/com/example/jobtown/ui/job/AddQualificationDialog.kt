@@ -84,6 +84,7 @@ fun AddQualificationDialog(
     var titleError by remember { mutableStateOf<String?>(null) }
     var subtitleError by remember { mutableStateOf<String?>(null) }
     var fileError by remember { mutableStateOf<String?>(null) }
+    var yearRangeError by remember { mutableStateOf<String?>(null) }
     var employmentType by remember { mutableStateOf(ProfileOptions.EMPLOYMENT_TYPES.first()) }
     var educationLevel by remember { mutableStateOf(ProfileOptions.EDUCATION_LEVELS.getOrElse(2) { ProfileOptions.EDUCATION_LEVELS.first() }) }
     var issuer by remember { mutableStateOf(ProfileOptions.CERTIFICATE_ISSUERS.first()) }
@@ -137,6 +138,15 @@ fun AddQualificationDialog(
         }
     }
 
+    // "Present" means still ongoing, so it's always >= any start year. Otherwise
+    // compare the numeric years and reject an end year earlier than the start year.
+    fun isYearRangeValid(start: String, end: String): Boolean {
+        if (end == "Present") return true
+        val startNum = start.toIntOrNull() ?: return true
+        val endNum = end.toIntOrNull() ?: return true
+        return endNum >= startNum
+    }
+
     fun trySave() {
         when (category) {
             "Experience" -> {
@@ -148,6 +158,11 @@ fun AddQualificationDialog(
                     subtitleError = "Company is required."
                     return
                 }
+                if (!isYearRangeValid(startYear, endYear)) {
+                    yearRangeError = "End year cannot be earlier than start year."
+                    return
+                }
+                yearRangeError = null
                 onSave(
                     ProfileEntry(
                         title = title.trim(),
@@ -162,6 +177,11 @@ fun AddQualificationDialog(
                     subtitleError = "Institution is required."
                     return
                 }
+                if (!isYearRangeValid(startYear, endYear)) {
+                    yearRangeError = "End year cannot be earlier than start year."
+                    return
+                }
+                yearRangeError = null
                 onSave(
                     ProfileEntry(
                         title = educationLevel,
@@ -318,8 +338,8 @@ fun AddQualificationDialog(
                                     shape = RoundedCornerShape(14.dp)
                                 )
                                 QualDropdownField(label = "Employment type", value = employmentType, options = ProfileOptions.EMPLOYMENT_TYPES, onSelect = { employmentType = it })
-                                QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
-                                QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
+                                QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it; yearRangeError = null })
+                                QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it; yearRangeError = null }, errorText = yearRangeError)
                                 OutlinedTextField(
                                     value = description,
                                     onValueChange = { description = it.take(300) },
@@ -347,8 +367,8 @@ fun AddQualificationDialog(
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(14.dp)
                                 )
-                                QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
-                                QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
+                                QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it; yearRangeError = null })
+                                QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it; yearRangeError = null }, errorText = yearRangeError)
                                 OutlinedTextField(
                                     value = description,
                                     onValueChange = { description = it.take(300) },
@@ -429,7 +449,8 @@ private fun QualDropdownField(
     label: String,
     value: String,
     options: List<String>,
-    onSelect: (String) -> Unit
+    onSelect: (String) -> Unit,
+    errorText: String? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(
@@ -442,6 +463,8 @@ private fun QualDropdownField(
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
+            isError = errorText != null,
+            supportingText = errorText?.let { { Text(it, color = Color.Red, fontSize = 12.sp) } },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier.fillMaxWidth().menuAnchor()
         )

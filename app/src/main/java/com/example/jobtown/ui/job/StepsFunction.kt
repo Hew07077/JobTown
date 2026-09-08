@@ -63,6 +63,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.jobtown.data.model.ProfileEntry
+import com.example.jobtown.ui.applied.formatCertificatesForDisplay
 import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
@@ -700,7 +701,7 @@ fun Step3Review(
             HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 1.dp)
             ReviewRow(label = "Education", value = educationSummary.ifBlank { "Not specified" })
             ReviewRow(label = "Experience", value = experienceSummary.ifBlank { "Not specified" })
-            ReviewRow(label = "Certificates", value = certificatesSummary.ifBlank { "None attached" })
+            ReviewRow(label = "Certificates", value = formatCertificatesForDisplay(certificatesSummary).first.ifBlank { "None attached" })
             HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 1.dp)
             ReviewRow(label = "Attached Resume", value = resumeFileName)
             ReviewRow(label = "Cover Letter Document", value = coverLetterFileName)
