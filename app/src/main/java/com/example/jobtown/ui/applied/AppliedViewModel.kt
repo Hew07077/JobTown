@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class ApplicationTab {
-    ACTIVE, CLOSED
+    PENDING, VIEWED, SHORTLISTED, OFFERED, CANCELLED
 }
 
 class AppliedViewModel(
@@ -24,7 +24,7 @@ class AppliedViewModel(
     val applicationsList: List<JobApplication>
         get() = _applicationsList.value
 
-    private val _selectedTab = MutableStateFlow(ApplicationTab.ACTIVE)
+    private val _selectedTab = MutableStateFlow(ApplicationTab.PENDING)
     val selectedTab: StateFlow<ApplicationTab> = _selectedTab.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
@@ -90,12 +90,7 @@ class AppliedViewModel(
     }
 
     fun getFilteredApplications(tab: ApplicationTab): List<JobApplication> {
-        return _applicationsList.value.filter { app ->
-            when (tab) {
-                ApplicationTab.ACTIVE -> !app.isClosed()
-                ApplicationTab.CLOSED -> app.isClosed()
-            }
-        }
+        return _applicationsList.value.filter { app -> app.applicationTab() == tab }
     }
 
     fun findApplicationForJob(userId: String, jobId: String): JobApplication? {

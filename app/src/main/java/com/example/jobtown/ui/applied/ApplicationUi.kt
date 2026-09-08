@@ -81,6 +81,26 @@ internal fun JobApplication.isClosed(): Boolean {
             status.equals("cancelled", ignoreCase = true)
 }
 
+/**
+ * Buckets every possible status into one of the 5 tabs shown on the applications page,
+ * in display order: Pending, Viewed, Shortlisted, Offered, Cancelled (last).
+ * - Pending: not yet opened by the employer.
+ * - Viewed: opened by the employer, but no decision made yet.
+ * - Shortlisted: employer has shortlisted the candidate.
+ * - Offered: an offer has been made (or accepted).
+ * - Cancelled: withdrawn by the seeker, or rejected/expired by the employer.
+ */
+internal fun JobApplication.applicationTab(): ApplicationTab {
+    return when (status.trim().lowercase()) {
+        "", "pending", "applied", "submitted" -> ApplicationTab.PENDING
+        "viewed", "interview" -> ApplicationTab.VIEWED
+        "shortlisted" -> ApplicationTab.SHORTLISTED
+        "offered", "accepted" -> ApplicationTab.OFFERED
+        "cancelled", "rejected", "expired" -> ApplicationTab.CANCELLED
+        else -> ApplicationTab.PENDING
+    }
+}
+
 internal fun JobApplication.canCancel(): Boolean {
     val normalized = status.trim().lowercase()
     if (normalized.isBlank()) return true

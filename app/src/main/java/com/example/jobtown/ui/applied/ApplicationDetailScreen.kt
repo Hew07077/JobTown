@@ -343,34 +343,41 @@ fun ApplicationDetailScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { onStatusChange(application.id, "Shortlisted") },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, DeepGreenDark)
+                        // Once an offer has been made, the employer can no longer move the
+                        // application back to Shortlisted/Offered — Reject is the only
+                        // status change left available (e.g. if the offer falls through).
+                        val isOffered = application.status.equals("Offered", ignoreCase = true)
+
+                        if (!isOffered) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text("Shortlist", color = DeepGreenDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                OutlinedButton(
+                                    onClick = { onStatusChange(application.id, "Shortlisted") },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, DeepGreenDark)
+                                ) {
+                                    Text("Shortlist", color = DeepGreenDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                }
+
+                                Button(
+                                    onClick = { onStatusChange(application.id, "Offered") },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                                ) {
+                                    Text("Offer", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                }
                             }
 
-                            Button(
-                                onClick = { onStatusChange(application.id, "Offered") },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                            ) {
-                                Text("Offer", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            }
+                            Spacer(modifier = Modifier.height(10.dp))
                         }
-
-                        Spacer(modifier = Modifier.height(10.dp))
 
                         OutlinedButton(
                             onClick = { onStatusChange(application.id, "Rejected") },

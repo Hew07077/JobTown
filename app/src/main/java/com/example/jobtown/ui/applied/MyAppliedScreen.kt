@@ -34,9 +34,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -92,11 +92,8 @@ fun MyAppliedScreen(
         viewModel.getFilteredApplications(selectedTab)
     }
 
-    val activeCount = remember(applicationsList) {
-        viewModel.getFilteredApplications(ApplicationTab.ACTIVE).size
-    }
-    val closedCount = remember(applicationsList) {
-        viewModel.getFilteredApplications(ApplicationTab.CLOSED).size
+    val tabCounts = remember(applicationsList) {
+        ApplicationTab.entries.associateWith { tab -> viewModel.getFilteredApplications(tab).size }
     }
 
     LaunchedEffect(user?.id) {
@@ -160,23 +157,24 @@ fun MyAppliedScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            TabRow(
+            ScrollableTabRow(
                 selectedTabIndex = selectedTab.ordinal,
                 containerColor = Color.White,
                 contentColor = DeepGreenDark,
+                edgePadding = 12.dp,
                 divider = {
                     HorizontalDivider(thickness = 1.dp, color = AppliedDividerColor)
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 ApplicationTab.entries.forEach { tab ->
-                    val count = when (tab) {
-                        ApplicationTab.ACTIVE -> activeCount
-                        ApplicationTab.CLOSED -> closedCount
-                    }
+                    val count = tabCounts[tab] ?: 0
                     val tabLabel = when (tab) {
-                        ApplicationTab.ACTIVE -> "Active"
-                        ApplicationTab.CLOSED -> "Closed"
+                        ApplicationTab.PENDING -> "Pending"
+                        ApplicationTab.VIEWED -> "Viewed"
+                        ApplicationTab.SHORTLISTED -> "Shortlisted"
+                        ApplicationTab.OFFERED -> "Offered"
+                        ApplicationTab.CANCELLED -> "Cancelled"
                     }
 
                     Tab(
@@ -266,8 +264,11 @@ private fun EmptyApplicationsState(selectedTab: ApplicationTab) {
         Spacer(modifier = Modifier.height(18.dp))
         Text(
             text = when (selectedTab) {
-                ApplicationTab.ACTIVE -> "No active applications"
-                ApplicationTab.CLOSED -> "No closed applications"
+                ApplicationTab.PENDING -> "No pending applications"
+                ApplicationTab.VIEWED -> "No viewed applications"
+                ApplicationTab.SHORTLISTED -> "No shortlisted applications"
+                ApplicationTab.OFFERED -> "No offered applications"
+                ApplicationTab.CANCELLED -> "No cancelled applications"
             },
             fontWeight = FontWeight.Bold,
             fontSize = 17.sp,
@@ -276,8 +277,11 @@ private fun EmptyApplicationsState(selectedTab: ApplicationTab) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = when (selectedTab) {
-                ApplicationTab.ACTIVE -> "Jobs you apply for will show up here so you can track their status."
-                ApplicationTab.CLOSED -> "Rejected or expired applications will appear in this list."
+                ApplicationTab.PENDING -> "Jobs you apply for will show up here until the employer opens them."
+                ApplicationTab.VIEWED -> "Applications the employer has opened will appear here."
+                ApplicationTab.SHORTLISTED -> "Applications the employer has shortlisted will appear here."
+                ApplicationTab.OFFERED -> "Applications you've been offered will appear here."
+                ApplicationTab.CANCELLED -> "Withdrawn or rejected applications will appear in this list."
             },
             fontSize = 14.sp,
             color = TextDark.copy(alpha = 0.6f),
