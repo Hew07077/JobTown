@@ -22,9 +22,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
-// One previously-uploaded profile photo, as returned by
-// UserRepository.listAvatarHistory(). `path` is the full Storage path
-// (needed for deleteAvatar), `url` is the ready-to-display public URL.
 data class AvatarHistoryItem(
     val fileName: String,
     val path: String,
@@ -32,9 +29,6 @@ data class AvatarHistoryItem(
 )
 
 object UserRepository {
-
-    // public.users holds the account / profile row.
-    // Experience, education and certifications live in tables keyed by users.id.
 
     var lastUserSaveError: String? = null
         private set
@@ -74,8 +68,6 @@ object UserRepository {
                 }
             }
 
-            // Education / experience / certification are @Transient on User
-            // and stored in profile_* tables that reference users.id.
             if (user.role != UserRole.EMPLOYER) {
                 if (persistProfileEntries(user)) {
                     saved = true
@@ -108,9 +100,6 @@ object UserRepository {
         val cleanId = authUserId?.trim().orEmpty()
         val cleanEmail = email.trim()
 
-        // Employers table wins: some databases keep a users row with the
-        // default JOB_SEEKER role from the auth trigger, even after signup
-        // as a company.
         if (cleanId.isNotBlank()) {
             fetchEmployerById(cleanId)?.let { return@withContext mergeProfile(it) }
             fetchUserById(cleanId)?.let { return@withContext it }
@@ -126,6 +115,35 @@ object UserRepository {
 
     suspend fun updateUserInSupabase(user: User): Boolean = withContext(Dispatchers.IO) {
         saveUserToSupabase(user)
+    }
+
+    suspend fun fetchSavedAddresses(userId: String): List<String> = withContext(Dispatchers.IO) {
+        val user = fetchUserById(userId) ?: return@withContext emptyList()
+        if (user.location.isBlank()) emptyList()
+        else user.location.split(";").map { it.trim() }.filter { it.isNotBlank() }
+    }
+
+    suspend fun addSavedAddressToEmployer(userId: String, newAddress: String): Boolean = withContext(Dispatchers.IO) {
+        val trimmedAddress = newAddress.trim()
+        if (trimmedAddress.isBlank() || userId.isBlank()) return@withContext false
+
+        try {
+            val user = fetchUserById(userId) ?: return@withContext false
+            val existingAddresses = user.location.split(";")
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+
+            if (!existingAddresses.any { it.equals(trimmedAddress, ignoreCase = true) }) {
+                val updatedAddressesList = existingAddresses + trimmedAddress
+                val updatedLocationString = updatedAddressesList.joinToString("; ")
+                val updatedUser = user.copy(location = updatedLocationString)
+                return@withContext saveUserToSupabase(updatedUser)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("UserRepository", "Error saving new location address", e)
+            false
+        }
     }
 
     private suspend fun fetchUserByEmailExact(email: String): User? = try {
@@ -151,7 +169,6 @@ object UserRepository {
 
     private suspend fun persistUserRow(payload: UserWritePayload) {
         try {
-            // Using upsert is safer as it handles both insert and update based on the primary key (id)
             SupabaseClient.client.from("users").upsert(payload)
         } catch (e: Exception) {
             throw e
@@ -289,7 +306,6 @@ object UserRepository {
         emptyList()
     }
 
-    // --- AVATAR ---
     suspend fun uploadAvatar(userId: String, bytes: ByteArray, fileExtension: String): String? =
         withContext(Dispatchers.IO) {
             try {
@@ -331,7 +347,6 @@ object UserRepository {
         }
     }
 
-    // --- RESUME ---
     suspend fun uploadResume(userId: String, bytes: ByteArray): String? =
         withContext(Dispatchers.IO) {
             try {
@@ -345,7 +360,6 @@ object UserRepository {
             }
         }
 
-    // --- CERTIFICATES ---
     suspend fun uploadCertificate(userId: String, bytes: ByteArray, fileExtension: String): String? =
         withContext(Dispatchers.IO) {
             try {
@@ -360,7 +374,6 @@ object UserRepository {
             }
         }
 
-    // Fetches extra profile fields from the users row.
     suspend fun fetchUserProfile(userId: String): UserProfile? = withContext(Dispatchers.IO) {
         if (userId.isBlank()) return@withContext null
         fetchUserById(userId)?.toUserProfile()
@@ -502,7 +515,6 @@ object UserRepository {
         )
     }
 
-    // --- JOBS ---
     suspend fun fetchAllJobs(): List<Job> = withContext(Dispatchers.IO) {
         try {
             SupabaseClient.client.from("jobs")
@@ -531,12 +543,16 @@ object UserRepository {
 
     suspend fun saveJobToSupabase(job: Job): Boolean = withContext(Dispatchers.IO) {
         try {
-            SupabaseClient.client.from("jobs").insert(job)
+            SupabaseClient.client.from("jobs").upsert(job)
             true
         } catch (e: Exception) {
             e.printStackTrace()
             false
         }
+    }
+
+    suspend fun updateJob(job: Job): Boolean = withContext(Dispatchers.IO) {
+        saveJobToSupabase(job)
     }
 
     suspend fun deleteJob(jobId: String): Boolean = withContext(Dispatchers.IO) {
@@ -551,7 +567,6 @@ object UserRepository {
         }
     }
 
-    // --- APPLICATIONS ---
     suspend fun fetchApplicationsForUser(userId: String, isEmployer: Boolean): List<JobApplication> =
         withContext(Dispatchers.IO) {
             try {
@@ -600,7 +615,6 @@ object UserRepository {
             }
         }
 
-    // --- SCHEDULES ---
     suspend fun fetchSchedulesForUser(userId: String, isEmployer: Boolean): List<InterviewSchedule> =
         withContext(Dispatchers.IO) {
             try {

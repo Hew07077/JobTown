@@ -1,52 +1,18 @@
 package com.example.jobtown.ui.postjob
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RangeSlider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +26,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.jobtown.ui.components.LocationPicker
 import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
@@ -68,24 +35,7 @@ import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private val MalaysiaLocations = listOf(
-    "Kuala Lumpur, Malaysia",
-    "Selangor, Malaysia",
-    "Johor, Malaysia",
-    "Penang, Malaysia",
-    "Perak, Malaysia",
-    "Kedah, Malaysia",
-    "Melaka, Malaysia",
-    "Negeri Sembilan, Malaysia",
-    "Pahang, Malaysia",
-    "Sabah, Malaysia",
-    "Sarawak, Malaysia",
-    "Kelantan, Malaysia",
-    "Terengganu, Malaysia",
-    "Perlis, Malaysia",
-    "Putrajaya, Malaysia",
-    "Labuan, Malaysia"
-)
+private val FormJobTypeOptions: List<String> = listOf("Full-time", "Part-time", "Contract", "Internship", "Temporary")
 
 private fun formatRm(value: Float): String {
     if (value >= 50000f) {
@@ -245,7 +195,7 @@ fun JobPreviewCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun JobListingForm(
     fields: JobFormFields,
@@ -264,9 +214,18 @@ fun JobListingForm(
     onExpiryDateClick: (() -> Unit)? = null,
     showFeaturedToggle: Boolean = false
 ) {
-    var locationDropdownExpanded by remember { mutableStateOf(false) }
     var jobTypeExpanded by remember { mutableStateOf(false) }
-    var salaryRange by remember { mutableStateOf(1500f..10000f) }
+
+    // Parse initial salary range directly from fields instead of hardcoded defaults
+    var salaryRange by remember(fields.minSalary, fields.maxSalary) {
+        val initialMin = fields.minSalary.toFloatOrNull()?.coerceIn(500f, 50000f) ?: 1500f
+        val initialMax = fields.maxSalary.toFloatOrNull()?.coerceIn(initialMin, 50000f) ?: 10000f
+        mutableStateOf(initialMin..initialMax)
+    }
+
+    var isAddingNewLocation by remember(savedAddresses, fields.location) {
+        mutableStateOf(savedAddresses.isEmpty() || savedAddresses.none { it.equals(fields.location, ignoreCase = true) })
+    }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -343,36 +302,74 @@ fun JobListingForm(
                 shape = RoundedCornerShape(12.dp)
             )
 
-            ExposedDropdownMenuBox(
-                expanded = locationDropdownExpanded && enabled,
-                onExpandedChange = { if (enabled) locationDropdownExpanded = it },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = fields.location.ifBlank { "Kuala Lumpur, Malaysia" },
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { RequiredLabel("Location (Malaysia)", required = true) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = locationDropdownExpanded) },
-                    enabled = enabled,
-                    modifier = Modifier
-                        .menuAnchor()
-                        .fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+            Text(
+                text = "Location",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = DeepGreenDark
+            )
+
+            if (savedAddresses.isNotEmpty()) {
+                Text(
+                    text = "Select from saved profile locations or add a new location:",
+                    fontSize = 12.sp,
+                    color = TextDark.copy(alpha = 0.6f)
                 )
-                ExposedDropdownMenu(
-                    expanded = locationDropdownExpanded,
-                    onDismissRequest = { locationDropdownExpanded = false }
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    MalaysiaLocations.forEach { state ->
-                        DropdownMenuItem(
-                            text = { Text(state, fontSize = 13.sp) },
+                    savedAddresses.forEach { address ->
+                        val isSelected = !isAddingNewLocation && fields.location.equals(address, ignoreCase = true)
+                        FilterChip(
+                            selected = isSelected,
                             onClick = {
-                                fields.location = state
-                                locationDropdownExpanded = false
-                            }
+                                isAddingNewLocation = false
+                                fields.location = address
+                            },
+                            label = { Text(address, fontSize = 12.sp) },
+                            leadingIcon = if (isSelected) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = SageGreenLight,
+                                selectedLabelColor = DeepGreenDark
+                            )
                         )
                     }
+
+                    FilterChip(
+                        selected = isAddingNewLocation,
+                        onClick = {
+                            isAddingNewLocation = true
+                            fields.location = ""
+                        },
+                        label = { Text("Add new location", fontSize = 12.sp) },
+                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = SageGreenLight,
+                            selectedLabelColor = DeepGreenDark
+                        )
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = isAddingNewLocation || savedAddresses.isEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Choose State & City",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextDark.copy(alpha = 0.7f)
+                    )
+                    LocationPicker(
+                        locationString = fields.location,
+                        onLocationStringChange = { fields.location = it },
+                        allowMultipleBranches = false,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
@@ -410,7 +407,7 @@ fun JobListingForm(
                     expanded = jobTypeExpanded,
                     onDismissRequest = { jobTypeExpanded = false }
                 ) {
-                    JobTypeOptions.forEach { opt ->
+                    FormJobTypeOptions.forEach { opt: String ->
                         DropdownMenuItem(
                             text = { Text(opt, fontSize = 13.sp) },
                             onClick = {
