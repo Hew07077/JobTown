@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class ApplicationTab {
-    PENDING, VIEWED, SHORTLISTED, OFFERED, CANCELLED
+    PENDING, VIEWED, SHORTLISTED, OFFERED, REJECTED, CANCELLED
 }
 
 class AppliedViewModel(
@@ -65,13 +65,10 @@ class AppliedViewModel(
     }
 
     fun submitNewApplication(application: JobApplication, onComplete: (Boolean, String?) -> Unit) {
-        // Guard against the same person applying to the same job twice —
-        // checked against whatever they already have loaded, regardless of
-        // which screen the apply flow was reached from.
         val duplicate = _applicationsList.value.any { existing ->
             existing.userId == application.userId &&
-                existing.jobId == application.jobId &&
-                !existing.status.equals("Cancelled", ignoreCase = true)
+                    existing.jobId == application.jobId &&
+                    !existing.status.equals("Cancelled", ignoreCase = true)
         }
         if (duplicate) {
             onComplete(false, "You've already applied for this job.")
@@ -96,8 +93,8 @@ class AppliedViewModel(
     fun findApplicationForJob(userId: String, jobId: String): JobApplication? {
         return _applicationsList.value.firstOrNull { app ->
             app.userId == userId &&
-                app.jobId == jobId &&
-                !app.status.equals("Cancelled", ignoreCase = true)
+                    app.jobId == jobId &&
+                    !app.status.equals("Cancelled", ignoreCase = true)
         }
     }
 
@@ -147,7 +144,7 @@ class AppliedViewModel(
             }
         }
     }
-//
+
     fun stopTracking() {
         trackingJob?.cancel()
         trackingJob = null

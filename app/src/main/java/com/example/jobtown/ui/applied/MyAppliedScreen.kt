@@ -174,6 +174,7 @@ fun MyAppliedScreen(
                         ApplicationTab.VIEWED -> "Viewed"
                         ApplicationTab.SHORTLISTED -> "Shortlisted"
                         ApplicationTab.OFFERED -> "Offered"
+                        ApplicationTab.REJECTED -> "Rejected"
                         ApplicationTab.CANCELLED -> "Cancelled"
                     }
 
@@ -268,6 +269,7 @@ private fun EmptyApplicationsState(selectedTab: ApplicationTab) {
                 ApplicationTab.VIEWED -> "No viewed applications"
                 ApplicationTab.SHORTLISTED -> "No shortlisted applications"
                 ApplicationTab.OFFERED -> "No offered applications"
+                ApplicationTab.REJECTED -> "No rejected applications"
                 ApplicationTab.CANCELLED -> "No cancelled applications"
             },
             fontWeight = FontWeight.Bold,
@@ -281,7 +283,8 @@ private fun EmptyApplicationsState(selectedTab: ApplicationTab) {
                 ApplicationTab.VIEWED -> "Applications the employer has opened will appear here."
                 ApplicationTab.SHORTLISTED -> "Applications the employer has shortlisted will appear here."
                 ApplicationTab.OFFERED -> "Applications you've been offered will appear here."
-                ApplicationTab.CANCELLED -> "Withdrawn or rejected applications will appear in this list."
+                ApplicationTab.REJECTED -> "Applications the employer has rejected will appear here."
+                ApplicationTab.CANCELLED -> "Withdrawn or expired applications will appear in this list."
             },
             fontSize = 14.sp,
             color = TextDark.copy(alpha = 0.6f),

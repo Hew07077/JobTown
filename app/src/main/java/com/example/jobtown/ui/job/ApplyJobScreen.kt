@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.model.JobApplication
 import com.example.jobtown.data.model.ProfileEntry
@@ -87,8 +89,6 @@ fun ApplyJobScreen(
     }
 }
 
-// ==================== Job Details Overview Screen ====================
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun JobDetailsOverviewScreen(
@@ -108,6 +108,19 @@ private fun JobDetailsOverviewScreen(
     val displaySalary = job.salary.ifBlank { "Salary Not Specified" }
     val displayType = job.jobType.ifBlank { "Full-time" }
     val displayDescription = job.description.ifBlank { "No detailed description available for this role." }
+
+    var employerAvatarUrl by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(job.employerId, job.postedByUserId) {
+        val targetUserId = job.employerId?.takeIf { it.isNotBlank() } ?: job.postedByUserId?.takeIf { it.isNotBlank() }
+        if (targetUserId != null) {
+            val employerUser = UserRepository.fetchUserById(targetUserId)
+            employerAvatarUrl = employerUser?.avatarUrl
+        }
+    }
+
+    val displayAvatarUrl = job.companyImageUrl?.takeIf { it.isNotBlank() }
+        ?: employerAvatarUrl?.takeIf { it.isNotBlank() }
 
     Scaffold(
         containerColor = BackgroundWhite,
@@ -250,16 +263,27 @@ private fun JobDetailsOverviewScreen(
                             ) {
                                 Surface(
                                     shape = CircleShape,
-                                    color = DeepGreenDark,
+                                    color = SageGreenLight,
                                     modifier = Modifier.size(44.dp)
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Business,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(22.dp)
+                                    if (!displayAvatarUrl.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = displayAvatarUrl,
+                                            contentDescription = "Company photo",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clip(CircleShape)
                                         )
+                                    } else {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Business,
+                                                contentDescription = null,
+                                                tint = DeepGreenDark,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
                                     }
                                 }
                                 Column {
@@ -407,8 +431,6 @@ private fun JobDetailsOverviewScreen(
     }
 }
 
-// ==================== Multi-Step Application Flow ====================
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ApplicationFlowScreen(
@@ -421,23 +443,15 @@ private fun ApplicationFlowScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // Form States
     var phoneNumber by remember { mutableStateOf(currentUser?.phone ?: "") }
     var linkedInUrl by remember { mutableStateOf("") }
 
-    // Salary Range States (Slider min/max values in thousands e.g., 2000 to 10000)
     var salaryMin by remember { mutableStateOf(3000f) }
     var salaryMax by remember { mutableStateOf(6000f) }
 
-    // Start Date States
     var selectedStartDateOption by remember { mutableStateOf("Immediate") }
     var customStartDate by remember { mutableStateOf("") }
 
-    // If the applicant already has a resume on file (uploaded from a previous
-    // application or from their profile), pre-fill it here so they don't have
-    // to re-upload the same document every time they apply. resumeUri holds a
-    // real https:// URL in this case (as opposed to a local content:// URI
-    // from the picker below), which the submit step uses to skip re-uploading.
     val savedProfileResumeUrl = currentUser?.resumeUrl.orEmpty()
     var resumeUri by remember { mutableStateOf(savedProfileResumeUrl) }
     var resumeName by remember {
@@ -514,7 +528,6 @@ private fun ApplicationFlowScreen(
         }
     }
 
-    // File Pickers
     val resumePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -554,9 +567,6 @@ private fun ApplicationFlowScreen(
 
     val isPhoneValid = phoneNumber.isNotBlank() && phoneNumber.length >= 7
     val isResumeValid = resumeUri.isNotBlank()
-    // True while resumeUri still points at the applicant's already-hosted
-    // profile resume rather than a freshly-picked local file, so we know to
-    // skip re-uploading it and can show "saved from your profile" in the UI.
     val isSavedProfileResume = resumeUri.startsWith("http://") || resumeUri.startsWith("https://")
 
     Scaffold(
@@ -626,9 +636,6 @@ private fun ApplicationFlowScreen(
             )
         }
     ) { paddingValues ->
-        // imePadding() shrinks this whole column (form area + the fixed
-        // Back/Next/Submit row below it) as the keyboard rises, instead of
-        // the keyboard just covering whatever's focused with nothing moving.
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -642,7 +649,6 @@ private fun ApplicationFlowScreen(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Progress Bar
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -778,9 +784,6 @@ private fun ApplicationFlowScreen(
                 }
             }
 
-            // Fixed action row, outside the scrollable area, so it's always
-            // reachable and rides up with imePadding() instead of scrolling
-            // away or getting buried under the keyboard.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -878,13 +881,6 @@ private fun ApplicationFlowScreen(
                             isSubmitting = true
                             coroutineScope.launch {
                                 try {
-                                    // resumeUri is already a real, publicly-reachable URL
-                                    // when it came from the applicant's saved profile resume
-                                    // (isSavedProfileResume) -- nothing to upload, just reuse
-                                    // it directly. Otherwise it's a local content:// URI from
-                                    // the picker, which only exists on this device and means
-                                    // nothing to anyone else (e.g. the employer), so it needs
-                                    // to be uploaded to Supabase Storage first.
                                     val uploadedResumeUrl: String
                                     if (isSavedProfileResume) {
                                         uploadedResumeUrl = resumeUri
@@ -911,11 +907,6 @@ private fun ApplicationFlowScreen(
                                         }
                                         uploadedResumeUrl = newlyUploadedUrl
 
-                                        // Save the newly uploaded resume onto the applicant's
-                                        // profile so next time they apply it's already there
-                                        // and doesn't need to be picked/uploaded again. This is
-                                        // best-effort -- if it fails, the application itself
-                                        // still goes through with the resume attached.
                                         try {
                                             UserRepository.updateUserInSupabase(applicant.copy(resumeUrl = uploadedResumeUrl))
                                         } catch (e: Exception) {
@@ -943,16 +934,9 @@ private fun ApplicationFlowScreen(
                                         experience = formatProfileEntries(experienceEntries),
                                         certificates = formatProfileEntries(certificationEntries)
                                     )
-                                    // Wait for the actual backend result instead of
-                                    // optimistically claiming success - a blocked
-                                    // duplicate or a failed insert must surface to the
-                                    // applicant, not silently pop them back to a stale
-                                    // "submitted" state.
                                     onApplySubmit(application) { success, message ->
                                         if (success) {
                                             successMessage = "Application submitted successfully!"
-                                            // Navigation onward (to the Applied tab) is
-                                            // owned by the caller once the backend confirms.
                                         } else {
                                             errorMessage = message ?: "Failed to submit application. Please try again."
                                             showValidationErrors = true
@@ -1006,8 +990,6 @@ private fun ApplicationFlowScreen(
     }
 }
 
-// ==================== Component Helpers ====================
-
 private fun getFileNameFromUri(context: android.content.Context, uri: android.net.Uri): String {
     var name = ""
     val cursor = context.contentResolver.query(uri, null, null, null, null)
@@ -1023,28 +1005,17 @@ private fun getFileNameFromUri(context: android.content.Context, uri: android.ne
     return name
 }
 
-/** Best-effort display name for an already-hosted resume URL from the applicant's profile. */
 private fun extractFileNameFromUrl(url: String): String {
     val rawName = url.substringBefore("?").substringAfterLast("/")
     return rawName.ifBlank { "Resume.pdf" }
 }
 
-/**
- * Flattens the applicant's education/experience/certification entries into the
- * single-line-per-entry text that JobApplication.education/experience/certificates
- * store, so what the employer (and the applicant's own "Application status" screen)
- * sees isn't stuck on "Not specified" even when qualifications were filled in.
- */
 private fun formatProfileEntries(entries: List<ProfileEntry>): String {
     return entries.joinToString("\n") { entry ->
         buildString {
             append(entry.title)
             if (entry.subtitle.isNotBlank()) append(" — ${entry.subtitle}")
             if (entry.period.isNotBlank()) append(" (${entry.period})")
-            // Certification entries carry an uploaded file (PDF/image). Include the
-            // URL so the applicant's "Application status" screen and the employer's
-            // view can detect it and render it as a "Tap to open file" link, the
-            // same way the resume already does.
             if (entry.fileUrl.isNotBlank()) append(" ${entry.fileUrl}")
         }
     }

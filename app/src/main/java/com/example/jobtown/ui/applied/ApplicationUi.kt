@@ -36,12 +36,6 @@ import com.example.jobtown.ui.theme.TextDark
 
 internal val AppliedDividerColor = Color(0xFFE6EDE4)
 
-// Certificate entries are stored as "<title> — <issuer> (<year>) <fileUrl>" (see
-// formatProfileEntries in ApplyJobScreen.kt), one per line. Raw applicants/employers
-// don't need to see the actual URL text -- it should read like the resume row does,
-// e.g. "ccna — Google (2026) · Certificate (PDF)". This strips the URL out of what's
-// shown and returns the first URL found (if any) so the row can still be made
-// tappable to open it.
 internal fun formatCertificatesForDisplay(certificates: String): Pair<String, String?> {
     val urlRegex = Regex("https?://\\S+")
     val firstUrl = urlRegex.find(certificates)?.value
@@ -81,22 +75,14 @@ internal fun JobApplication.isClosed(): Boolean {
             status.equals("cancelled", ignoreCase = true)
 }
 
-/**
- * Buckets every possible status into one of the 5 tabs shown on the applications page,
- * in display order: Pending, Viewed, Shortlisted, Offered, Cancelled (last).
- * - Pending: not yet opened by the employer.
- * - Viewed: opened by the employer, but no decision made yet.
- * - Shortlisted: employer has shortlisted the candidate.
- * - Offered: an offer has been made (or accepted).
- * - Cancelled: withdrawn by the seeker, or rejected/expired by the employer.
- */
 internal fun JobApplication.applicationTab(): ApplicationTab {
     return when (status.trim().lowercase()) {
         "", "pending", "applied", "submitted" -> ApplicationTab.PENDING
         "viewed", "interview" -> ApplicationTab.VIEWED
         "shortlisted" -> ApplicationTab.SHORTLISTED
         "offered", "accepted" -> ApplicationTab.OFFERED
-        "cancelled", "rejected", "expired" -> ApplicationTab.CANCELLED
+        "rejected" -> ApplicationTab.REJECTED
+        "cancelled", "expired" -> ApplicationTab.CANCELLED
         else -> ApplicationTab.PENDING
     }
 }
