@@ -54,6 +54,7 @@ data class JobApplication(
 
     @SerialName("applied_at")
     val appliedAt: String = ""
+
 ) {
     val appliedDate: String
         get() = appliedAt.ifBlank { "Recently" }

@@ -207,7 +207,9 @@ fun ApplicationDetailScreen(
                         ApplicationDetailRow(
                             icon = Icons.Default.School,
                             label = "Education",
-                            value = eduVal
+                            value = eduVal,
+                            valueFontSize = 12.sp,
+                            valueLineHeight = 16.sp
                         )
 
                         AppliedDivider()
@@ -216,71 +218,67 @@ fun ApplicationDetailScreen(
                         ApplicationDetailRow(
                             icon = Icons.Default.Work,
                             label = "Experience",
-                            value = expVal
+                            value = expVal,
+                            valueFontSize = 12.sp,
+                            valueLineHeight = 16.sp
                         )
 
                         AppliedDivider()
 
+                        // Certificate with Tap to Open feature
                         val certVal: String = application.certificates.ifBlank { "None attached" }
-                        ApplicationDetailRow(
-                            icon = Icons.Default.Description,
-                            label = "Certificates",
-                            value = certVal
-                        )
+                        val hasCertUrl = certVal.contains("http://", ignoreCase = true) || certVal.contains("https://", ignoreCase = true)
+
+                        if (hasCertUrl) {
+                            val certUrl = certVal.split(" ", "\n").firstOrNull { it.startsWith("http", ignoreCase = true) } ?: certVal
+                            ApplicationDetailRow(
+                                icon = Icons.Default.Description,
+                                label = "Certificates (Tap to open file)",
+                                value = certVal,
+                                valueFontSize = 12.sp,
+                                valueLineHeight = 16.sp,
+                                valueColor = Color(0xFF1E88E5),
+                                onClick = {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(certUrl))
+                                    context.startActivity(intent)
+                                }
+                            )
+                        } else {
+                            ApplicationDetailRow(
+                                icon = Icons.Default.Description,
+                                label = "Certificates",
+                                value = certVal,
+                                valueFontSize = 12.sp,
+                                valueLineHeight = 16.sp
+                            )
+                        }
 
                         AppliedDivider()
 
+                        // Resume Section
                         val hasResume = application.resumeUrl.isNotBlank()
-                        val resumeVal: String = if (hasResume) application.resumeUrl else "No resume attached"
+                        val resumeDisplayName = if (hasResume) "Attached Resume Document (PDF)" else "No resume attached"
 
                         if (hasResume) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(application.resumeUrl))
-                                        context.startActivity(intent)
-                                    }
-                            ) {
-                                ApplicationDetailRow(
-                                    icon = Icons.Default.AttachFile,
-                                    label = "Resume (Tap to open)",
-                                    value = resumeVal
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            OutlinedButton(
+                            ApplicationDetailRow(
+                                icon = Icons.Default.AttachFile,
+                                label = "Resume (Tap to open)",
+                                value = resumeDisplayName,
+                                valueFontSize = 12.sp,
+                                valueLineHeight = 16.sp,
+                                valueColor = Color(0xFF1E88E5),
                                 onClick = {
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(application.resumeUrl))
                                     context.startActivity(intent)
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                                border = BorderStroke(1.dp, DeepGreenDark)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AttachFile,
-                                    contentDescription = null,
-                                    tint = DeepGreenDark,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "View / download resume",
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = DeepGreenDark,
-                                    fontSize = 14.sp
-                                )
-                            }
+                                }
+                            )
                         } else {
                             ApplicationDetailRow(
                                 icon = Icons.Default.AttachFile,
                                 label = "Resume",
-                                value = resumeVal
+                                value = resumeDisplayName,
+                                valueFontSize = 12.sp,
+                                valueLineHeight = 16.sp
                             )
                         }
 
