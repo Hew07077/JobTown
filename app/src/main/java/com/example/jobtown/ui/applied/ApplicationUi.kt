@@ -1,5 +1,6 @@
 package com.example.jobtown.ui.applied
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.jobtown.data.model.JobApplication
@@ -43,7 +45,7 @@ internal fun applicationStatusBackground(status: String): Color {
         else -> SageGreenMain.copy(alpha = 0.35f)
     }
 }
-//
+
 internal fun applicationStatusTextColor(status: String): Color {
     return when (status.lowercase()) {
         "rejected", "cancelled" -> Color(0xFFC62828)
@@ -54,8 +56,8 @@ internal fun applicationStatusTextColor(status: String): Color {
 
 internal fun JobApplication.isClosed(): Boolean {
     return status.equals("rejected", ignoreCase = true) ||
-        status.equals("expired", ignoreCase = true) ||
-        status.equals("cancelled", ignoreCase = true)
+            status.equals("expired", ignoreCase = true) ||
+            status.equals("cancelled", ignoreCase = true)
 }
 
 internal fun JobApplication.canCancel(): Boolean {
@@ -111,10 +113,23 @@ internal fun AppliedSectionTitle(text: String) {
 internal fun ApplicationDetailRow(
     icon: ImageVector,
     label: String,
-    value: String
+    value: String,
+    modifier: Modifier = Modifier,
+    valueFontSize: TextUnit = 15.sp,
+    valueLineHeight: TextUnit = TextUnit.Unspecified,
+    valueColor: Color = TextDark,
+    onClick: (() -> Unit)? = null
 ) {
+    val clickableModifier = if (onClick != null) {
+        modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+    } else {
+        modifier.fillMaxWidth()
+    }
+
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = clickableModifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -142,9 +157,10 @@ internal fun ApplicationDetailRow(
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = value.ifBlank { "Not provided" },
-                fontSize = 15.sp,
+                fontSize = valueFontSize,
+                lineHeight = valueLineHeight,
                 fontWeight = FontWeight.SemiBold,
-                color = TextDark
+                color = valueColor
             )
         }
     }

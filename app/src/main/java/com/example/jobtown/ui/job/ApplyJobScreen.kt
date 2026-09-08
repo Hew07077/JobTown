@@ -777,222 +777,222 @@ private fun ApplicationFlowScreen(
                     .padding(horizontal = 20.dp, vertical = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                    OutlinedButton(
-                        onClick = {
-                            if (currentStep > 0) currentStep-- else onCancelApplication()
-                        },
-                        modifier = Modifier.weight(1f).height(52.dp),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(if (currentStep > 0) "Back" else "Overview", fontSize = 14.sp)
-                    }
+                OutlinedButton(
+                    onClick = {
+                        if (currentStep > 0) currentStep-- else onCancelApplication()
+                    },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(if (currentStep > 0) "Back" else "Overview", fontSize = 14.sp)
+                }
 
-                    Button(
-                        onClick = {
-                            if (currentStep < 3) {
-                                when (currentStep) {
-                                    0 -> {
-                                        showValidationErrors = true
-                                        if (!isPhoneValid) {
-                                            errorMessage = "Please enter a valid phone number."
-                                        } else {
-                                            errorMessage = ""
-                                            showValidationErrors = false
-                                            currentStep++
-                                        }
+                Button(
+                    onClick = {
+                        if (currentStep < 3) {
+                            when (currentStep) {
+                                0 -> {
+                                    showValidationErrors = true
+                                    if (!isPhoneValid) {
+                                        errorMessage = "Please enter a valid phone number."
+                                    } else {
+                                        errorMessage = ""
+                                        showValidationErrors = false
+                                        currentStep++
                                     }
-                                    1 -> {
-                                        showValidationErrors = true
-                                        if (educationEntries.isEmpty()) {
-                                            errorMessage = "Please add at least one education entry to continue."
-                                        } else {
-                                            errorMessage = ""
-                                            showValidationErrors = false
-                                            val entriesChanged = qualificationsEdited ||
+                                }
+                                1 -> {
+                                    showValidationErrors = true
+                                    if (educationEntries.isEmpty()) {
+                                        errorMessage = "Please add at least one education entry to continue."
+                                    } else {
+                                        errorMessage = ""
+                                        showValidationErrors = false
+                                        val entriesChanged = qualificationsEdited ||
                                                 educationEntries != originalEducationEntries ||
                                                 experienceEntries != originalExperienceEntries ||
                                                 certificationEntries != originalCertificationEntries
-                                            if (entriesChanged && currentUser != null && currentUser.id.isNotBlank()) {
-                                                isSavingQualifications = true
-                                                coroutineScope.launch {
-                                                    try {
-                                                        UserRepository.updateUserInSupabase(
-                                                            currentUser.copy(
-                                                                educationEntries = educationEntries,
-                                                                experienceEntries = experienceEntries,
-                                                                certificationEntries = certificationEntries
-                                                            )
+                                        if (entriesChanged && currentUser != null && currentUser.id.isNotBlank()) {
+                                            isSavingQualifications = true
+                                            coroutineScope.launch {
+                                                try {
+                                                    UserRepository.updateUserInSupabase(
+                                                        currentUser.copy(
+                                                            educationEntries = educationEntries,
+                                                            experienceEntries = experienceEntries,
+                                                            certificationEntries = certificationEntries
                                                         )
-                                                        originalEducationEntries = educationEntries
-                                                        originalExperienceEntries = experienceEntries
-                                                        originalCertificationEntries = certificationEntries
-                                                        qualificationsEdited = false
-                                                    } catch (e: Exception) {
-                                                        Log.e("ApplyJobScreen", "Failed to save qualifications to profile", e)
-                                                    } finally {
-                                                        isSavingQualifications = false
-                                                        currentStep++
-                                                    }
+                                                    )
+                                                    originalEducationEntries = educationEntries
+                                                    originalExperienceEntries = experienceEntries
+                                                    originalCertificationEntries = certificationEntries
+                                                    qualificationsEdited = false
+                                                } catch (e: Exception) {
+                                                    Log.e("ApplyJobScreen", "Failed to save qualifications to profile", e)
+                                                } finally {
+                                                    isSavingQualifications = false
+                                                    currentStep++
                                                 }
-                                            } else {
-                                                currentStep++
                                             }
-                                        }
-                                    }
-                                    2 -> {
-                                        showValidationErrors = true
-                                        if (!isResumeValid) {
-                                            errorMessage = "Please attach your resume document to proceed."
                                         } else {
-                                            errorMessage = ""
-                                            showValidationErrors = false
                                             currentStep++
                                         }
                                     }
                                 }
-                            } else {
-                                if (!isResumeValid) {
-                                    errorMessage = "Please attach your resume document."
+                                2 -> {
                                     showValidationErrors = true
-                                    return@Button
-                                }
-                                val applicant = currentUser
-                                if (applicant == null || applicant.id.isBlank()) {
-                                    errorMessage = "You must be signed in to apply."
-                                    showValidationErrors = true
-                                    return@Button
-                                }
-
-                                isSubmitting = true
-                                coroutineScope.launch {
-                                    try {
-                                        // resumeUri is already a real, publicly-reachable URL
-                                        // when it came from the applicant's saved profile resume
-                                        // (isSavedProfileResume) -- nothing to upload, just reuse
-                                        // it directly. Otherwise it's a local content:// URI from
-                                        // the picker, which only exists on this device and means
-                                        // nothing to anyone else (e.g. the employer), so it needs
-                                        // to be uploaded to Supabase Storage first.
-                                        val uploadedResumeUrl: String
-                                        if (isSavedProfileResume) {
-                                            uploadedResumeUrl = resumeUri
-                                        } else {
-                                            val resumeBytes = try {
-                                                context.contentResolver.openInputStream(Uri.parse(resumeUri))?.use { it.readBytes() }
-                                            } catch (e: Exception) {
-                                                null
-                                            }
-
-                                            if (resumeBytes == null) {
-                                                errorMessage = "Couldn't read the resume file. Please pick it again."
-                                                showValidationErrors = true
-                                                isSubmitting = false
-                                                return@launch
-                                            }
-
-                                            val newlyUploadedUrl = UserRepository.uploadResume(applicant.id, resumeBytes)
-                                            if (newlyUploadedUrl == null) {
-                                                errorMessage = "Failed to upload resume. Please check your connection and try again."
-                                                showValidationErrors = true
-                                                isSubmitting = false
-                                                return@launch
-                                            }
-                                            uploadedResumeUrl = newlyUploadedUrl
-
-                                            // Save the newly uploaded resume onto the applicant's
-                                            // profile so next time they apply it's already there
-                                            // and doesn't need to be picked/uploaded again. This is
-                                            // best-effort -- if it fails, the application itself
-                                            // still goes through with the resume attached.
-                                            try {
-                                                UserRepository.updateUserInSupabase(applicant.copy(resumeUrl = uploadedResumeUrl))
-                                            } catch (e: Exception) {
-                                                Log.e("ApplyJobScreen", "Failed to save resume to profile", e)
-                                            }
-                                        }
-
-                                        val finalStart = if (selectedStartDateOption == "Custom Date" && customStartDate.isNotBlank()) customStartDate else selectedStartDateOption
-                                        val finalSalaryRange = "RM ${salaryMin.toInt()} - RM ${salaryMax.toInt()}"
-
-                                        val application = JobApplication(
-                                            id = "app_${System.currentTimeMillis()}",
-                                            jobId = job.id,
-                                            userId = applicant.id,
-                                            jobTitle = displayTitle,
-                                            companyName = displayCompany,
-                                            employerId = job.employerId ?: job.postedByUserId ?: "",
-                                            applicantName = applicant.name ?: "Unknown Applicant",
-                                            applicantEmail = applicant.email ?: "",
-                                            resumeUrl = uploadedResumeUrl,
-                                            coverLetter = coverLetterUri.ifBlank { additionalNotes.trim() },
-                                            status = "Pending",
-                                            location = job.location,
-                                            education = formatProfileEntries(educationEntries),
-                                            experience = formatProfileEntries(experienceEntries),
-                                            certificates = formatProfileEntries(certificationEntries)
-                                        )
-                                        // Wait for the actual backend result instead of
-                                        // optimistically claiming success - a blocked
-                                        // duplicate or a failed insert must surface to the
-                                        // applicant, not silently pop them back to a stale
-                                        // "submitted" state.
-                                        onApplySubmit(application) { success, message ->
-                                            if (success) {
-                                                successMessage = "Application submitted successfully!"
-                                                // Navigation onward (to the Applied tab) is
-                                                // owned by the caller once the backend confirms.
-                                            } else {
-                                                errorMessage = message ?: "Failed to submit application. Please try again."
-                                                showValidationErrors = true
-                                                isSubmitting = false
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        errorMessage = "Failed to submit: ${e.message}"
-                                        showValidationErrors = true
-                                        isSubmitting = false
+                                    if (!isResumeValid) {
+                                        errorMessage = "Please attach your resume document to proceed."
+                                    } else {
+                                        errorMessage = ""
+                                        showValidationErrors = false
+                                        currentStep++
                                     }
                                 }
                             }
-                        },
-                        modifier = Modifier.weight(1f).height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (currentStep == 3) DeepGreenDark else SageGreenMain
-                        ),
-                        enabled = !isSubmitting && !isSavingQualifications
-                    ) {
-                        when {
-                            isSubmitting && currentStep == 3 -> {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.5.dp
-                                )
+                        } else {
+                            if (!isResumeValid) {
+                                errorMessage = "Please attach your resume document."
+                                showValidationErrors = true
+                                return@Button
                             }
-                            isSavingQualifications && currentStep == 1 -> {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
-                                    color = DeepGreenDark,
-                                    strokeWidth = 2.5.dp
-                                )
+                            val applicant = currentUser
+                            if (applicant == null || applicant.id.isBlank()) {
+                                errorMessage = "You must be signed in to apply."
+                                showValidationErrors = true
+                                return@Button
                             }
-                            currentStep == 3 -> {
-                                Icon(imageVector = Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Submit", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+
+                            isSubmitting = true
+                            coroutineScope.launch {
+                                try {
+                                    // resumeUri is already a real, publicly-reachable URL
+                                    // when it came from the applicant's saved profile resume
+                                    // (isSavedProfileResume) -- nothing to upload, just reuse
+                                    // it directly. Otherwise it's a local content:// URI from
+                                    // the picker, which only exists on this device and means
+                                    // nothing to anyone else (e.g. the employer), so it needs
+                                    // to be uploaded to Supabase Storage first.
+                                    val uploadedResumeUrl: String
+                                    if (isSavedProfileResume) {
+                                        uploadedResumeUrl = resumeUri
+                                    } else {
+                                        val resumeBytes = try {
+                                            context.contentResolver.openInputStream(Uri.parse(resumeUri))?.use { it.readBytes() }
+                                        } catch (e: Exception) {
+                                            null
+                                        }
+
+                                        if (resumeBytes == null) {
+                                            errorMessage = "Couldn't read the resume file. Please pick it again."
+                                            showValidationErrors = true
+                                            isSubmitting = false
+                                            return@launch
+                                        }
+
+                                        val newlyUploadedUrl = UserRepository.uploadResume(applicant.id, resumeBytes)
+                                        if (newlyUploadedUrl == null) {
+                                            errorMessage = "Failed to upload resume. Please check your connection and try again."
+                                            showValidationErrors = true
+                                            isSubmitting = false
+                                            return@launch
+                                        }
+                                        uploadedResumeUrl = newlyUploadedUrl
+
+                                        // Save the newly uploaded resume onto the applicant's
+                                        // profile so next time they apply it's already there
+                                        // and doesn't need to be picked/uploaded again. This is
+                                        // best-effort -- if it fails, the application itself
+                                        // still goes through with the resume attached.
+                                        try {
+                                            UserRepository.updateUserInSupabase(applicant.copy(resumeUrl = uploadedResumeUrl))
+                                        } catch (e: Exception) {
+                                            Log.e("ApplyJobScreen", "Failed to save resume to profile", e)
+                                        }
+                                    }
+
+                                    val finalStart = if (selectedStartDateOption == "Custom Date" && customStartDate.isNotBlank()) customStartDate else selectedStartDateOption
+                                    val finalSalaryRange = "RM ${salaryMin.toInt()} - RM ${salaryMax.toInt()}"
+
+                                    val application = JobApplication(
+                                        id = "app_${System.currentTimeMillis()}",
+                                        jobId = job.id,
+                                        userId = applicant.id,
+                                        jobTitle = displayTitle,
+                                        companyName = displayCompany,
+                                        employerId = job.employerId ?: job.postedByUserId ?: "",
+                                        applicantName = applicant.name ?: "Unknown Applicant",
+                                        applicantEmail = applicant.email ?: "",
+                                        resumeUrl = uploadedResumeUrl,
+                                        coverLetter = coverLetterUri.ifBlank { additionalNotes.trim() },
+                                        status = "Pending",
+                                        location = job.location,
+                                        education = formatProfileEntries(educationEntries),
+                                        experience = formatProfileEntries(experienceEntries),
+                                        certificates = formatProfileEntries(certificationEntries)
+                                    )
+                                    // Wait for the actual backend result instead of
+                                    // optimistically claiming success - a blocked
+                                    // duplicate or a failed insert must surface to the
+                                    // applicant, not silently pop them back to a stale
+                                    // "submitted" state.
+                                    onApplySubmit(application) { success, message ->
+                                        if (success) {
+                                            successMessage = "Application submitted successfully!"
+                                            // Navigation onward (to the Applied tab) is
+                                            // owned by the caller once the backend confirms.
+                                        } else {
+                                            errorMessage = message ?: "Failed to submit application. Please try again."
+                                            showValidationErrors = true
+                                            isSubmitting = false
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    errorMessage = "Failed to submit: ${e.message}"
+                                    showValidationErrors = true
+                                    isSubmitting = false
+                                }
                             }
-                            else -> {
-                                Text("Next", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DeepGreenDark)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Icon(imageVector = Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(16.dp))
-                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (currentStep == 3) DeepGreenDark else SageGreenMain
+                    ),
+                    enabled = !isSubmitting && !isSavingQualifications
+                ) {
+                    when {
+                        isSubmitting && currentStep == 3 -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                color = Color.White,
+                                strokeWidth = 2.5.dp
+                            )
+                        }
+                        isSavingQualifications && currentStep == 1 -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                color = DeepGreenDark,
+                                strokeWidth = 2.5.dp
+                            )
+                        }
+                        currentStep == 3 -> {
+                            Icon(imageVector = Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Submit", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        else -> {
+                            Text("Next", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DeepGreenDark)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(imageVector = Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
             }
+        }
     }
 }
 
@@ -1089,1040 +1089,5 @@ private fun StepTitle(icon: ImageVector, title: String, subtitle: String) {
                 color = TextDark.copy(alpha = 0.6f)
             )
         }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun Step1PersonalInfo(
-    phoneNumber: String,
-    onPhoneNumberChange: (String) -> Unit,
-    linkedInUrl: String,
-    onLinkedInUrlChange: (String) -> Unit,
-    salaryMin: Float,
-    salaryMax: Float,
-    onSalaryRangeChange: (Float, Float) -> Unit,
-    selectedStartDateOption: String,
-    onStartDateOptionChange: (String) -> Unit,
-    customStartDate: String,
-    onCustomStartDateChange: (String) -> Unit,
-    showValidationErrors: Boolean,
-    isPhoneValid: Boolean
-) {
-    val startDateOptions = listOf("Immediate", "Within 2 Weeks", "Within 1 Month", "Custom Date")
-
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        OutlinedTextField(
-            value = phoneNumber,
-            onValueChange = onPhoneNumberChange,
-            label = { Text("Phone Number *") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            isError = showValidationErrors && !isPhoneValid,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
-        )
-
-        OutlinedTextField(
-            value = linkedInUrl,
-            onValueChange = onLinkedInUrlChange,
-            label = { Text("LinkedIn Profile / Portfolio URL (Optional)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
-        )
-
-        // Salary Range Selection Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.2f))
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Expected Monthly Salary Range",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = DeepGreenDark
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = SageGreenLight
-                    ) {
-                        Text(
-                            text = "RM ${salaryMin.toInt()} - RM ${salaryMax.toInt()}",
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = DeepGreenDark
-                        )
-                    }
-                }
-
-                // Simplified Single-slider proxy or dual visual slider representation
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Minimum Expected (RM ${salaryMin.toInt()})",
-                    fontSize = 11.sp,
-                    color = TextDark.copy(alpha = 0.6f)
-                )
-                Slider(
-                    value = salaryMin,
-                    onValueChange = { newVal ->
-                        if (newVal <= salaryMax) {
-                            onSalaryRangeChange(newVal, salaryMax)
-                        }
-                    },
-                    valueRange = 1500f..15000f,
-                    steps = 26,
-                    colors = SliderDefaults.colors(
-                        thumbColor = DeepGreenDark,
-                        activeTrackColor = DeepGreenDark,
-                        inactiveTrackColor = SageGreenLight
-                    )
-                )
-
-                Text(
-                    text = "Maximum Expected (RM ${salaryMax.toInt()})",
-                    fontSize = 11.sp,
-                    color = TextDark.copy(alpha = 0.6f)
-                )
-                Slider(
-                    value = salaryMax,
-                    onValueChange = { newVal ->
-                        if (newVal >= salaryMin) {
-                            onSalaryRangeChange(salaryMin, newVal)
-                        }
-                    },
-                    valueRange = 1500f..15000f,
-                    steps = 26,
-                    colors = SliderDefaults.colors(
-                        thumbColor = DeepGreenDark,
-                        activeTrackColor = DeepGreenDark,
-                        inactiveTrackColor = SageGreenLight
-                    )
-                )
-            }
-        }
-
-        // Start Date Selection Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.2f))
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "Available Start Date",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = DeepGreenDark
-                )
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    startDateOptions.forEach { option ->
-                        val isSelected = selectedStartDateOption == option
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) DeepGreenDark else SageGreenLight.copy(alpha = 0.4f),
-                            border = androidx.compose.foundation.BorderStroke(
-                                width = 1.dp,
-                                color = if (isSelected) DeepGreenDark else SageGreenDark.copy(alpha = 0.2f)
-                            ),
-                            modifier = Modifier.clickable { onStartDateOptionChange(option) }
-                        ) {
-                            Text(
-                                text = option,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color.White else DeepGreenDark
-                            )
-                        }
-                    }
-                }
-
-                if (selectedStartDateOption == "Custom Date") {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = customStartDate,
-                        onValueChange = onCustomStartDateChange,
-                        label = { Text("Specify Date (e.g., 15 Sept 2026)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ==================== Step: Education / Experience / Certifications ====================
-
-@Composable
-private fun StepQualifications(
-    educationEntries: List<ProfileEntry>,
-    experienceEntries: List<ProfileEntry>,
-    certificationEntries: List<ProfileEntry>,
-    onAddEntry: (String, ProfileEntry) -> Unit,
-    onRemoveEntry: (String, ProfileEntry) -> Unit,
-    isUploadingCertificate: Boolean,
-    onUploadCertificate: (ByteArray, String, (String?) -> Unit) -> Unit,
-    showValidationErrors: Boolean,
-    isLoading: Boolean
-) {
-    var addDialogFor by remember { mutableStateOf<String?>(null) }
-    val uriHandler = LocalUriHandler.current
-
-    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Text(
-            text = "Loaded from your profile. Add or remove anything for this application — changes are saved back to your profile.",
-            fontSize = 12.sp,
-            color = TextDark.copy(alpha = 0.6f),
-            lineHeight = 16.sp
-        )
-
-        if (isLoading) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = Color.White,
-                shadowElevation = 1.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    CircularProgressIndicator(color = DeepGreenDark, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                    Text("Loading your education and experience…", fontSize = 13.sp, color = TextDark.copy(alpha = 0.7f))
-                }
-            }
-        } else {
-            QualificationSection(
-                icon = Icons.Filled.School,
-                title = "Education",
-                entries = educationEntries,
-                addLabel = "Add education",
-                emptyText = "Add your highest qualification so employers know your background.",
-                onAddClick = { addDialogFor = "Education" },
-                onRemove = { onRemoveEntry("Education", it) },
-                isError = showValidationErrors && educationEntries.isEmpty(),
-                errorText = "Please add at least one education entry."
-            )
-
-            QualificationSection(
-                icon = Icons.Filled.WorkHistory,
-                title = "Work Experience (optional)",
-                entries = experienceEntries,
-                addLabel = "Add experience",
-                emptyText = "Add relevant work experience, if any.",
-                onAddClick = { addDialogFor = "Experience" },
-                onRemove = { onRemoveEntry("Experience", it) }
-            )
-
-            QualificationSection(
-                icon = Icons.Filled.WorkspacePremium,
-                title = "Certifications (optional)",
-                entries = certificationEntries,
-                addLabel = "Add certification",
-                emptyText = "Add any certifications relevant to this role.",
-                onAddClick = { addDialogFor = "Certification" },
-                onRemove = { onRemoveEntry("Certification", it) },
-                onViewFile = { url -> uriHandler.openUri(url) }
-            )
-        }
-    }
-
-    addDialogFor?.let { category ->
-        AddQualificationDialog(
-            category = category,
-            isUploadingFile = isUploadingCertificate,
-            onDismiss = { addDialogFor = null },
-            onSave = { entry ->
-                onAddEntry(category, entry)
-                addDialogFor = null
-            },
-            onUploadCertificate = onUploadCertificate
-        )
-    }
-}
-
-@Composable
-private fun QualificationSection(
-    icon: ImageVector,
-    title: String,
-    entries: List<ProfileEntry>,
-    addLabel: String,
-    emptyText: String,
-    onAddClick: () -> Unit,
-    onRemove: (ProfileEntry) -> Unit,
-    isError: Boolean = false,
-    errorText: String = "",
-    onViewFile: ((String) -> Unit)? = null
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(icon, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(18.dp))
-            Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextDark)
-            if (entries.isNotEmpty()) {
-                Surface(shape = CircleShape, color = SageGreenLight) {
-                    Text(
-                        text = "${entries.size}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = DeepGreenDark,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
-
-        if (entries.isEmpty()) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = SageGreenLight.copy(alpha = 0.25f),
-                border = androidx.compose.foundation.BorderStroke(
-                    width = 1.dp,
-                    color = if (isError) MaterialTheme.colorScheme.error.copy(alpha = 0.6f) else SageGreenDark.copy(alpha = 0.2f)
-                ),
-                modifier = Modifier.fillMaxWidth().clickable(onClick = onAddClick)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = emptyText, fontSize = 12.sp, color = TextDark.copy(alpha = 0.6f), lineHeight = 16.sp)
-                        if (isError) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(text = errorText, fontSize = 11.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
-                        }
-                    }
-                    Icon(Icons.Filled.Add, contentDescription = addLabel, tint = DeepGreenDark, modifier = Modifier.size(22.dp))
-                }
-            }
-        } else {
-            entries.forEach { entry ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Top) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(SageGreenLight),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(icon, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(18.dp))
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = entry.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextDark)
-                            if (entry.subtitle.isNotBlank()) Text(text = entry.subtitle, fontSize = 12.sp, color = DeepGreenDark)
-                            if (entry.period.isNotBlank()) Text(text = entry.period, fontSize = 11.sp, color = TextDark.copy(alpha = 0.5f))
-                            if (entry.description.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(text = entry.description, fontSize = 12.sp, color = TextDark.copy(alpha = 0.75f), lineHeight = 16.sp)
-                            }
-                            if (entry.fileUrl.isNotBlank() && onViewFile != null) {
-                                TextButton(onClick = { onViewFile(entry.fileUrl) }, contentPadding = PaddingValues(0.dp)) {
-                                    Icon(Icons.Default.AttachFile, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("View file", color = DeepGreenDark, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                }
-                            }
-                        }
-                        IconButton(onClick = { onRemove(entry) }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = TextDark.copy(alpha = 0.35f), modifier = Modifier.size(16.dp))
-                        }
-                    }
-                }
-            }
-            OutlinedButton(
-                onClick = onAddClick,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = DeepGreenDark)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(addLabel, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AddQualificationDialog(
-    category: String,
-    isUploadingFile: Boolean,
-    onDismiss: () -> Unit,
-    onSave: (ProfileEntry) -> Unit,
-    onUploadCertificate: (ByteArray, String, (String?) -> Unit) -> Unit
-) {
-    val context = LocalContext.current
-    var title by remember { mutableStateOf("") }
-    var subtitle by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var titleError by remember { mutableStateOf<String?>(null) }
-    var subtitleError by remember { mutableStateOf<String?>(null) }
-    var fileError by remember { mutableStateOf<String?>(null) }
-    var employmentType by remember { mutableStateOf(ProfileOptions.EMPLOYMENT_TYPES.first()) }
-    var educationLevel by remember { mutableStateOf(ProfileOptions.EDUCATION_LEVELS.getOrElse(2) { ProfileOptions.EDUCATION_LEVELS.first() }) }
-    var issuer by remember { mutableStateOf(ProfileOptions.CERTIFICATE_ISSUERS.first()) }
-    var customIssuer by remember { mutableStateOf("") }
-    var startYear by remember { mutableStateOf(ProfileOptions.YEARS.getOrElse(1) { "" }) }
-    var endYear by remember { mutableStateOf("Present") }
-    var year by remember { mutableStateOf(ProfileOptions.YEARS.getOrElse(1) { "" }) }
-    var fileUrl by remember { mutableStateOf("") }
-    var fileName by remember { mutableStateOf("") }
-
-    val headerIcon = when (category) {
-        "Education" -> Icons.Filled.School
-        "Experience" -> Icons.Filled.WorkHistory
-        else -> Icons.Filled.WorkspacePremium
-    }
-    val headerSubtitle = when (category) {
-        "Education" -> "School, college, or university details"
-        "Experience" -> "Role, company, and the years you worked there"
-        else -> "Certificate name, issuer, and an optional file"
-    }
-
-    val certificatePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        val mimeType = context.contentResolver.getType(uri).orEmpty()
-        val extension = when {
-            mimeType.contains("pdf") -> "pdf"
-            mimeType.contains("png") -> "png"
-            mimeType.contains("webp") -> "webp"
-            mimeType.contains("jpeg") || mimeType.contains("jpg") -> "jpg"
-            else -> null
-        }
-        if (extension == null) {
-            fileError = "Please upload a PDF or image file."
-            return@rememberLauncherForActivityResult
-        }
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        if (bytes == null) {
-            fileError = "Couldn't read the selected file."
-            return@rememberLauncherForActivityResult
-        }
-        fileError = null
-        onUploadCertificate(bytes, extension) { url ->
-            if (url != null) {
-                fileUrl = url
-                fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "certificate.$extension"
-            } else {
-                fileError = "Failed to upload certificate. Please try again."
-            }
-        }
-    }
-
-    fun trySave() {
-        when (category) {
-            "Experience" -> {
-                if (title.trim().isBlank()) {
-                    titleError = "Job title is required."
-                    return
-                }
-                if (subtitle.trim().isBlank()) {
-                    subtitleError = "Company is required."
-                    return
-                }
-                onSave(
-                    ProfileEntry(
-                        title = title.trim(),
-                        subtitle = subtitle.trim(),
-                        period = "$startYear - $endYear · $employmentType",
-                        description = description.trim()
-                    )
-                )
-            }
-            "Education" -> {
-                if (subtitle.trim().isBlank()) {
-                    subtitleError = "Institution is required."
-                    return
-                }
-                onSave(
-                    ProfileEntry(
-                        title = educationLevel,
-                        subtitle = subtitle.trim(),
-                        period = "$startYear - $endYear",
-                        description = description.trim()
-                    )
-                )
-            }
-            else -> {
-                if (title.trim().isBlank()) {
-                    titleError = "Certification name is required."
-                    return
-                }
-                val issuerName = if (issuer == "Other") customIssuer.trim().ifBlank { "Other" } else issuer
-                onSave(
-                    ProfileEntry(
-                        title = title.trim(),
-                        subtitle = issuerName,
-                        period = year,
-                        fileUrl = fileUrl
-                    )
-                )
-            }
-        }
-    }
-
-    Dialog(
-        onDismissRequest = { if (!isUploadingFile) onDismiss() },
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnBackPress = !isUploadingFile,
-            dismissOnClickOutside = false
-        )
-    ) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            containerColor = BackgroundWhite,
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text("Add $category", fontWeight = FontWeight.Bold, color = DeepGreenDark, fontSize = 18.sp)
-                            Text(headerSubtitle, fontSize = 12.sp, color = TextDark.copy(alpha = 0.55f))
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss, enabled = !isUploadingFile) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = DeepGreenDark)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
-                )
-            },
-            bottomBar = {
-                Surface(color = Color.White, shadowElevation = 12.dp) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            enabled = !isUploadingFile,
-                            modifier = Modifier.weight(1f).height(52.dp),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Text("Cancel", fontWeight = FontWeight.Medium)
-                        }
-                        Button(
-                            onClick = { trySave() },
-                            enabled = !isUploadingFile,
-                            modifier = Modifier.weight(1.3f).height(52.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
-                        ) {
-                            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save", fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                    }
-                }
-            }
-        ) { paddingValues ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .verticalScroll(rememberScrollState())
-                    .imePadding()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    color = SageGreenLight.copy(alpha = 0.45f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(Color.White),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(headerIcon, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(24.dp))
-                        }
-                        Column {
-                            Text("New $category", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextDark)
-                            Text(headerSubtitle, fontSize = 12.sp, color = TextDark.copy(alpha = 0.6f), lineHeight = 16.sp)
-                        }
-                    }
-                }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        when (category) {
-                            "Experience" -> {
-                                OutlinedTextField(
-                                    value = title,
-                                    onValueChange = { title = it.take(100); titleError = null },
-                                    label = { Text("Job title") },
-                                    placeholder = { Text("e.g. Marketing Intern") },
-                                    singleLine = true,
-                                    isError = titleError != null,
-                                    supportingText = { titleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp)
-                                )
-                                OutlinedTextField(
-                                    value = subtitle,
-                                    onValueChange = { subtitle = it.take(100); subtitleError = null },
-                                    label = { Text("Company") },
-                                    placeholder = { Text("e.g. JobTown Sdn Bhd") },
-                                    singleLine = true,
-                                    isError = subtitleError != null,
-                                    supportingText = { subtitleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp)
-                                )
-                                QualDropdownField(label = "Employment type", value = employmentType, options = ProfileOptions.EMPLOYMENT_TYPES, onSelect = { employmentType = it })
-                                QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
-                                QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
-                                OutlinedTextField(
-                                    value = description,
-                                    onValueChange = { description = it.take(300) },
-                                    label = { Text("Description (optional)") },
-                                    placeholder = { Text("What did you work on?") },
-                                    modifier = Modifier.fillMaxWidth().height(110.dp),
-                                    shape = RoundedCornerShape(14.dp)
-                                )
-                            }
-                            "Education" -> {
-                                QualDropdownField(
-                                    label = "Qualification",
-                                    value = educationLevel,
-                                    options = ProfileOptions.EDUCATION_LEVELS,
-                                    onSelect = { educationLevel = it }
-                                )
-                                OutlinedTextField(
-                                    value = subtitle,
-                                    onValueChange = { subtitle = it.take(100); subtitleError = null },
-                                    label = { Text("Institution") },
-                                    placeholder = { Text("e.g. Universiti Malaya") },
-                                    singleLine = true,
-                                    isError = subtitleError != null,
-                                    supportingText = { subtitleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp)
-                                )
-                                QualDropdownField(label = "Start year", value = startYear, options = ProfileOptions.YEARS.filter { it != "Present" }, onSelect = { startYear = it })
-                                QualDropdownField(label = "End year", value = endYear, options = ProfileOptions.YEARS, onSelect = { endYear = it })
-                                OutlinedTextField(
-                                    value = description,
-                                    onValueChange = { description = it.take(300) },
-                                    label = { Text("Field of study (optional)") },
-                                    placeholder = { Text("e.g. Computer Science") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp)
-                                )
-                            }
-                            else -> {
-                                OutlinedTextField(
-                                    value = title,
-                                    onValueChange = { title = it.take(100); titleError = null },
-                                    label = { Text("Certification name") },
-                                    placeholder = { Text("e.g. Google UX Design") },
-                                    singleLine = true,
-                                    isError = titleError != null,
-                                    supportingText = { titleError?.let { Text(it, color = Color.Red, fontSize = 12.sp) } },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp)
-                                )
-                                QualDropdownField(
-                                    label = "Issued by",
-                                    value = issuer,
-                                    options = ProfileOptions.CERTIFICATE_ISSUERS,
-                                    onSelect = { issuer = it }
-                                )
-                                if (issuer == "Other") {
-                                    OutlinedTextField(
-                                        value = customIssuer,
-                                        onValueChange = { customIssuer = it.take(100) },
-                                        label = { Text("Issuer name") },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(14.dp)
-                                    )
-                                }
-                                QualDropdownField(
-                                    label = "Year",
-                                    value = year,
-                                    options = ProfileOptions.YEARS.filter { it != "Present" },
-                                    onSelect = { year = it }
-                                )
-                                OutlinedButton(
-                                    onClick = { certificatePicker.launch(arrayOf("application/pdf", "image/*")) },
-                                    enabled = !isUploadingFile,
-                                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                                    shape = RoundedCornerShape(14.dp)
-                                ) {
-                                    if (isUploadingFile) {
-                                        CircularProgressIndicator(color = DeepGreenDark, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Uploading…")
-                                    } else {
-                                        Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(if (fileUrl.isBlank()) "Upload certificate file (optional)" else "Replace file")
-                                    }
-                                }
-                                if (fileName.isNotBlank()) {
-                                    Text(fileName, fontSize = 12.sp, color = DeepGreenDark)
-                                }
-                                fileError?.let { Text(it, color = Color.Red, fontSize = 12.sp) }
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun QualDropdownField(
-    label: String,
-    value: String,
-    options: List<String>,
-    onSelect: (String) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.fillMaxWidth().menuAnchor()
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { option ->
-                DropdownMenuItem(text = { Text(option) }, onClick = { onSelect(option); expanded = false })
-            }
-        }
-    }
-}
-
-@Composable
-private fun Step2Documents(
-    resumeFileName: String,
-    isResumeValid: Boolean,
-    isSavedProfileResume: Boolean,
-    onPickResume: () -> Unit,
-    onRemoveResume: () -> Unit,
-    coverLetterFileName: String,
-    onPickCoverLetter: () -> Unit,
-    onRemoveCoverLetter: () -> Unit,
-    additionalNotes: String,
-    onAdditionalNotesChange: (String) -> Unit,
-    showValidationErrors: Boolean
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // Resume Section (Required)
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = "Resume Document *",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (showValidationErrors && !isResumeValid) MaterialTheme.colorScheme.error else DeepGreenDark
-            )
-
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = if (showValidationErrors && !isResumeValid) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f) else SageGreenLight.copy(alpha = 0.3f),
-                border = androidx.compose.foundation.BorderStroke(
-                    width = 1.dp,
-                    color = if (showValidationErrors && !isResumeValid) MaterialTheme.colorScheme.error else SageGreenDark.copy(alpha = 0.3f)
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onPickResume() }
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isSavedProfileResume) SageGreenDark else DeepGreenDark,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = when {
-                                        isSavedProfileResume -> Icons.Filled.CheckCircle
-                                        isResumeValid -> Icons.Filled.Description
-                                        else -> Icons.Filled.UploadFile
-                                    },
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(
-                                    text = when {
-                                        isSavedProfileResume -> "Resume on file"
-                                        isResumeValid -> resumeFileName
-                                        else -> "Upload Resume (PDF / Doc)"
-                                    },
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextDark,
-                                    maxLines = 1,
-                                    modifier = Modifier.weight(1f, fill = false)
-                                )
-                                if (isSavedProfileResume) {
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = SageGreenDark.copy(alpha = 0.15f)
-                                    ) {
-                                        Text(
-                                            text = "Saved",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = SageGreenDark,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                            }
-                            Text(
-                                text = when {
-                                    isSavedProfileResume -> "From your profile · Tap to use a different file"
-                                    isResumeValid -> "Tap to change document"
-                                    else -> "Required for application submission"
-                                },
-                                fontSize = 11.sp,
-                                color = SageGreenDark
-                            )
-                        }
-                    }
-
-                    if (isResumeValid) {
-                        IconButton(onClick = onRemoveResume) {
-                            Icon(
-                                imageVector = Icons.Filled.Close,
-                                contentDescription = "Remove file",
-                                tint = TextDark.copy(alpha = 0.6f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    } else {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = DeepGreenDark,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Cover Letter Section (Optional Attachment)
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = "Cover Letter Attachment (Optional)",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = DeepGreenDark
-            )
-
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = SageGreenLight.copy(alpha = 0.2f),
-                border = androidx.compose.foundation.BorderStroke(width = 1.dp, color = SageGreenDark.copy(alpha = 0.2f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onPickCoverLetter() }
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = SageGreenDark,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = if (coverLetterFileName.isNotBlank()) Icons.Filled.NoteAlt else Icons.Filled.PostAdd,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = if (coverLetterFileName.isNotBlank()) coverLetterFileName else "Upload Cover Letter Document",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextDark,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = if (coverLetterFileName.isNotBlank()) "Tap to change cover letter file" else "PDF or Doc format (Optional)",
-                                fontSize = 11.sp,
-                                color = SageGreenDark
-                            )
-                        }
-                    }
-
-                    if (coverLetterFileName.isNotBlank()) {
-                        IconButton(onClick = onRemoveCoverLetter) {
-                            Icon(
-                                imageVector = Icons.Filled.Close,
-                                contentDescription = "Remove file",
-                                tint = TextDark.copy(alpha = 0.6f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    } else {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = DeepGreenDark,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        OutlinedTextField(
-            value = additionalNotes,
-            onValueChange = onAdditionalNotesChange,
-            label = { Text("Additional Notes / Remarks (Optional)") },
-            minLines = 3,
-            maxLines = 5,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
-        )
-    }
-}
-
-@Composable
-private fun Step3Review(
-    jobTitle: String,
-    companyName: String,
-    resumeFileName: String,
-    coverLetterFileName: String,
-    additionalNotes: String,
-    phoneNumber: String,
-    linkedInUrl: String,
-    salaryRangeText: String,
-    startDateText: String,
-    educationSummary: String,
-    experienceSummary: String,
-    certificatesSummary: String
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(text = "Position: $jobTitle", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = DeepGreenDark)
-            Text(text = "Company: $companyName", fontSize = 13.sp, color = TextDark.copy(alpha = 0.8f))
-            HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 1.dp)
-            ReviewRow(label = "Phone Number", value = phoneNumber)
-            ReviewRow(label = "LinkedIn / Portfolio", value = linkedInUrl.ifBlank { "Not provided" })
-            ReviewRow(label = "Expected Salary Range", value = salaryRangeText)
-            ReviewRow(label = "Available Start Date", value = startDateText)
-            HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 1.dp)
-            ReviewRow(label = "Education", value = educationSummary.ifBlank { "Not specified" })
-            ReviewRow(label = "Experience", value = experienceSummary.ifBlank { "Not specified" })
-            ReviewRow(label = "Certificates", value = certificatesSummary.ifBlank { "None attached" })
-            HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 1.dp)
-            ReviewRow(label = "Attached Resume", value = resumeFileName)
-            ReviewRow(label = "Cover Letter Document", value = coverLetterFileName)
-            if (additionalNotes.isNotBlank()) {
-                ReviewRow(label = "Additional Notes", value = additionalNotes)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReviewRow(label: String, value: String) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SageGreenDark)
-        Text(text = value, fontSize = 13.sp, color = TextDark, maxLines = 5)
     }
 }

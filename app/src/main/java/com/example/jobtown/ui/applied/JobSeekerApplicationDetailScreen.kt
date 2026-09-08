@@ -3,7 +3,6 @@ package com.example.jobtown.ui.applied
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,7 +52,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.jobtown.data.model.JobApplication
@@ -197,7 +195,9 @@ fun JobseekerApplicationDetailScreen(
                         ApplicationDetailRow(
                             icon = Icons.Default.School,
                             label = "Education",
-                            value = eduVal
+                            value = eduVal,
+                            valueFontSize = 12.sp,
+                            valueLineHeight = 16.sp
                         )
 
                         AppliedDivider()
@@ -206,34 +206,56 @@ fun JobseekerApplicationDetailScreen(
                         ApplicationDetailRow(
                             icon = Icons.Default.Work,
                             label = "Experience",
-                            value = expVal
+                            value = expVal,
+                            valueFontSize = 12.sp,
+                            valueLineHeight = 16.sp
                         )
 
                         AppliedDivider()
 
+                        // Certificate section with Tap to open link detection
                         val certVal = application.certificates.ifBlank { "None attached" }
-                        ApplicationDetailRow(
-                            icon = Icons.Default.Description,
-                            label = "Certificates",
-                            value = certVal
-                        )
+                        val hasCertUrl = certVal.contains("http://", ignoreCase = true) || certVal.contains("https://", ignoreCase = true)
 
+                        if (hasCertUrl) {
+                            val certUrl = certVal.split(" ", "\n").firstOrNull { it.startsWith("http", ignoreCase = true) } ?: certVal
+                            ApplicationDetailRow(
+                                icon = Icons.Default.Description,
+                                label = "Certificates (Tap to open file)",
+                                value = certVal,
+                                valueFontSize = 12.sp,
+                                valueLineHeight = 16.sp,
+                                valueColor = Color(0xFF1E88E5),
+                                onClick = {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(certUrl))
+                                    context.startActivity(intent)
+                                }
+                            )
+                        } else {
+                            ApplicationDetailRow(
+                                icon = Icons.Default.Description,
+                                label = "Certificates",
+                                value = certVal,
+                                valueFontSize = 12.sp,
+                                valueLineHeight = 16.sp
+                            )
+                        }
+
+                        // Resume Section
                         if (application.resumeUrl.isNotBlank()) {
                             AppliedDivider()
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(application.resumeUrl))
-                                        context.startActivity(intent)
-                                    }
-                            ) {
-                                ApplicationDetailRow(
-                                    icon = Icons.Default.AttachFile,
-                                    label = "Resume (Tap to open)",
-                                    value = application.resumeUrl
-                                )
-                            }
+                            ApplicationDetailRow(
+                                icon = Icons.Default.AttachFile,
+                                label = "Resume (Tap to open)",
+                                value = "Attached Resume Document (PDF)",
+                                valueFontSize = 12.sp,
+                                valueLineHeight = 16.sp,
+                                valueColor = Color(0xFF1E88E5),
+                                onClick = {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(application.resumeUrl))
+                                    context.startActivity(intent)
+                                }
+                            )
                         }
 
                         // Cover Letter Section
@@ -247,36 +269,6 @@ fun JobseekerApplicationDetailScreen(
                                 color = TextDark.copy(alpha = 0.78f),
                                 lineHeight = 22.sp
                             )
-                        }
-
-                        // Resume View Button
-                        if (application.resumeUrl.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            OutlinedButton(
-                                onClick = {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(application.resumeUrl))
-                                    context.startActivity(intent)
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                                border = BorderStroke(1.dp, DeepGreenDark)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AttachFile,
-                                    contentDescription = null,
-                                    tint = DeepGreenDark,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "View / download resume",
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = DeepGreenDark,
-                                    fontSize = 14.sp
-                                )
-                            }
                         }
 
                         // Jobseeker Actions Section
