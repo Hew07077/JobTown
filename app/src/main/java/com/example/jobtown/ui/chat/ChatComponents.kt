@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.example.jobtown.ui.chat
 
@@ -12,8 +12,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.AddReaction
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -53,11 +57,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,14 +71,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -105,11 +115,15 @@ fun MessageBubble(
     onRetry: (ChatMessage) -> Unit = {},
     onReactionSelected: (String) -> Unit = {},
     onReplyPreviewClick: (messageId: String) -> Unit = {},
-    reactions: List<ReactionGroup> = emptyList()
+    reactions: List<ReactionGroup> = emptyList(),
+    recentCustomEmojis: List<String> = emptyList(),
+    onCustomEmojiUsed: (String) -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showFullScreenImage by remember { mutableStateOf(false) }
     var showReactionPicker by remember { mutableStateOf(false) }
+    var showCustomEmojiInput by remember { mutableStateOf(false) }
+    var customEmojiText by remember { mutableStateOf("") }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val isPending = message.id.startsWith("temp_")
@@ -314,29 +328,117 @@ fun MessageBubble(
     }
 
     if (showReactionPicker) {
-        Dialog(onDismissRequest = { showReactionPicker = false }) {
+        val focusRequester = remember { FocusRequester() }
+        val keyboardController = LocalSoftwareKeyboardController.current
+
+        Dialog(onDismissRequest = {
+            showReactionPicker = false
+            showCustomEmojiInput = false
+            customEmojiText = ""
+        }) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = Color.White,
                 shadowElevation = 8.dp
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .widthIn(max = 280.dp)
                 ) {
-                    listOf("❤️", "👍", "🔥", "😂", "👏").forEach { emoji ->
-                        Text(
-                            text = emoji,
-                            fontSize = 24.sp,
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val baseEmojis = listOf(
+                            "❤️", "👍", "🔥", "😂", "👏",
+                            "😮", "😢", "🙏", "🎉", "💯",
+                            "😍", "👎", "😡", "🤔", "✅", "🙌"
+                        )
+                        // Recently-used custom picks surface first so they act like a
+                        // personal quick-list, capped so the sheet doesn't grow unbounded.
+                        val quickEmojis = recentCustomEmojis.filterNot { it in baseEmojis }.take(8) + baseEmojis
+
+                        quickEmojis.forEach { emoji ->
+                            Text(
+                                text = emoji,
+                                fontSize = 24.sp,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        onReactionSelected(emoji)
+                                        showReactionPicker = false
+                                        showCustomEmojiInput = false
+                                        customEmojiText = ""
+                                    }
+                                    .padding(8.dp)
+                            )
+                        }
+
+                        // Lets the person pick any emoji from their own device
+                        // keyboard rather than being limited to the quick list above.
+                        Box(
                             modifier = Modifier
                                 .clip(CircleShape)
-                                .clickable {
-                                    onReactionSelected(emoji)
-                                    showReactionPicker = false
-                                }
-                                .padding(8.dp)
-                        )
+                                .background(SageGreenLight)
+                                .clickable { showCustomEmojiInput = true }
+                                .padding(8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Choose your own emoji",
+                                tint = DeepGreenDark,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    if (showCustomEmojiInput) {
+                        LaunchedEffect(Unit) {
+                            focusRequester.requestFocus()
+                            keyboardController?.show()
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        fun submitCustomEmoji() {
+                            val emoji = customEmojiText.trim()
+                            if (emoji.isNotEmpty()) {
+                                onReactionSelected(emoji)
+                                onCustomEmojiUsed(emoji)
+                            }
+                            showReactionPicker = false
+                            showCustomEmojiInput = false
+                            customEmojiText = ""
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = customEmojiText,
+                                onValueChange = { customEmojiText = it },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(focusRequester),
+                                placeholder = { Text("Open your emoji keyboard") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { submitCustomEmoji() })
+                            )
+                            IconButton(
+                                onClick = { submitCustomEmoji() },
+                                enabled = customEmojiText.isNotBlank()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Use this emoji",
+                                    tint = if (customEmojiText.isNotBlank()) DeepGreenDark else Color.Gray
+                                )
+                            }
+                        }
                     }
                 }
             }

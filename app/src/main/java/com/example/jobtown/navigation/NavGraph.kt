@@ -561,6 +561,11 @@ fun AppNavGraph(
                             if (existing != null) {
                                 navController.navigate(Screen.ApplicationDetail.createRoute(existing.id))
                             }
+                        },
+                        onNotInterested = {
+                            loggedInUser?.id?.let { uid ->
+                                homeViewModel.dismissJob(uid, selectedJob.id)
+                            }
                         }
                     )
                 } else {

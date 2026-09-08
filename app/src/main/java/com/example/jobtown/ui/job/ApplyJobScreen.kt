@@ -53,7 +53,8 @@ fun ApplyJobScreen(
     existingApplication: JobApplication? = null,
     onApplySubmit: (JobApplication, (Boolean, String?) -> Unit) -> Unit,
     onViewCompanyDetails: (String) -> Unit = {},
-    onViewExistingApplication: () -> Unit = {}
+    onViewExistingApplication: () -> Unit = {},
+    onNotInterested: () -> Unit = {}
 ) {
     var isApplying by remember { mutableStateOf(false) }
     val alreadyApplied = existingApplication != null &&
@@ -69,7 +70,11 @@ fun ApplyJobScreen(
             onBackToHome = { navController.popBackStack() },
             onStartApplication = { isApplying = true },
             onViewExistingApplication = onViewExistingApplication,
-            onViewCompanyDetails = onViewCompanyDetails
+            onViewCompanyDetails = onViewCompanyDetails,
+            onNotInterested = {
+                onNotInterested()
+                navController.popBackStack()
+            }
         )
     } else {
         ApplicationFlowScreen(
@@ -94,7 +99,8 @@ private fun JobDetailsOverviewScreen(
     onBackToHome: () -> Unit,
     onStartApplication: () -> Unit,
     onViewExistingApplication: () -> Unit,
-    onViewCompanyDetails: (String) -> Unit
+    onViewCompanyDetails: (String) -> Unit,
+    onNotInterested: () -> Unit = onBackToHome
 ) {
     val displayTitle = job.title.ifBlank { "Untitled Position" }
     val displayCompany = job.companyName.ifBlank { "Company Name" }
@@ -154,22 +160,24 @@ private fun JobDetailsOverviewScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = onBackToHome,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(52.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.4f))
-                        ) {
-                            Text("Not Interested", fontSize = 14.sp, color = TextDark, fontWeight = FontWeight.Medium)
+                        if (!alreadyApplied) {
+                            OutlinedButton(
+                                onClick = onNotInterested,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, SageGreenDark.copy(alpha = 0.4f))
+                            ) {
+                                Text("Not Interested", fontSize = 14.sp, color = TextDark, fontWeight = FontWeight.Medium)
+                            }
                         }
 
                         Button(
                             onClick = if (alreadyApplied) onViewExistingApplication else onStartApplication,
                             enabled = alreadyApplied || !listingExpired,
                             modifier = Modifier
-                                .weight(1.2f)
+                                .weight(if (alreadyApplied) 1f else 1.2f)
                                 .height(52.dp),
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)

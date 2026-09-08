@@ -43,6 +43,19 @@ private data class NewSavedJobPayload(
 )
 
 @Serializable
+private data class DismissedJobRow(
+    @SerialName("id") val id: String = "",
+    @SerialName("user_id") val userId: String = "",
+    @SerialName("job_id") val jobId: String = ""
+)
+
+@Serializable
+private data class NewDismissedJobPayload(
+    @SerialName("user_id") val userId: String,
+    @SerialName("job_id") val jobId: String
+)
+
+@Serializable
 private data class NewJobPayload(
     @SerialName("title") val title: String,
     @SerialName("company") val company: String,
@@ -123,6 +136,41 @@ class JobRepository(private val supabaseClient: SupabaseClient) {
             Log.e("JobRepository", "Error toggling saved job: ${e.message}", e)
             // Report unchanged state on failure so the UI can revert its optimistic update.
             throw e
+        }
+    }
+
+    suspend fun getDismissedJobIds(userId: String): Set<String> = withContext(Dispatchers.IO) {
+        if (userId.isBlank()) return@withContext emptySet()
+        try {
+            supabaseClient.postgrest["dismissed_jobs"]
+                .select { filter { eq("user_id", userId) } }
+                .decodeList<DismissedJobRow>()
+                .map { it.jobId }
+                .toSet()
+        } catch (e: Exception) {
+            Log.e("JobRepository", "Error loading dismissed jobs: ${e.message}", e)
+            emptySet()
+        }
+    }
+
+    /** Marks a job as "Not interested" so it's hidden from this seeker's recommended list from now on. */
+    suspend fun dismissJob(userId: String, jobId: String): Boolean = withContext(Dispatchers.IO) {
+        if (userId.isBlank() || jobId.isBlank()) return@withContext false
+        try {
+            val existing = supabaseClient.postgrest["dismissed_jobs"]
+                .select { filter { eq("user_id", userId); eq("job_id", jobId) } }
+                .decodeList<DismissedJobRow>()
+                .firstOrNull()
+
+            if (existing == null) {
+                supabaseClient.postgrest["dismissed_jobs"].insert(
+                    NewDismissedJobPayload(userId = userId, jobId = jobId)
+                )
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("JobRepository", "Error dismissing job: ${e.message}", e)
+            false
         }
     }
 

@@ -63,6 +63,9 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
     var savedJobIds by mutableStateOf<Set<String>>(emptySet())
         private set
 
+    var dismissedJobIds by mutableStateOf<Set<String>>(emptySet())
+        private set
+
     private var realtimeJob: CoroutineJob? = null
     private var currentUserId: String? = null
     private var pendingNewJobs: List<Job> = emptyList()
@@ -77,7 +80,6 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
             isLoading = true
             try {
                 val fetchedJobs = repository.getAllJobs()
-                jobsList = fetchedJobs
                 pendingNewJobs = emptyList()
                 newListingsAvailable = 0
 
@@ -96,13 +98,23 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
                     val combinedMyJobs = (userJobs + filteredFetched).distinctBy { it.id }
                     myPostedJobs = combinedMyJobs
 
+                    val dismissed = try {
+                        repository.getDismissedJobIds(currentUserId)
+                    } catch (e: Exception) {
+                        emptySet()
+                    }
+                    dismissedJobIds = dismissed
+                    jobsList = fetchedJobs.filterNot { dismissed.contains(it.id) }
+
                     refreshMatchScores(currentUserId, fetchedJobs)
                     loadSavedJobs(currentUserId)
                 } else {
+                    jobsList = fetchedJobs
                     myPostedJobs = emptyList()
                     seekerProfile = null
                     matchScores = emptyMap()
                     savedJobIds = emptySet()
+                    dismissedJobIds = emptySet()
                 }
             } catch (e: Exception) {
                 Log.e("HomeViewModel", "Error loading jobs", e)
@@ -161,6 +173,20 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
     }
 
     private fun handleUpsert(job: Job) {
+        // A job the seeker has already dismissed ("Not interested") should stay
+        // hidden even if it gets updated elsewhere via realtime.
+        if (dismissedJobIds.contains(job.id)) {
+            val ownerId = job.employerId.orEmpty().ifBlank { job.postedByUserId.orEmpty() }
+            if (currentUserId != null && ownerId == currentUserId) {
+                myPostedJobs = if (myPostedJobs.any { it.id == job.id }) {
+                    myPostedJobs.map { if (it.id == job.id) job else it }
+                } else {
+                    listOf(job) + myPostedJobs
+                }
+            }
+            return
+        }
+
         val alreadyKnown = jobsList.any { it.id == job.id } || pendingNewJobs.any { it.id == job.id }
         if (alreadyKnown) {
             jobsList = jobsList.map { if (it.id == job.id) job else it }
@@ -217,6 +243,27 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
             } catch (e: Exception) {
                 Log.e("HomeViewModel", "Error toggling saved job", e)
                 savedJobIds = if (wasSaved) savedJobIds + jobId else savedJobIds - jobId
+            }
+        }
+    }
+
+    /**
+     * Marks a job "Not interested": removes it from the recommended list right away
+     * and persists the dismissal so it stays hidden for this seeker going forward.
+     */
+    fun dismissJob(userId: String, jobId: String) {
+        if (jobId.isBlank()) return
+        dismissedJobIds = dismissedJobIds + jobId
+        jobsList = jobsList.filterNot { it.id == jobId }
+        pendingNewJobs = pendingNewJobs.filterNot { it.id == jobId }
+        newListingsAvailable = pendingNewJobs.size
+
+        if (userId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                repository.dismissJob(userId, jobId)
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "Error dismissing job", e)
             }
         }
     }

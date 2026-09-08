@@ -4,6 +4,7 @@ package com.example.jobtown.ui.chat
 
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
@@ -51,6 +52,7 @@ import com.example.jobtown.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 
 @Composable
 fun ChatDetailScreen(
@@ -94,6 +96,16 @@ fun ChatDetailScreen(
 
     val displayCompanyName = companyName.ifBlank { "Company Name" }
     val displayPosition = chatTitle.ifBlank { "Position" }
+
+    // Recently-used custom emoji reactions, persisted locally so the quick-pick
+    // list in the reaction picker survives app restarts.
+    val recentEmojiPrefs = remember { context.getSharedPreferences("chat_reactions", Context.MODE_PRIVATE) }
+    var recentCustomEmojis by remember { mutableStateOf(loadRecentCustomEmojis(recentEmojiPrefs)) }
+    val onCustomEmojiUsed: (String) -> Unit = { emoji ->
+        val updated = (listOf(emoji) + recentCustomEmojis.filterNot { it == emoji }).take(8)
+        recentCustomEmojis = updated
+        saveRecentCustomEmojis(recentEmojiPrefs, updated)
+    }
 
     val displayedMessages = remember(messages, inChatSearchQuery) {
         if (inChatSearchQuery.isBlank()) {
@@ -611,7 +623,9 @@ fun ChatDetailScreen(
                                     onReactionSelected = { emoji ->
                                         chatViewModel.toggleReaction(roomId, msg.id, currentUserId, emoji)
                                     },
-                                    reactions = reactionsByMessage[msg.id] ?: emptyList()
+                                    reactions = reactionsByMessage[msg.id] ?: emptyList(),
+                                    recentCustomEmojis = recentCustomEmojis,
+                                    onCustomEmojiUsed = onCustomEmojiUsed
                                 )
                             }
                         }
@@ -748,4 +762,22 @@ fun InterviewDetailDialog(
             }
         }
     )
+}
+
+private const val RECENT_CUSTOM_EMOJIS_PREF_KEY = "recent_custom_emojis"
+
+private fun loadRecentCustomEmojis(prefs: SharedPreferences): List<String> {
+    val raw = prefs.getString(RECENT_CUSTOM_EMOJIS_PREF_KEY, null) ?: return emptyList()
+    return try {
+        val array = JSONArray(raw)
+        (0 until array.length()).map { array.getString(it) }
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
+
+private fun saveRecentCustomEmojis(prefs: SharedPreferences, emojis: List<String>) {
+    val array = JSONArray()
+    emojis.forEach { array.put(it) }
+    prefs.edit().putString(RECENT_CUSTOM_EMOJIS_PREF_KEY, array.toString()).apply()
 }

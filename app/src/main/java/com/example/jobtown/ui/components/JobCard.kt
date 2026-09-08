@@ -177,9 +177,9 @@ fun JobCard(
                                 text = job.location.ifBlank { "Location" },
                                 fontSize = 12.sp,
                                 color = TextDark.copy(alpha = 0.6f),
-                                maxLines = 2,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f, fill = false)
                             )
                         }
                     }
