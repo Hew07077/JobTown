@@ -43,7 +43,6 @@ import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.profile.ProfileOptions
 import com.example.jobtown.ui.theme.*
 import com.example.jobtown.utils.isJobListingExpired
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -52,7 +51,7 @@ fun ApplyJobScreen(
     job: Job,
     currentUser: User?,
     existingApplication: JobApplication? = null,
-    onApplySubmit: (JobApplication) -> Unit,
+    onApplySubmit: (JobApplication, (Boolean, String?) -> Unit) -> Unit,
     onViewCompanyDetails: (String) -> Unit = {},
     onViewExistingApplication: () -> Unit = {}
 ) {
@@ -408,7 +407,7 @@ private fun ApplicationFlowScreen(
     navController: NavController,
     job: Job,
     currentUser: User?,
-    onApplySubmit: (JobApplication) -> Unit,
+    onApplySubmit: (JobApplication, (Boolean, String?) -> Unit) -> Unit,
     onCancelApplication: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -619,14 +618,18 @@ private fun ApplicationFlowScreen(
             )
         }
     ) { paddingValues ->
-        Box(
+        // imePadding() shrinks this whole column (form area + the fixed
+        // Back/Next/Submit row below it) as the keyboard rises, instead of
+        // the keyboard just covering whatever's focused with nothing moving.
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .imePadding()
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .weight(1f)
                     .verticalScroll(rememberScrollState())
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -713,7 +716,10 @@ private fun ApplicationFlowScreen(
                         phoneNumber = phoneNumber,
                         linkedInUrl = linkedInUrl,
                         salaryRangeText = "RM ${salaryMin.toInt()} - RM ${salaryMax.toInt()}",
-                        startDateText = if (selectedStartDateOption == "Custom Date" && customStartDate.isNotBlank()) customStartDate else selectedStartDateOption
+                        startDateText = if (selectedStartDateOption == "Custom Date" && customStartDate.isNotBlank()) customStartDate else selectedStartDateOption,
+                        educationSummary = formatProfileEntries(educationEntries),
+                        experienceSummary = formatProfileEntries(experienceEntries),
+                        certificatesSummary = formatProfileEntries(certificationEntries)
                     )
                 }
 
@@ -760,13 +766,17 @@ private fun ApplicationFlowScreen(
                         }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.weight(1f))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+            // Fixed action row, outside the scrollable area, so it's always
+            // reachable and rides up with imePadding() instead of scrolling
+            // away or getting buried under the keyboard.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                     OutlinedButton(
                         onClick = {
                             if (currentStep > 0) currentStep-- else onCancelApplication()
@@ -918,12 +928,27 @@ private fun ApplicationFlowScreen(
                                             resumeUrl = uploadedResumeUrl,
                                             coverLetter = coverLetterUri.ifBlank { additionalNotes.trim() },
                                             status = "Pending",
-                                            location = job.location
+                                            location = job.location,
+                                            education = formatProfileEntries(educationEntries),
+                                            experience = formatProfileEntries(experienceEntries),
+                                            certificates = formatProfileEntries(certificationEntries)
                                         )
-                                        onApplySubmit(application)
-                                        successMessage = "Application submitted successfully!"
-                                        delay(1200)
-                                        navController.popBackStack()
+                                        // Wait for the actual backend result instead of
+                                        // optimistically claiming success - a blocked
+                                        // duplicate or a failed insert must surface to the
+                                        // applicant, not silently pop them back to a stale
+                                        // "submitted" state.
+                                        onApplySubmit(application) { success, message ->
+                                            if (success) {
+                                                successMessage = "Application submitted successfully!"
+                                                // Navigation onward (to the Applied tab) is
+                                                // owned by the caller once the backend confirms.
+                                            } else {
+                                                errorMessage = message ?: "Failed to submit application. Please try again."
+                                                showValidationErrors = true
+                                                isSubmitting = false
+                                            }
+                                        }
                                     } catch (e: Exception) {
                                         errorMessage = "Failed to submit: ${e.message}"
                                         showValidationErrors = true
@@ -968,7 +993,6 @@ private fun ApplicationFlowScreen(
                     }
                 }
             }
-        }
     }
 }
 
@@ -993,6 +1017,22 @@ private fun getFileNameFromUri(context: android.content.Context, uri: android.ne
 private fun extractFileNameFromUrl(url: String): String {
     val rawName = url.substringBefore("?").substringAfterLast("/")
     return rawName.ifBlank { "Resume.pdf" }
+}
+
+/**
+ * Flattens the applicant's education/experience/certification entries into the
+ * single-line-per-entry text that JobApplication.education/experience/certificates
+ * store, so what the employer (and the applicant's own "Application status" screen)
+ * sees isn't stuck on "Not specified" even when qualifications were filled in.
+ */
+private fun formatProfileEntries(entries: List<ProfileEntry>): String {
+    return entries.joinToString("\n") { entry ->
+        buildString {
+            append(entry.title)
+            if (entry.subtitle.isNotBlank()) append(" — ${entry.subtitle}")
+            if (entry.period.isNotBlank()) append(" (${entry.period})")
+        }
+    }
 }
 
 @Composable
@@ -2043,7 +2083,10 @@ private fun Step3Review(
     phoneNumber: String,
     linkedInUrl: String,
     salaryRangeText: String,
-    startDateText: String
+    startDateText: String,
+    educationSummary: String,
+    experienceSummary: String,
+    certificatesSummary: String
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -2062,6 +2105,11 @@ private fun Step3Review(
             ReviewRow(label = "LinkedIn / Portfolio", value = linkedInUrl.ifBlank { "Not provided" })
             ReviewRow(label = "Expected Salary Range", value = salaryRangeText)
             ReviewRow(label = "Available Start Date", value = startDateText)
+            HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 1.dp)
+            ReviewRow(label = "Education", value = educationSummary.ifBlank { "Not specified" })
+            ReviewRow(label = "Experience", value = experienceSummary.ifBlank { "Not specified" })
+            ReviewRow(label = "Certificates", value = certificatesSummary.ifBlank { "None attached" })
+            HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 1.dp)
             ReviewRow(label = "Attached Resume", value = resumeFileName)
             ReviewRow(label = "Cover Letter Document", value = coverLetterFileName)
             if (additionalNotes.isNotBlank()) {
@@ -2075,6 +2123,6 @@ private fun Step3Review(
 private fun ReviewRow(label: String, value: String) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SageGreenDark)
-        Text(text = value, fontSize = 13.sp, color = TextDark, maxLines = 3)
+        Text(text = value, fontSize = 13.sp, color = TextDark, maxLines = 5)
     }
 }

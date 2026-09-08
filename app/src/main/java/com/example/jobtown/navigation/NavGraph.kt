@@ -70,6 +70,7 @@ import com.example.jobtown.ui.schedule.InterviewEditorScreen
 import com.example.jobtown.ui.schedule.toSchedulePrefill
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.gotrue.auth
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -530,17 +531,23 @@ fun AppNavGraph(
                         existingApplication = loggedInUser?.id?.let { uid ->
                             appliedViewModel.findApplicationForJob(uid, selectedJob.id)
                         },
-                        onApplySubmit = { application ->
+                        onApplySubmit = { application, onResult ->
                             appliedViewModel.submitNewApplication(application) { success, message ->
+                                onResult(success, message)
                                 if (success) {
-                                    navController.navigate(Screen.Applied.route) {
-                                        popUpTo(Screen.Home.route) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
+                                    coroutineScope.launch {
+                                        delay(1200)
+                                        navController.navigate(Screen.Applied.route) {
+                                            popUpTo(Screen.Home.route) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
                                     }
-                                } else {
-                                    snackbarMessage = message ?: "Failed to submit application. Please try again."
                                 }
+                                // On failure, ApplyJobScreen shows the message inline (via
+                                // onResult) so the applicant stays on the form and can see
+                                // exactly what went wrong - e.g. a blocked duplicate - instead
+                                // of being bounced away with just a passing snackbar.
                             }
                         },
                         onViewCompanyDetails = { companyId ->
@@ -956,7 +963,32 @@ fun AppNavGraph(
                     initialQuestion = initialQuestion,
                     currentUserId = loggedInUser?.id.orEmpty(),
                     chatViewModel = chatViewModel,
-                    onNavigateToSchedule = { navController.navigate(Screen.Schedule.route) }
+                    onNavigateToSchedule = {
+                        // Resolve this chat room's counterpart (seeker <-> employer) so we
+                        // can jump straight to the interview that belongs to *this*
+                        // conversation, instead of dropping the user on the full list.
+                        val room = chatRoomsList.find { it.id == chatId }
+                        val matchedSchedule = room?.let { r ->
+                            scheduleViewModel.schedulesList
+                                .filter { it.userId == r.seekerId && it.employerId == r.employerId }
+                                .filterNot {
+                                    it.status.equals("Cancelled", ignoreCase = true) ||
+                                        it.status.equals("Rejected", ignoreCase = true)
+                                }
+                                .maxByOrNull { "${it.date}T${it.time}" }
+                        }
+
+                        if (matchedSchedule != null) {
+                            navController.navigate(Screen.ScheduleDetail.createRoute(matchedSchedule.id))
+                        } else {
+                            val isEmployerUser = loggedInUser?.role == UserRole.EMPLOYER
+                            snackbarMessage = if (isEmployerUser) {
+                                "You haven't scheduled an interview with this candidate yet."
+                            } else {
+                                "This employer hasn't scheduled an interview with you yet."
+                            }
+                        }
+                    }
                 )
             }
 

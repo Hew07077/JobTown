@@ -207,6 +207,15 @@ class ApplicationRepository(private val supabase: SupabaseClient) {
                     put("cover_letter", application.coverLetter)
                     put("resume_url", application.resumeUrl)
                     put("status", application.status)
+                    if (application.education.isNotBlank()) {
+                        put("education", application.education)
+                    }
+                    if (application.experience.isNotBlank()) {
+                        put("experience", application.experience)
+                    }
+                    if (application.certificates.isNotBlank()) {
+                        put("certificates", application.certificates)
+                    }
                     if (application.location.isNotBlank()) {
                         put("location", application.location)
                     }
