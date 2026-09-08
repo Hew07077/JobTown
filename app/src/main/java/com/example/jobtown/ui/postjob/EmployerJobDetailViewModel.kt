@@ -12,10 +12,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-sealed class JobDetailUiEvent {
-    object JobUpdated : JobDetailUiEvent()
-    object JobDeleted : JobDetailUiEvent()
-    data class ShowError(val message: String) : JobDetailUiEvent()
+sealed interface JobDetailUiEvent {
+    data object JobUpdated : JobDetailUiEvent
+    data object JobDeleted : JobDetailUiEvent
+    data class ShowError(val message: String) : JobDetailUiEvent
 }
 
 class EmployerJobDetailViewModel : ViewModel() {
@@ -38,14 +38,21 @@ class EmployerJobDetailViewModel : ViewModel() {
     fun updateJob(updatedJob: Job) {
         viewModelScope.launch {
             _isLoading.value = true
-            val success = UserRepository.saveJobToSupabase(updatedJob)
+
+            // Sync new location to employer profile if needed
+            val employerId = updatedJob.employerId ?: updatedJob.postedByUserId.orEmpty()
+            if (employerId.isNotBlank() && updatedJob.location.isNotBlank()) {
+                UserRepository.addSavedAddressToEmployer(employerId, updatedJob.location)
+            }
+
+            val success = UserRepository.updateJob(updatedJob)
             _isLoading.value = false
 
             if (success) {
                 _jobState.value = updatedJob
                 _eventFlow.emit(JobDetailUiEvent.JobUpdated)
             } else {
-                _eventFlow.emit(JobDetailUiEvent.ShowError("Failed to update job listing. Please try again."))
+                _eventFlow.emit(JobDetailUiEvent.ShowError("Failed to update job listing. Please check your network or try again."))
             }
         }
     }

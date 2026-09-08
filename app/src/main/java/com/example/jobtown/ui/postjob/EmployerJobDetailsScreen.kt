@@ -31,6 +31,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -65,13 +69,18 @@ import coil.compose.AsyncImage
 import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.model.User
 import com.example.jobtown.data.repository.UserRepository
-import com.example.jobtown.utils.LocationOptions
 import com.example.jobtown.ui.theme.BackgroundWhite
 import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.SageGreenMain
 import com.example.jobtown.ui.theme.TextDark
+import com.example.jobtown.utils.LocationOptions
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,8 +106,84 @@ fun EmployerJobDetailScreen(
     var isEditing by remember { mutableStateOf(false) }
     var fetchedAvatarUrl by remember { mutableStateOf<String?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showPreview by remember { mutableStateOf(false) }
 
-    // Listen for events (e.g. deletion, updates, errors)
+    // Explicitly typed non-null Long for date state calculations
+    var selectedExpiryMillis by remember(job.id, job.expiredAt, job.createdAt) {
+        mutableStateOf<Long>(
+            job.expiredAt?.let { isoString ->
+                runCatching {
+                    val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                        timeZone = TimeZone.getTimeZone("UTC")
+                    }
+                    sdf.parse(isoString)?.time
+                }.getOrNull()
+            } ?: run {
+                val createdMillis = job.createdAt?.let { iso ->
+                    runCatching {
+                        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                            timeZone = TimeZone.getTimeZone("UTC")
+                        }
+                        sdf.parse(iso)?.time
+                    }.getOrNull()
+                }
+                val baseTime = createdMillis ?: System.currentTimeMillis()
+                Calendar.getInstance().apply {
+                    timeInMillis = baseTime
+                    add(Calendar.DAY_OF_YEAR, 30)
+                }.timeInMillis
+            }
+        )
+    }
+    var showDatePickerDialog by remember { mutableStateOf(false) }
+
+    val displayExpiryDate = remember(selectedExpiryMillis) {
+        SimpleDateFormat("MMM dd, yyyy", Locale.US).format(Date(selectedExpiryMillis))
+    }
+
+    val displayIsoExpiryDate = remember(selectedExpiryMillis) {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        sdf.format(Date(selectedExpiryMillis))
+    }
+
+    // Date Picker Dialog
+    if (showDatePickerDialog) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedExpiryMillis
+        )
+
+        DatePickerDialog(
+            onDismissRequest = { showDatePickerDialog = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let {
+                        selectedExpiryMillis = it
+                    }
+                    showDatePickerDialog = false
+                }) {
+                    Text("OK", color = DeepGreenDark, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePickerDialog = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
+        ) {
+            DatePicker(
+                state = datePickerState,
+                colors = DatePickerDefaults.colors(
+                    selectedDayContainerColor = DeepGreenDark,
+                    todayDateBorderColor = DeepGreenDark,
+                    todayContentColor = DeepGreenDark
+                )
+            )
+        }
+    }
+
+    // Listen for UI events
     LaunchedEffect(Unit) {
         viewModel.eventFlow.collect { event ->
             when (event) {
@@ -123,7 +208,9 @@ fun EmployerJobDetailScreen(
             .filter { it.isNotBlank() }
     }
 
-    val (initialMinSalary, initialMaxSalary) = remember(job.id, job.salary) { parseSalaryBounds(job.salary) }
+    val (initialMinSalary, initialMaxSalary) = remember(job.id, job.salary) {
+        parseSalaryBounds(job.salary)
+    }
 
     val fields = rememberJobFormFields(
         title = job.title,
@@ -239,9 +326,31 @@ fun EmployerJobDetailScreen(
                     JobListingForm(
                         fields = fields,
                         submitLabel = "Save changes",
+                        enabled = !isLoading,
+                        isSubmitting = isLoading,
                         companyPhotoUrl = displayAvatarUrl,
                         requireSalary = false,
                         savedAddresses = savedAddresses,
+                        showPreview = showPreview,
+                        onTogglePreview = { showPreview = !showPreview },
+                        previewContent = {
+                            StandardJobCard(
+                                job = Job(
+                                    title = fields.title,
+                                    company = fields.company,
+                                    companyImageUrl = displayAvatarUrl,
+                                    location = fields.location,
+                                    salary = fields.formattedSalary(blankFallback = job.salary),
+                                    type = fields.type,
+                                    description = fields.description,
+                                    isFeatured = fields.isFeatured,
+                                    isOkuFriendly = fields.isOkuFriendly
+                                ),
+                                expiryDaysText = displayExpiryDate
+                            )
+                        },
+                        expiryDateText = displayExpiryDate,
+                        onExpiryDateClick = { showDatePickerDialog = true },
                         showFeaturedToggle = true,
                         onSubmit = {
                             val salary = fields.formattedSalary(blankFallback = job.salary)
@@ -256,7 +365,8 @@ fun EmployerJobDetailScreen(
                                 requirements = fields.requirementsList(),
                                 skills = fields.skillsList(),
                                 isFeatured = fields.isFeatured,
-                                isOkuFriendly = fields.isOkuFriendly
+                                isOkuFriendly = fields.isOkuFriendly,
+                                expiredAt = displayIsoExpiryDate
                             )
                             viewModel.updateJob(updatedJob)
                         }
