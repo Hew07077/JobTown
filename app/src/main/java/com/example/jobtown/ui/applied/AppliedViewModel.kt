@@ -11,12 +11,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-// Change ApplicationTab enum:
 enum class ApplicationTab {
     PENDING, VIEWED, SCHEDULED, CONSIDERED, OFFERED, REJECTED, CANCELLED
 }
 
-// Update the applicationTab extension function:
 class AppliedViewModel(
     private val applicationRepository: ApplicationRepository
 ) : ViewModel() {
@@ -38,9 +36,6 @@ class AppliedViewModel(
     private val _recentlyUpdatedApplicationId = MutableStateFlow<String?>(null)
     val recentlyUpdatedApplicationId: StateFlow<String?> = _recentlyUpdatedApplicationId.asStateFlow()
 
-    // True whenever an existing application's status changed (e.g. an employer
-    // moved it to Shortlisted/Considered/Offered/Rejected) since the seeker last
-    // opened "My Applications" — drives the red dot on the bottom nav tab.
     private val _hasUnseenUpdate = MutableStateFlow(false)
     val hasUnseenUpdate: StateFlow<Boolean> = _hasUnseenUpdate.asStateFlow()
 
@@ -94,8 +89,19 @@ class AppliedViewModel(
         }
     }
 
-    fun getFilteredApplications(tab: ApplicationTab): List<JobApplication> {
-        return _applicationsList.value.filter { app -> app.applicationTab() == tab }
+    /**
+     * Filters out applications deleted by the local user role.
+     * Uses status checks for per-side soft-deletes.
+     */
+    fun getFilteredApplications(tab: ApplicationTab, isEmployer: Boolean = false): List<JobApplication> {
+        return _applicationsList.value.filter { app ->
+            val isDeletedForUser = if (isEmployer) {
+                app.status.equals("DeletedByEmployer", ignoreCase = true) || app.status.equals("Deleted", ignoreCase = true)
+            } else {
+                app.status.equals("DeletedBySeeker", ignoreCase = true) || app.status.equals("Deleted", ignoreCase = true)
+            }
+            !isDeletedForUser && app.applicationTab() == tab
+        }
     }
 
     fun findApplicationForJob(userId: String, jobId: String): JobApplication? {
@@ -108,6 +114,26 @@ class AppliedViewModel(
 
     fun cancelApplication(applicationId: String, onResult: (Boolean) -> Unit = {}) {
         updateApplicationStatus(applicationId, "Cancelled", onResult)
+    }
+
+    fun deleteApplicationForRole(
+        applicationId: String,
+        isEmployer: Boolean,
+        onResult: (Boolean) -> Unit = {}
+    ) {
+        val app = _applicationsList.value.find { it.id == applicationId } ?: return
+
+        val newStatus = if (isEmployer) {
+            // When employer deletes, change status to "Rejected" so it shows as Rejected for the jobseeker
+            "Rejected"
+        } else {
+            // When jobseeker deletes, check if employer already rejected/deleted
+            val otherSideAlreadyDeleted = app.status.equals("DeletedByEmployer", ignoreCase = true) ||
+                    app.status.equals("Rejected", ignoreCase = true)
+            if (otherSideAlreadyDeleted) "Deleted" else "DeletedBySeeker"
+        }
+
+        updateApplicationStatus(applicationId, newStatus, onResult)
     }
 
     fun updateApplicationStatus(

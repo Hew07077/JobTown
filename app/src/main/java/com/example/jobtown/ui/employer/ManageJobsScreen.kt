@@ -50,8 +50,16 @@ fun ManageJobsScreen(
     val rawApplications by appliedViewModel.applicationsListState.collectAsStateWithLifecycle()
 
     // Filter out cancelled applications so they do not appear on the employer's page
+    // Replace the current applications remember block in ManageJobsScreen_4.kt:
+
+    // Filter out rejected, cancelled, or soft-deleted applications from the employer's list
     val applications = remember(rawApplications) {
-        rawApplications.filter { !it.status.equals("Cancelled", ignoreCase = true) }
+        rawApplications.filter { app ->
+            !app.status.equals("Cancelled", ignoreCase = true) &&
+                    !app.status.equals("Rejected", ignoreCase = true) &&
+                    !app.status.equals("DeletedByEmployer", ignoreCase = true) &&
+                    !app.status.equals("Deleted", ignoreCase = true)
+        }
     }
 
     Scaffold(
@@ -183,7 +191,13 @@ fun ManageJobsScreen(
                                     application = application,
                                     onViewDetails = { onApplicationClick(application.id) },
                                     onScheduleInterview = { onScheduleInterview(application) },
-                                    onStartChat = { onStartChat(application) }
+                                    onStartChat = { onStartChat(application) },
+                                    onDeleteClick = {
+                                        appliedViewModel.deleteApplicationForRole(
+                                            applicationId = application.id,
+                                            isEmployer = true
+                                        )
+                                    }
                                 )
                             }
                         }
@@ -296,7 +310,8 @@ private fun EmployerApplicationCard(
     application: JobApplication,
     onViewDetails: () -> Unit,
     onScheduleInterview: () -> Unit,
-    onStartChat: () -> Unit
+    onStartChat: () -> Unit,
+    onDeleteClick: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -305,7 +320,6 @@ private fun EmployerApplicationCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Top Section: Candidate & Job Details
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -364,39 +378,66 @@ private fun EmployerApplicationCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Button(
-                    onClick = onStartChat,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Chat", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                }
+            // Conditional Action Buttons based on Rejected Status
+            // In ManageJobsScreen_4.kt inside EmployerApplicationCard
 
+            val isDeletedOrRejected = application.status.equals("Rejected", ignoreCase = true) ||
+                    application.status.equals("Cancelled", ignoreCase = true) ||
+                    application.status.equals("DeletedBySeeker", ignoreCase = true)
+
+            if (isDeletedOrRejected) {
                 OutlinedButton(
-                    onClick = onScheduleInterview,
+                    onClick = onDeleteClick, // <-- Change this from appliedViewModel call to onDeleteClick
                     modifier = Modifier
-                        .weight(1f)
+                        .fillMaxWidth()
                         .height(48.dp),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, DeepGreenDark)
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
+                    border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.5f))
                 ) {
                     Icon(
-                        Icons.Default.Event,
+                        imageVector = Icons.Default.Delete,
                         contentDescription = null,
-                        tint = DeepGreenDark,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Schedule", fontSize = 14.sp, color = DeepGreenDark, fontWeight = FontWeight.SemiBold)
+                    Text("Delete from list", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = onStartChat,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Chat", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    OutlinedButton(
+                        onClick = onScheduleInterview,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, DeepGreenDark)
+                    ) {
+                        Icon(
+                            Icons.Default.Event,
+                            contentDescription = null,
+                            tint = DeepGreenDark,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Schedule", fontSize = 14.sp, color = DeepGreenDark, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }
