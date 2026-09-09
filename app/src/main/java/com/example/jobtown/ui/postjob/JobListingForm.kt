@@ -212,7 +212,7 @@ fun JobListingForm(
     previewContent: (@Composable () -> Unit)? = null,
     expiryDateText: String? = null,
     onExpiryDateClick: (() -> Unit)? = null,
-    showFeaturedToggle: Boolean = false
+    isCompanyEditable: Boolean = true
 ) {
     var jobTypeExpanded by remember { mutableStateOf(false) }
 
@@ -298,6 +298,10 @@ fun JobListingForm(
                 label = { RequiredLabel("Company", required = true) },
                 singleLine = true,
                 enabled = enabled,
+                readOnly = !isCompanyEditable,
+                supportingText = if (!isCompanyEditable) {
+                    { Text("Taken from your profile and can't be changed here", fontSize = 11.sp) }
+                } else null,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
             )
@@ -518,30 +522,6 @@ fun JobListingForm(
                 shape = RoundedCornerShape(12.dp)
             )
 
-            if (showFeaturedToggle) {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 1.dp, color = Color(0xFFE6EDE4))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "Featured listing", fontSize = 15.sp, color = TextDark, fontWeight = FontWeight.SemiBold)
-                        Text(text = "Highlight this job on the feed", fontSize = 12.sp, color = TextDark.copy(alpha = 0.55f))
-                    }
-                    Switch(
-                        checked = fields.isFeatured,
-                        onCheckedChange = { fields.isFeatured = it },
-                        enabled = enabled,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = DeepGreenDark,
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = Color(0xFFCBD5E1)
-                        )
-                    )
-                }
-            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 1.dp, color = Color(0xFFE6EDE4))
             Row(

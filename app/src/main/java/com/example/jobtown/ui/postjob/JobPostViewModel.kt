@@ -38,7 +38,6 @@ class JobPostViewModel(
                 description = fields.description,
                 requirements = fields.requirements.split(",").map { it.trim() }.filter { it.isNotBlank() },
                 skills = fields.skills.split(",").map { it.trim() }.filter { it.isNotBlank() },
-                isFeatured = fields.isFeatured,
                 isOkuFriendly = fields.isOkuFriendly,
                 employerId = userId,
                 postedByUserId = userId
