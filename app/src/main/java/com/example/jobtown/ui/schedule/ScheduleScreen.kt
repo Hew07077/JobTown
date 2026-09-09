@@ -92,14 +92,10 @@ fun ScheduleScreen(
         fun matchedAppStatus(schedule: InterviewSchedule): String? =
             applicants.firstOrNull { app ->
                 app.userId == schedule.userId &&
-                    app.jobId == schedule.jobId &&
-                    !app.status.equals("Cancelled", ignoreCase = true)
+                        app.jobId == schedule.jobId &&
+                        !app.status.equals("Cancelled", ignoreCase = true)
             }?.status
 
-        // A completed interview sits in "Considered" until the employer has decided
-        // an outcome (Offered) for the linked application - once decided, it moves to
-        // "Completed". If no matching application is found, default to Considered so
-        // it isn't lost from view.
         fun isAwaitingDecision(schedule: InterviewSchedule): Boolean {
             val status = matchedAppStatus(schedule) ?: return true
             return status.equals("Considered", ignoreCase = true)
@@ -120,74 +116,43 @@ fun ScheduleScreen(
     Scaffold(
         containerColor = BackgroundWhite,
         topBar = {
-            Column(modifier = Modifier.background(SageGreenMain)) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = if (isEmployer) "Manage Interviews" else "My Interviews",
-                            fontWeight = FontWeight.Bold,
-                            color = TextDark,
-                            fontSize = 18.sp
-                        )
-                    },
-                    actions = {
-                        IconButton(
-                            onClick = onProfileClick,
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .size(40.dp)
-                        ) {
-                            val logoUrl = user?.avatarUrl
-                            if (!logoUrl.isNullOrBlank()) {
-                                SubcomposeAsyncImage(
-                                    model = logoUrl,
-                                    contentDescription = "Profile",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                        .clip(CircleShape)
-                                        .background(SageGreenLight)
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = "Profile",
-                                    tint = DeepGreenDark
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-                )
-
-                ScrollableTabRow(
-                    selectedTabIndex = selectedFilterTab,
-                    containerColor = Color.Transparent,
-                    edgePadding = 16.dp,
-                    indicator = {},
-                    divider = {}
-                ) {
-                    val tabs = listOf("All", "Pending", "Accepted", "Rescheduled", "Considered", "Completed", "Cancelled", "Rejected")
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedFilterTab == index,
-                            onClick = { selectedFilterTab = index },
-                            modifier = Modifier
-                                .padding(horizontal = 4.dp, vertical = 8.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(if (selectedFilterTab == index) DeepGreenDark else SageGreenLight)
-                                .padding(horizontal = 16.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = title,
-                                color = if (selectedFilterTab == index) Color.White else DeepGreenDark,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
+            TopAppBar(
+                title = {
+                    Text(
+                        text = if (isEmployer) "Manage Interviews" else "My Interviews",
+                        fontWeight = FontWeight.Bold,
+                        color = DeepGreenDark,
+                        fontSize = 18.sp
+                    )
+                },
+                actions = {
+                    IconButton(
+                        onClick = onProfileClick,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(40.dp)
+                    ) {
+                        val logoUrl = user?.avatarUrl
+                        if (!logoUrl.isNullOrBlank()) {
+                            SubcomposeAsyncImage(
+                                model = logoUrl,
+                                contentDescription = "Profile",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                                    .clip(CircleShape)
+                                    .background(SageGreenLight)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Profile",
+                                tint = DeepGreenDark
                             )
                         }
                     }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SageGreenMain)
+            )
         },
         floatingActionButton = {
             if (isEmployer) {
@@ -201,57 +166,129 @@ fun ScheduleScreen(
             }
         }
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
         ) {
-            when {
-                isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = DeepGreenDark)
-                filteredSchedules.isEmpty() -> {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(SageGreenLight),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(imageVector = Icons.Default.CalendarMonth, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(36.dp))
+            ScrollableTabRow(
+                selectedTabIndex = selectedFilterTab,
+                containerColor = Color.White,
+                contentColor = DeepGreenDark,
+                edgePadding = 12.dp,
+                divider = {
+                    HorizontalDivider(thickness = 1.dp, color = Color(0xFFE6EDE4))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val tabs = listOf("All", "Pending", "Accepted", "Rescheduled", "Considered", "Completed", "Cancelled", "Rejected")
+
+                tabs.forEachIndexed { index, title ->
+                    val tabCount = when (index) {
+                        0 -> safeSchedules.size
+                        1 -> safeSchedules.count { it.status.equals("Pending", ignoreCase = true) || it.status.equals("Scheduled", ignoreCase = true) }
+                        2 -> safeSchedules.count { it.status.equals("Accepted", ignoreCase = true) }
+                        3 -> safeSchedules.count { it.status.equals("Reschedule Requested", ignoreCase = true) }
+                        4 -> safeSchedules.count { schedule ->
+                            val appStatus = applicants.firstOrNull { app ->
+                                app.userId == schedule.userId && app.jobId == schedule.jobId && !app.status.equals("Cancelled", ignoreCase = true)
+                            }?.status
+                            schedule.status.equals("Completed", ignoreCase = true) && (appStatus?.equals("Considered", ignoreCase = true) ?: true)
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = if (isEmployer) "No interviews found." else "No interview invites found in this category.",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = TextDark.copy(alpha = 0.6f)
-                        )
+                        5 -> safeSchedules.count { schedule ->
+                            val appStatus = applicants.firstOrNull { app ->
+                                app.userId == schedule.userId && app.jobId == schedule.jobId && !app.status.equals("Cancelled", ignoreCase = true)
+                            }?.status
+                            schedule.status.equals("Completed", ignoreCase = true) && !(appStatus?.equals("Considered", ignoreCase = true) ?: true)
+                        }
+                        6 -> safeSchedules.count { it.status.equals("Cancelled", ignoreCase = true) }
+                        7 -> safeSchedules.count { it.status.equals("Rejected", ignoreCase = true) }
+                        else -> 0
+                    }
+
+                    // We determine if there is a 'change' simply by checking if the count > 0
+                    // for actionable tabs. You can adjust the logic for the red dot here.
+                    val showRedDot = (index == 1 || index == 3) && tabCount > 0
+
+                    Tab(
+                        selected = selectedFilterTab == index,
+                        onClick = { selectedFilterTab = index },
+                        selectedContentColor = DeepGreenDark,
+                        unselectedContentColor = TextDark.copy(alpha = 0.55f)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 14.dp)
+                        ) {
+                            Text(
+                                text = "$title ($tabCount)",
+                                fontWeight = if (selectedFilterTab == index) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 14.sp
+                            )
+                            if (showRedDot) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .background(Color.Red, CircleShape)
+                                )
+                            }
+                        }
                     }
                 }
-                else -> {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(bottom = 72.dp)
-                    ) {
-                        items(filteredSchedules, key = { it.id.ifBlank { it.title + it.date + it.time } }) { schedule ->
-                            ScheduleCard(
-                                schedule = schedule,
-                                isEmployer = isEmployer,
-                                onCardClick = { navController.navigate(Screen.ScheduleDetail.createRoute(schedule.id)) },
-                                onUpdateStatus = onUpdateStatus,
-                                onRespondInvite = onRespondInvite,
-                                onRequestReschedule = { rescheduleTarget = schedule },
-                                onRejectConfirm = { rejectTarget = schedule },
-                                onCancelConfirm = { cancelTarget = schedule },
-                                onEditSchedule = { editTarget = schedule },
-                                onDeleteSchedule = { deleteTarget = schedule },
-                                onCompleteClick = { completeTarget = schedule }
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                when {
+                    isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = DeepGreenDark)
+                    filteredSchedules.isEmpty() -> {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(SageGreenLight),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(imageVector = Icons.Default.CalendarMonth, contentDescription = null, tint = DeepGreenDark, modifier = Modifier.size(36.dp))
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = if (isEmployer) "No interviews found." else "No interview invites found in this category.",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextDark.copy(alpha = 0.6f)
                             )
+                        }
+                    }
+                    else -> {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 72.dp)
+                        ) {
+                            items(filteredSchedules, key = { it.id.ifBlank { it.title + it.date + it.time } }) { schedule ->
+                                ScheduleCard(
+                                    schedule = schedule,
+                                    isEmployer = isEmployer,
+                                    onCardClick = { navController.navigate(Screen.ScheduleDetail.createRoute(schedule.id)) },
+                                    onUpdateStatus = onUpdateStatus,
+                                    onRespondInvite = onRespondInvite,
+                                    onRequestReschedule = { rescheduleTarget = schedule },
+                                    onRejectConfirm = { rejectTarget = schedule },
+                                    onCancelConfirm = { cancelTarget = schedule },
+                                    onEditSchedule = { editTarget = schedule },
+                                    onDeleteSchedule = { deleteTarget = schedule },
+                                    onCompleteClick = { completeTarget = schedule }
+                                )
+                            }
                         }
                     }
                 }
@@ -281,7 +318,7 @@ fun ScheduleScreen(
             text = {
                 Text(
                     "How did it go with ${target.seekerName.ifBlank { "the candidate" }}? " +
-                        "Choose an outcome to complete this interview."
+                            "Choose an outcome to complete this interview."
                 )
             },
             confirmButton = {
@@ -581,11 +618,8 @@ private fun ScheduleCard(
                     Text("Delete from list", fontSize = 12.sp)
                 }
             } else if (isEmployer) {
-                // Once the candidate has confirmed (Accepted) or the interview has
-                // already happened (Completed), the schedule is locked from direct
-                // edits — cancel and re-create instead if it truly needs to change.
                 val isLocked = statusText.equals("Accepted", ignoreCase = true) ||
-                    statusText.equals("Completed", ignoreCase = true)
+                        statusText.equals("Completed", ignoreCase = true)
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (isLocked) {
