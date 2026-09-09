@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.LocationOn
@@ -275,33 +276,15 @@ fun JobseekerApplicationDetailScreen(
                         AppliedSectionTitle("Actions")
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        Button(
-                            onClick = { onChatWithEmployerClick(application) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Chat,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Chat with employer",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White
-                            )
-                        }
+                        val isCancelledOrRejected = application.status.equals("Cancelled", ignoreCase = true) ||
+                                application.status.equals("Rejected", ignoreCase = true)
 
-                        if (application.canCancel()) {
-                            Spacer(modifier = Modifier.height(10.dp))
+                        if (isCancelledOrRejected) {
                             OutlinedButton(
-                                onClick = { showCancelDialog = true },
+                                onClick = {
+                                    onCancelApplication(application.copy(status = "Deleted"))
+                                    onBackClick()
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp),
@@ -309,11 +292,55 @@ fun JobseekerApplicationDetailScreen(
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
                                 border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.5f))
                             ) {
-                                Text(
-                                    text = "Cancel application",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Delete from list", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        } else {
+                            Button(
+                                onClick = { onChatWithEmployerClick(application) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Chat,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Chat with employer",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+                            }
+
+                            if (application.canCancel()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                OutlinedButton(
+                                    onClick = { showCancelDialog = true },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
+                                    border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.5f))
+                                ) {
+                                    Text(
+                                        text = "Cancel application",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             }
                         }
                     }

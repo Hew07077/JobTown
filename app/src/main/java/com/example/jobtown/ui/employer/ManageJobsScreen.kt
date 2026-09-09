@@ -46,11 +46,13 @@ fun ManageJobsScreen(
     onProfileClick: () -> Unit = {}
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
-    // FIX: appliedViewModel.applicationsList is a plain getter over a private
-    // MutableStateFlow, not Compose State, so reading it directly here never
-    // triggered a recomposition when loadEmployerApplications() finished loading.
-    // Collecting the backing StateFlow makes this screen update reliably.
-    val applications by appliedViewModel.applicationsListState.collectAsStateWithLifecycle()
+
+    val rawApplications by appliedViewModel.applicationsListState.collectAsStateWithLifecycle()
+
+    // Filter out cancelled applications so they do not appear on the employer's page
+    val applications = remember(rawApplications) {
+        rawApplications.filter { !it.status.equals("Cancelled", ignoreCase = true) }
+    }
 
     Scaffold(
         containerColor = BackgroundWhite,

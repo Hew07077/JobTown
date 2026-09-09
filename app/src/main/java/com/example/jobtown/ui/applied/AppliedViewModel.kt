@@ -11,10 +11,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+// Change ApplicationTab enum:
 enum class ApplicationTab {
-    PENDING, VIEWED, SHORTLISTED, CONSIDERED, OFFERED, REJECTED, CANCELLED
+    PENDING, VIEWED, SCHEDULED, CONSIDERED, OFFERED, REJECTED, CANCELLED
 }
 
+// Update the applicationTab extension function:
 class AppliedViewModel(
     private val applicationRepository: ApplicationRepository
 ) : ViewModel() {

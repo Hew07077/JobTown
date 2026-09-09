@@ -170,7 +170,7 @@ fun MyAppliedScreen(
                     val tabLabel = when (tab) {
                         ApplicationTab.PENDING -> "Pending"
                         ApplicationTab.VIEWED -> "Viewed"
-                        ApplicationTab.SHORTLISTED -> "Shortlisted"
+                        ApplicationTab.SCHEDULED -> "Scheduled"
                         ApplicationTab.CONSIDERED -> "Considered"
                         ApplicationTab.OFFERED -> "Offered"
                         ApplicationTab.REJECTED -> "Rejected"
@@ -266,7 +266,7 @@ private fun EmptyApplicationsState(selectedTab: ApplicationTab) {
             text = when (selectedTab) {
                 ApplicationTab.PENDING -> "No pending applications"
                 ApplicationTab.VIEWED -> "No viewed applications"
-                ApplicationTab.SHORTLISTED -> "No shortlisted applications"
+                ApplicationTab.SCHEDULED -> "No scheduled applications"
                 ApplicationTab.CONSIDERED -> "No applications under consideration"
                 ApplicationTab.OFFERED -> "No offered applications"
                 ApplicationTab.REJECTED -> "No rejected applications"
@@ -276,12 +276,14 @@ private fun EmptyApplicationsState(selectedTab: ApplicationTab) {
             fontSize = 17.sp,
             color = TextDark
         )
+
         Spacer(modifier = Modifier.height(8.dp))
+
         Text(
             text = when (selectedTab) {
                 ApplicationTab.PENDING -> "Jobs you apply for will show up here until the employer opens them."
                 ApplicationTab.VIEWED -> "Applications the employer has opened will appear here."
-                ApplicationTab.SHORTLISTED -> "Applications the employer has shortlisted will appear here."
+                ApplicationTab.SCHEDULED -> "Applications with scheduled interviews will appear here."
                 ApplicationTab.CONSIDERED -> "Applications moved here after an interview, while the employer decides on an offer."
                 ApplicationTab.OFFERED -> "Applications you've been offered will appear here."
                 ApplicationTab.REJECTED -> "Applications the employer has rejected will appear here."
