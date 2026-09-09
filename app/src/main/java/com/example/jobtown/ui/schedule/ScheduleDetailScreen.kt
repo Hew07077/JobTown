@@ -1,6 +1,7 @@
 package com.example.jobtown.ui.schedule
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,13 +21,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.MilitaryTech
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -40,6 +48,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -84,6 +94,10 @@ fun ScheduleDetailScreen(
     onDecision: (schedule: InterviewSchedule, decision: String) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
+    var selectedTab by remember { mutableStateOf(0) }
+    val candidateApplication = remember(schedule, applicants) {
+        schedule?.let { findApplicationForSchedule(it, applicants) }
+    }
     var showRescheduleDialog by remember { mutableStateOf(false) }
     var showEditor by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -104,7 +118,10 @@ fun ScheduleDetailScreen(
                     }
                 },
                 actions = {
-                    if (isEmployer && schedule != null && !schedule.isCancelledInterview()) {
+                    if (isEmployer && schedule != null && !schedule.isCancelledInterview() &&
+                        !schedule.status.equals("Accepted", ignoreCase = true) &&
+                        !schedule.status.equals("Completed", ignoreCase = true)
+                    ) {
                         IconButton(onClick = { showEditor = true }) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit interview", tint = DeepGreenDark)
                         }
@@ -178,313 +195,305 @@ fun ScheduleDetailScreen(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                Card(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            if (candidateApplication != null) {
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color.White,
+                    contentColor = DeepGreenDark,
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp))
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(SageGreenLight),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = DeepGreenDark)
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Date", fontSize = 12.sp, color = TextDark.copy(alpha = 0.55f))
-                        Text(
-                            text = formatShortDate(schedule.date),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = TextDark
-                        )
-                    }
-                }
-                Card(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(SageGreenLight),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Schedule, contentDescription = null, tint = DeepGreenDark)
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Time (${currentTimeZoneLabel()})", fontSize = 12.sp, color = TextDark.copy(alpha = 0.55f))
-                        Text(
-                            text = timeParts.first,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = TextDark
-                        )
-                        if (timeParts.second.isNotBlank()) {
-                            Text(
-                                text = "to ${timeParts.second}",
-                                fontSize = 13.sp,
-                                color = TextDark.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("Details", fontWeight = FontWeight.SemiBold) }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Candidate", fontWeight = FontWeight.SemiBold) }
+                    )
                 }
             }
 
-            if (!cancelled) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (meetingKind == MeetingKind.ONLINE) SageGreenLight else Color.White
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(modifier = Modifier.padding(18.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (selectedTab == 1 && candidateApplication != null) {
+                CandidateProfileSection(
+                    application = candidateApplication,
+                    onOpenLink = { url -> openExternalLink(context, url) }
+                )
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
                             Box(
                                 modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(if (meetingKind == MeetingKind.ONLINE) DeepGreenDark else SageGreenMain),
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(SageGreenLight),
                                 contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = DeepGreenDark)
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Date", fontSize = 12.sp, color = TextDark.copy(alpha = 0.55f))
+                            Text(
+                                text = formatShortDate(schedule.date),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = TextDark
+                            )
+                        }
+                    }
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(SageGreenLight),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Schedule, contentDescription = null, tint = DeepGreenDark)
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Time (${currentTimeZoneLabel()})", fontSize = 12.sp, color = TextDark.copy(alpha = 0.55f))
+                            Text(
+                                text = timeParts.first,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = TextDark
+                            )
+                            if (timeParts.second.isNotBlank()) {
+                                Text(
+                                    text = "to ${timeParts.second}",
+                                    fontSize = 13.sp,
+                                    color = TextDark.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (!cancelled) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (meetingKind == MeetingKind.ONLINE) SageGreenLight else Color.White
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(18.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(if (meetingKind == MeetingKind.ONLINE) DeepGreenDark else SageGreenMain),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (meetingKind == MeetingKind.ONLINE) Icons.Default.Videocam else Icons.Default.Map,
+                                        contentDescription = null,
+                                        tint = Color.White
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (meetingKind == MeetingKind.ONLINE) "Online meeting" else "In-person meeting",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = DeepGreenDark
+                                    )
+                                    Text(
+                                        text = meetingValue.ifBlank {
+                                            if (meetingKind == MeetingKind.ONLINE) "Google Meet" else "Location not set"
+                                        },
+                                        fontSize = 13.sp,
+                                        color = TextDark.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = { openInterviewDestination(context, schedule.locationOrLink) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
                             ) {
                                 Icon(
                                     imageVector = if (meetingKind == MeetingKind.ONLINE) Icons.Default.Videocam else Icons.Default.Map,
                                     contentDescription = null,
                                     tint = Color.White
                                 )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = if (meetingKind == MeetingKind.ONLINE) "Online meeting" else "In-person meeting",
+                                    text = if (meetingKind == MeetingKind.ONLINE) "Join Google Meet" else "Open in Google Maps",
+                                    color = Color.White,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
-                                    color = DeepGreenDark
-                                )
-                                Text(
-                                    text = meetingValue.ifBlank {
-                                        if (meetingKind == MeetingKind.ONLINE) "Google Meet" else "Location not set"
-                                    },
-                                    fontSize = 13.sp,
-                                    color = TextDark.copy(alpha = 0.7f)
+                                    fontSize = 16.sp
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = { openInterviewDestination(context, schedule.locationOrLink) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
-                        ) {
-                            Icon(
-                                imageVector = if (meetingKind == MeetingKind.ONLINE) Icons.Default.Videocam else Icons.Default.Map,
-                                contentDescription = null,
-                                tint = Color.White
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (meetingKind == MeetingKind.ONLINE) "Join Google Meet" else "Open in Google Maps",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                        }
                     }
                 }
-            }
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (schedule.seekerName.isNotBlank()) {
-                        DetailRow(icon = Icons.Default.Person, label = "Candidate", value = schedule.seekerName)
-                    }
-                    DetailRow(icon = Icons.Default.Business, label = "Company", value = schedule.company.ifBlank { "—" })
-                    DetailRow(icon = Icons.Default.CalendarMonth, label = "Full date", value = formatDisplayDate(schedule.date))
-                }
-            }
-
-            if (schedule.preferredTime.isNotBlank() || schedule.rescheduleReason.isNotBlank()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = SageGreenLight.copy(alpha = 0.7f))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Reschedule request", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DeepGreenDark)
-                        if (schedule.preferredTime.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text("Preferred time: ${schedule.preferredTime}", fontSize = 14.sp, color = TextDark)
-                        }
-                        if (schedule.rescheduleReason.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("Reason: ${schedule.rescheduleReason}", fontSize = 14.sp, color = TextDark)
-                        }
-                    }
-                }
-            }
-
-            if (schedule.notes.isNotBlank()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Notes, contentDescription = null, tint = SageGreenDark)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Notes & instructions", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextDark)
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (schedule.seekerName.isNotBlank()) {
+                            DetailRow(icon = Icons.Default.Person, label = "Candidate", value = schedule.seekerName)
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = schedule.notes, fontSize = 14.sp, color = TextDark.copy(alpha = 0.8f))
+                        DetailRow(icon = Icons.Default.Business, label = "Company", value = schedule.company.ifBlank { "—" })
+                        DetailRow(icon = Icons.Default.CalendarMonth, label = "Full date", value = formatDisplayDate(schedule.date))
                     }
                 }
-            }
 
-            if (cancelled) {
-                OutlinedButton(
-                    onClick = { showDeleteConfirm = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Delete from my list", fontWeight = FontWeight.SemiBold)
+                if (schedule.preferredTime.isNotBlank() || schedule.rescheduleReason.isNotBlank()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = SageGreenLight.copy(alpha = 0.7f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Reschedule request", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DeepGreenDark)
+                            if (schedule.preferredTime.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("Preferred time: ${schedule.preferredTime}", fontSize = 14.sp, color = TextDark)
+                            }
+                            if (schedule.rescheduleReason.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Reason: ${schedule.rescheduleReason}", fontSize = 14.sp, color = TextDark)
+                            }
+                        }
+                    }
                 }
-            } else if (isEmployer) {
-                if (
-                    statusText.equals("Pending", ignoreCase = true) ||
-                    statusText.equals("Scheduled", ignoreCase = true) ||
-                    statusText.equals("Accepted", ignoreCase = true) ||
-                    statusText.equals("Reschedule Requested", ignoreCase = true)
-                ) {
-                    Button(
-                        onClick = { showEditor = true },
+
+                if (schedule.notes.isNotBlank()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Notes, contentDescription = null, tint = SageGreenDark)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Notes & instructions", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextDark)
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(text = schedule.notes, fontSize = 14.sp, color = TextDark.copy(alpha = 0.8f))
+                        }
+                    }
+                }
+
+                if (cancelled || statusText.equals("Completed", ignoreCase = true)) {
+                    OutlinedButton(
+                        onClick = { showDeleteConfirm = true },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),
                         shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) {
-                        Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White)
+                        Icon(Icons.Default.Delete, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Edit & resend invite", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Delete from my list", fontWeight = FontWeight.SemiBold)
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                } else if (isEmployer) {
+                    val isAccepted = statusText.equals("Accepted", ignoreCase = true)
+                    if (
+                        statusText.equals("Pending", ignoreCase = true) ||
+                        statusText.equals("Scheduled", ignoreCase = true) ||
+                        isAccepted ||
+                        statusText.equals("Reschedule Requested", ignoreCase = true)
                     ) {
-                        OutlinedButton(
-                            onClick = { showCompleteDialog = true },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Mark completed")
+                        if (!isAccepted) {
+                            Button(
+                                onClick = { showEditor = true },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Edit & resend invite", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
                         }
-                        OutlinedButton(
-                            onClick = { showCancelConfirm = true },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Cancel", color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                } else if (statusText.equals("Completed", ignoreCase = true)) {
-                    val linkedApplication = applicants.firstOrNull { app ->
-                        app.userId == schedule.userId &&
-                            app.jobId == schedule.jobId &&
-                            !app.status.equals("Cancelled", ignoreCase = true)
-                    }
-                    val decidedStatus = linkedApplication?.status?.takeIf {
-                        it.equals("Offered", ignoreCase = true) || it.equals("Rejected", ignoreCase = true)
-                    }
-
-                    if (decidedStatus != null) {
-                        val isOffer = decidedStatus.equals("Offered", ignoreCase = true)
-                        AssistChip(
-                            onClick = {},
-                            label = {
-                                Text(
-                                    if (isOffer) "Offer sent to candidate" else "Candidate rejected",
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (isOffer) SageGreenLight else Color(0xFFFFEBEE),
-                                labelColor = if (isOffer) DeepGreenDark else Color(0xFFC62828)
-                            )
-                        )
-                    } else {
-                        Text(
-                            text = "Interview complete — decide the outcome for this candidate.",
-                            fontSize = 13.sp,
-                            color = TextDark.copy(alpha = 0.7f)
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Button(
-                                onClick = { showOfferConfirm = true },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(50.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                            ) {
-                                Text("Send offer", color = Color.White, fontWeight = FontWeight.Bold)
-                            }
                             OutlinedButton(
-                                onClick = { showRejectDecisionConfirm = true },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(50.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
+                                onClick = { showCompleteDialog = true },
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Text("Reject", fontWeight = FontWeight.Bold)
+                                Text("Mark completed")
+                            }
+                            if (!isAccepted) {
+                                OutlinedButton(
+                                    onClick = { showCancelConfirm = true },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Cancel", color = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     }
-                }
-            } else {
-                if (statusText.equals("Pending", ignoreCase = true) || statusText.equals("Scheduled", ignoreCase = true)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = { onRespondInvite(schedule.id, "Accepted") },
-                            colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Text("Accept invite", color = Color.White, fontWeight = FontWeight.Bold)
+                } else {
+                    if (statusText.equals("Pending", ignoreCase = true) || statusText.equals("Scheduled", ignoreCase = true)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { onRespondInvite(schedule.id, "Accepted") },
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Text("Accept invite", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { showRescheduleDialog = true },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Reschedule", color = DeepGreenDark)
+                                }
+                                OutlinedButton(
+                                    onClick = { showRejectConfirm = true },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Reject", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
                         }
+                    } else if (statusText.equals("Reschedule Requested", ignoreCase = true)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             OutlinedButton(
                                 onClick = { showRescheduleDialog = true },
@@ -493,38 +502,17 @@ fun ScheduleDetailScreen(
                                 Text("Reschedule", color = DeepGreenDark)
                             }
                             OutlinedButton(
-                                onClick = { showRejectConfirm = true },
+                                onClick = { showCancelConfirm = true },
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("Reject", color = MaterialTheme.colorScheme.error)
+                                Text("Cancel", color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
-                } else if (
-                    statusText.equals("Accepted", ignoreCase = true) ||
-                    statusText.equals("Reschedule Requested", ignoreCase = true)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { showRescheduleDialog = true },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Reschedule", color = DeepGreenDark)
-                        }
-                        OutlinedButton(
-                            onClick = { showCancelConfirm = true },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Cancel", color = MaterialTheme.colorScheme.error)
-                        }
-                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+            }
         }
     }
 
@@ -572,7 +560,7 @@ fun ScheduleDetailScreen(
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("Delete interview", fontWeight = FontWeight.Bold) },
-            text = { Text("Remove this cancelled interview from your list? This cannot be undone.") },
+            text = { Text("Remove this interview from your list? This cannot be undone.") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -611,30 +599,63 @@ fun ScheduleDetailScreen(
     if (showCompleteDialog && schedule != null) {
         AlertDialog(
             onDismissRequest = { showCompleteDialog = false },
-            title = { Text("Complete interview", fontWeight = FontWeight.Bold) },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Complete Interview", fontWeight = FontWeight.Bold)
+                    IconButton(
+                        onClick = { showCompleteDialog = false },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Cancel", tint = TextDark)
+                    }
+                }
+            },
             text = {
                 Text(
-                    "How did it go with ${schedule.seekerName.ifBlank { "the candidate" }}? " +
-                        "Choose an outcome to complete this interview."
+                    "Select the application outcome for ${schedule.seekerName.ifBlank { "this candidate" }}. " +
+                            "The interview will be marked as Completed."
                 )
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        onDecision(schedule, "Considered")
-                        showCompleteDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
-                ) { Text("Considered", color = Color.White) }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = {
-                        onDecision(schedule, "Rejected")
-                        showCompleteDialog = false
-                    },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
-                ) { Text("Rejected") }
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            onDecision(schedule, "Considered")
+                            showCompleteDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                    ) {
+                        Text("Considered", color = Color.White)
+                    }
+                    Button(
+                        onClick = {
+                            onDecision(schedule, "Offered")
+                            showCompleteDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                    ) {
+                        Text("Offered", color = Color.White)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            onDecision(schedule, "Rejected")
+                            showCompleteDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
+                    ) {
+                        Text("Rejected")
+                    }
+                }
             }
         )
     }
@@ -697,6 +718,154 @@ fun ScheduleDetailScreen(
                 TextButton(onClick = { showCancelConfirm = false }) { Text("Keep interview", color = TextDark) }
             }
         )
+    }
+}
+
+/**
+ * Second tab of [ScheduleDetailScreen]: the full job application behind this interview —
+ * contact info, education, experience, certificates, resume link and cover letter.
+ */
+@Composable
+private fun CandidateProfileSection(
+    application: JobApplication,
+    onOpenLink: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                DetailRow(icon = Icons.Default.Person, label = "Candidate", value = application.applicantName.ifBlank { "—" })
+                if (application.applicantEmail.isNotBlank()) {
+                    DetailRow(icon = Icons.Default.Email, label = "Email", value = application.applicantEmail)
+                }
+                if (application.location.isNotBlank()) {
+                    DetailRow(icon = Icons.Default.Place, label = "Location", value = application.location)
+                }
+                DetailRow(icon = Icons.Default.Business, label = "Applied for", value = application.jobTitle.ifBlank { "—" })
+            }
+        }
+
+        if (application.education.isNotBlank()) {
+            InfoCard(icon = Icons.Default.School, title = "Education", body = application.education)
+        }
+
+        if (application.experience.isNotBlank()) {
+            InfoCard(icon = Icons.Default.Work, title = "Experience", body = application.experience)
+        }
+
+        if (application.certificates.isNotBlank()) {
+            CertificatesCard(
+                icon = Icons.Default.MilitaryTech,
+                title = "Certificates",
+                rawValue = application.certificates,
+                onOpenLink = onOpenLink
+            )
+        }
+
+        if (application.coverLetter.isNotBlank()) {
+            InfoCard(icon = Icons.Default.Notes, title = "Cover letter", body = application.coverLetter)
+        }
+
+        if (application.resumeUrl.isNotBlank()) {
+            Button(
+                onClick = { onOpenLink(application.resumeUrl) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+            ) {
+                Icon(Icons.Default.Description, contentDescription = null, tint = Color.White)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("View resume", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CertificatesCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    rawValue: String,
+    onOpenLink: (String) -> Unit
+) {
+    val entries = remember(rawValue) { parseCertificateEntries(rawValue) }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, tint = SageGreenDark)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextDark)
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                entries.forEach { entry ->
+                    if (entry.url != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(SageGreenLight.copy(alpha = 0.5f))
+                                .clickable { onOpenLink(entry.url) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Description,
+                                contentDescription = null,
+                                tint = DeepGreenDark,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = entry.label,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = DeepGreenDark,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text("View", fontSize = 12.sp, color = DeepGreenDark.copy(alpha = 0.7f))
+                        }
+                    } else {
+                        Text(text = "• ${entry.label}", fontSize = 14.sp, color = TextDark.copy(alpha = 0.8f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    body: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, tint = SageGreenDark)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextDark)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = body, fontSize = 14.sp, color = TextDark.copy(alpha = 0.8f))
+        }
     }
 }
 

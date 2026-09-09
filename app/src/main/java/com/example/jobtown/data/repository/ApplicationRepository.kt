@@ -182,6 +182,47 @@ class ApplicationRepository(private val supabase: SupabaseClient) {
         }
     }
 
+    /**
+     * Marks every still-active application for [jobId] as "Rejected". Called when an
+     * employer deletes the job listing, so candidates who applied see the job is no
+     * longer available instead of being stuck showing "Pending" forever.
+     *
+     * Applications the seeker already cancelled, or that were already closed out on
+     * either side, are left untouched rather than being overwritten with "Rejected".
+     */
+    suspend fun rejectApplicationsForJob(jobId: String): Boolean = withContext(Dispatchers.IO) {
+        if (jobId.isBlank()) return@withContext false
+        try {
+            val closedStatuses = setOf(
+                "cancelled", "rejected", "deletedbyemployer", "deletedbyseeker", "deleted", "expired"
+            )
+
+            val applicationIds = supabase.postgrest["applications"]
+                .select { filter { eq("job_id", jobId) } }
+                .decodeList<JobApplication>()
+                .filter { it.status.trim().lowercase() !in closedStatuses }
+                .map { it.id }
+
+            if (applicationIds.isEmpty()) {
+                println("DEBUG_SUPABASE: No active applications to reject for job $jobId")
+                return@withContext true
+            }
+
+            supabase.postgrest["applications"].update(
+                ApplicationStatusUpdate(status = "Rejected")
+            ) {
+                filter { isIn("id", applicationIds) }
+            }
+
+            println("DEBUG_SUPABASE: Rejected ${applicationIds.size} application(s) for deleted job $jobId")
+            true
+        } catch (e: Exception) {
+            println("DEBUG_SUPABASE_ERROR (Reject applications for job): ${e.localizedMessage}")
+            e.printStackTrace()
+            false
+        }
+    }
+
     suspend fun applyForJob(application: JobApplication): Boolean = withContext(Dispatchers.IO) {
         try {
             val existing = findApplicationForJob(application.userId, application.jobId)

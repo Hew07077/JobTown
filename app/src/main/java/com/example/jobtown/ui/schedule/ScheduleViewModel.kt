@@ -43,11 +43,9 @@ class ScheduleViewModel(
             isLoading = false
         }
 
-        // Keep the list live so an employer's new/updated invite (or a seeker's
-        // accept/reject) shows up immediately for the other side.
         realtimeJob = viewModelScope.launch {
             scheduleRepository.observeSchedulesForUser(userId, isEmployer)
-                .catch { /* Initial load above already covers the non-realtime case. */ }
+                .catch { /* Initial load above covers non-realtime fallback */ }
                 .collect { updated -> schedulesList = updated }
         }
     }
@@ -84,8 +82,6 @@ class ScheduleViewModel(
             val success = scheduleRepository.createSchedule(scheduleWithId)
 
             if (success) {
-                // 1. Find the application for this user and job
-                // 2. Automatically update its status to "Scheduled"
                 if (newSchedule.jobId.isNotBlank() && newSchedule.userId.isNotBlank()) {
                     val apps = applicationRepository.getApplicationsForEmployer(currentUserId)
                     val targetApp = apps.firstOrNull {
@@ -124,6 +120,35 @@ class ScheduleViewModel(
         }
     }
 
+    fun completeScheduleAndSetApplicationStatus(
+        schedule: InterviewSchedule,
+        decision: String,
+        currentUserId: String,
+        isEmployer: Boolean,
+        onResult: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            val updatedSchedule = schedule.copy(status = "Completed")
+            val scheduleSuccess = scheduleRepository.updateSchedule(updatedSchedule)
+
+            if (scheduleSuccess && schedule.jobId.isNotBlank() && schedule.userId.isNotBlank()) {
+                val apps = applicationRepository.getApplicationsForEmployer(currentUserId)
+                val targetApp = apps.firstOrNull {
+                    it.userId == schedule.userId && it.jobId == schedule.jobId
+                }
+                targetApp?.let { app ->
+                    applicationRepository.updateApplicationStatus(app.id, decision)
+                }
+            }
+
+            if (scheduleSuccess) {
+                schedulesList = scheduleRepository.getSchedulesForUser(currentUserId, isEmployer)
+                onResult(true)
+            } else {
+                onResult(false)
+            }
+        }
+    }
 
     fun updateSchedule(
         updatedSchedule: InterviewSchedule,
@@ -144,6 +169,33 @@ class ScheduleViewModel(
         }
     }
 
+    /**
+     * Cancels every active interview schedule tied to [jobId]. Intended to be called
+     * right after an employer deletes the job listing, alongside rejecting its
+     * applications, so candidates aren't left with a live interview for a job that's
+     * gone.
+     */
+    fun cancelSchedulesForJob(jobId: String, onResult: (Boolean) -> Unit = {}) {
+        if (jobId.isBlank()) {
+            onResult(false)
+            return
+        }
+        viewModelScope.launch {
+            val success = scheduleRepository.cancelSchedulesForJob(jobId)
+            if (success) {
+                val closedStatuses = setOf("cancelled", "rejected", "completed")
+                schedulesList = schedulesList.map { schedule ->
+                    if (schedule.jobId == jobId && schedule.status.trim().lowercase() !in closedStatuses) {
+                        schedule.copy(status = "Cancelled")
+                    } else {
+                        schedule
+                    }
+                }
+            }
+            onResult(success)
+        }
+    }
+
     fun deleteSchedule(
         scheduleId: String,
         currentUserId: String,
@@ -151,7 +203,7 @@ class ScheduleViewModel(
         onResult: (Boolean) -> Unit
     ) {
         viewModelScope.launch {
-            val success = scheduleRepository.deleteSchedule(scheduleId)
+            val success = scheduleRepository.deleteSchedule(scheduleId, isEmployer)
             if (success) {
                 schedulesList = scheduleRepository.getSchedulesForUser(currentUserId, isEmployer)
                 onResult(true)

@@ -152,6 +152,34 @@ class AppliedViewModel(
         }
     }
 
+    /**
+     * Rejects every active application tied to [jobId]. Intended to be called right
+     * after an employer deletes the job listing, so applicants aren't left showing
+     * "Pending" for a job that no longer exists.
+     */
+    fun rejectApplicationsForJob(jobId: String, onResult: (Boolean) -> Unit = {}) {
+        if (jobId.isBlank()) {
+            onResult(false)
+            return
+        }
+        viewModelScope.launch {
+            val success = applicationRepository.rejectApplicationsForJob(jobId)
+            if (success) {
+                val closedStatuses = setOf(
+                    "cancelled", "rejected", "deletedbyemployer", "deletedbyseeker", "deleted", "expired"
+                )
+                _applicationsList.value = _applicationsList.value.map { app ->
+                    if (app.jobId == jobId && app.status.trim().lowercase() !in closedStatuses) {
+                        app.copy(status = "Rejected")
+                    } else {
+                        app
+                    }
+                }
+            }
+            onResult(success)
+        }
+    }
+
     fun startTracking(userId: String) {
         if (_isTrackingLive.value || userId.isBlank()) return
         _isTrackingLive.value = true

@@ -49,5 +49,11 @@ data class InterviewSchedule(
     val rescheduleReason: String = "",
 
     @SerialName("preferred_time")
-    val preferredTime: String = ""
+    val preferredTime: String = "",
+
+    @SerialName("deleted_by_employer")
+    val deletedByEmployer: Boolean = false,
+
+    @SerialName("deleted_by_jobseeker")
+    val deletedByJobseeker: Boolean = false
 )

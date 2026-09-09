@@ -205,8 +205,8 @@ fun AppNavGraph(
         val isEmployer = loggedInUser?.role == UserRole.EMPLOYER
         val matchingApp = appliedViewModel.applicationsList.firstOrNull { app ->
             app.userId == targetSchedule.userId &&
-                app.jobId == targetSchedule.jobId &&
-                !app.status.equals("Cancelled", ignoreCase = true)
+                    app.jobId == targetSchedule.jobId &&
+                    !app.status.equals("Cancelled", ignoreCase = true)
         }
 
         fun notifyDecision() {
@@ -527,9 +527,9 @@ fun AppNavGraph(
                     onScheduleInterview = { application ->
                         val alreadyScheduled = scheduleViewModel.schedulesList.any { existing ->
                             existing.userId == application.userId &&
-                                (application.jobId.isBlank() || existing.jobId == application.jobId) &&
-                                !existing.status.equals("Cancelled", ignoreCase = true) &&
-                                !existing.status.equals("Rejected", ignoreCase = true)
+                                    (application.jobId.isBlank() || existing.jobId == application.jobId) &&
+                                    !existing.status.equals("Cancelled", ignoreCase = true) &&
+                                    !existing.status.equals("Rejected", ignoreCase = true)
                         }
                         if (alreadyScheduled) {
                             snackbarMessage = "An interview is already scheduled for this candidate. Cancel it first to schedule a new one."
@@ -599,6 +599,12 @@ fun AppNavGraph(
                                 is JobDetailUiEvent.JobDeleted -> {
                                     // Remove from main HomeViewModel list and pop backstack
                                     homeViewModel.loadJobs()
+                                    // Reject any applications still pending on this job, and
+                                    // cancel any interview already scheduled for it, so
+                                    // candidates aren't left seeing "Pending" or a live
+                                    // interview for a job that no longer exists.
+                                    appliedViewModel.rejectApplicationsForJob(jobId)
+                                    scheduleViewModel.cancelSchedulesForJob(jobId)
                                     Toast.makeText(context, "Job deleted successfully", Toast.LENGTH_SHORT).show()
                                     navController.popBackStack()
                                 }
@@ -801,9 +807,9 @@ fun AppNavGraph(
                             // creating another one — cancel the existing one first instead.
                             val alreadyScheduled = scheduleViewModel.schedulesList.any { existing ->
                                 existing.userId == applicantId &&
-                                    (jobId.isBlank() || existing.jobId == jobId) &&
-                                    !existing.status.equals("Cancelled", ignoreCase = true) &&
-                                    !existing.status.equals("Rejected", ignoreCase = true)
+                                        (jobId.isBlank() || existing.jobId == jobId) &&
+                                        !existing.status.equals("Cancelled", ignoreCase = true) &&
+                                        !existing.status.equals("Rejected", ignoreCase = true)
                             }
                             if (alreadyScheduled) {
                                 snackbarMessage = "An interview is already scheduled for this candidate. Cancel it first to schedule a new one."
@@ -1105,7 +1111,7 @@ fun AppNavGraph(
                                 .filter { it.userId == r.seekerId && it.employerId == r.employerId }
                                 .filterNot {
                                     it.status.equals("Cancelled", ignoreCase = true) ||
-                                        it.status.equals("Rejected", ignoreCase = true)
+                                            it.status.equals("Rejected", ignoreCase = true)
                                 }
                                 .maxByOrNull { "${it.date}T${it.time}" }
                         }
