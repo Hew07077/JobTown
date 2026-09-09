@@ -30,6 +30,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -83,11 +84,11 @@ fun StandardJobCard(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (job.isFeatured == true) SageGreenLight else Color.White
+            containerColor = Color.White
         ),
         border = BorderStroke(
             width = 1.dp,
-            color = if (job.isFeatured == true) SageGreenDark.copy(alpha = 0.35f) else Color(0xFFE6EDE4)
+            color = Color(0xFFE6EDE4)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
@@ -141,21 +142,6 @@ fun StandardJobCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        if (job.isFeatured == true) {
-                            Surface(
-                                color = DeepGreenDark,
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFE082), modifier = Modifier.size(12.dp))
-                                    Text(text = "Featured", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                }
-                            }
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -327,10 +313,29 @@ fun PostJobScreen(
     }
 
     if (showDatePickerDialog) {
+        // Midnight UTC today - DatePicker's SelectableDates callback receives UTC
+        // millis for the start of each candidate date, so dates must be strictly
+        // greater than this to exclude today and anything in the past.
+        val todayStartUtcMillis = remember {
+            Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+        }
+
         val datePickerState = rememberDatePickerState(
             initialSelectedDateMillis = selectedExpiryMillis ?: Calendar.getInstance().apply {
                 add(Calendar.DAY_OF_YEAR, 30)
-            }.timeInMillis
+            }.timeInMillis,
+            selectableDates = remember(todayStartUtcMillis) {
+                object : SelectableDates {
+                    override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                        return utcTimeMillis > todayStartUtcMillis
+                    }
+                }
+            }
         )
 
         DatePickerDialog(
@@ -402,7 +407,6 @@ fun PostJobScreen(
                             salary = fields.formattedSalary(),
                             type = fields.type,
                             description = fields.description,
-                            isFeatured = fields.isFeatured,
                             isOkuFriendly = fields.isOkuFriendly
                         ),
                         expiryDaysText = displayExpiryDate
@@ -410,7 +414,7 @@ fun PostJobScreen(
                 },
                 expiryDateText = displayExpiryDate,
                 onExpiryDateClick = { showDatePickerDialog = true },
-                showFeaturedToggle = true,
+                isCompanyEditable = false,
                 onSubmit = {
                     isSubmitting = true
                     val userId = currentUser?.id?.trim()?.ifEmpty { null }
@@ -433,7 +437,6 @@ fun PostJobScreen(
                             description = fields.description.trim(),
                             requirements = fields.requirementsList(),
                             skills = fields.skillsList(),
-                            isFeatured = fields.isFeatured,
                             isOkuFriendly = fields.isOkuFriendly,
                             employerId = userId,
                             postedByUserId = userId,

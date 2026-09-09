@@ -237,7 +237,6 @@ fun EmployerJobDetailScreen(
         description = job.description,
         requirements = job.requirements?.filter { it.isNotBlank() }?.joinToString(", ").orEmpty(),
         skills = job.skills?.filter { it.isNotBlank() }?.joinToString(", ").orEmpty(),
-        isFeatured = job.isFeatured == true,
         isOkuFriendly = job.isOkuFriendly == true,
         useCustomLocation = savedAddresses.isEmpty() || savedAddresses.none { it.equals(job.location, ignoreCase = true) }
     )
@@ -358,7 +357,6 @@ fun EmployerJobDetailScreen(
                                     salary = fields.formattedSalary(blankFallback = job.salary),
                                     type = fields.type,
                                     description = fields.description,
-                                    isFeatured = fields.isFeatured,
                                     isOkuFriendly = fields.isOkuFriendly
                                 ),
                                 expiryDaysText = displayExpiryDate
@@ -366,7 +364,6 @@ fun EmployerJobDetailScreen(
                         },
                         expiryDateText = displayExpiryDate,
                         onExpiryDateClick = { showDatePickerDialog = true },
-                        showFeaturedToggle = true,
                         onSubmit = {
                             val salary = fields.formattedSalary(blankFallback = job.salary)
                             val updatedJob = job.copy(
@@ -379,7 +376,6 @@ fun EmployerJobDetailScreen(
                                 description = fields.description.trim(),
                                 requirements = fields.requirementsList(),
                                 skills = fields.skillsList(),
-                                isFeatured = fields.isFeatured,
                                 isOkuFriendly = fields.isOkuFriendly,
                                 expiredAt = displayIsoExpiryDate
                             )
