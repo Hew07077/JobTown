@@ -54,7 +54,7 @@ internal fun formatCertificatesForDisplay(certificates: String): Pair<String, St
 internal fun applicationStatusBackground(status: String): Color {
     return when (status.lowercase()) {
         "shortlisted", "viewed" -> SageGreenMain.copy(alpha = 0.45f)
-        "interview" -> SageGreenDark.copy(alpha = 0.2f)
+        "considered", "interview" -> Color(0xFFE3F2FD)
         "rejected", "cancelled" -> Color(0xFFFFEBEE)
         "offered", "accepted" -> Color(0xFFE8F5E9)
         else -> SageGreenMain.copy(alpha = 0.35f)
@@ -65,6 +65,7 @@ internal fun applicationStatusTextColor(status: String): Color {
     return when (status.lowercase()) {
         "rejected", "cancelled" -> Color(0xFFC62828)
         "offered", "accepted" -> Color(0xFF2E7D32)
+        "considered", "interview" -> Color(0xFF1565C0)
         else -> DeepGreenDark
     }
 }
@@ -78,8 +79,9 @@ internal fun JobApplication.isClosed(): Boolean {
 internal fun JobApplication.applicationTab(): ApplicationTab {
     return when (status.trim().lowercase()) {
         "", "pending", "applied", "submitted" -> ApplicationTab.PENDING
-        "viewed", "interview" -> ApplicationTab.VIEWED
+        "viewed" -> ApplicationTab.VIEWED
         "shortlisted" -> ApplicationTab.SHORTLISTED
+        "considered", "interview" -> ApplicationTab.CONSIDERED
         "offered", "accepted" -> ApplicationTab.OFFERED
         "rejected" -> ApplicationTab.REJECTED
         "cancelled", "expired" -> ApplicationTab.CANCELLED
@@ -96,6 +98,7 @@ internal fun JobApplication.canCancel(): Boolean {
         "submitted",
         "viewed",
         "shortlisted",
+        "considered",
         "interview",
         "offered"
     )

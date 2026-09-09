@@ -250,21 +250,41 @@ class HomeViewModel(private val repository: JobRepository) : ViewModel() {
     /**
      * Marks a job "Not interested": removes it from the recommended list right away
      * and persists the dismissal so it stays hidden for this seeker going forward.
+     *
+     * The removal from [jobsList] is optimistic. If the backend write fails (e.g. the
+     * dismissed_jobs table/policy isn't set up, or there's no connection), the job is
+     * put back and [onResult] reports the failure - otherwise the job would silently
+     * reappear next time jobs are reloaded, since getDismissedJobIds() would come back
+     * without it.
      */
-    fun dismissJob(userId: String, jobId: String) {
+    fun dismissJob(userId: String, jobId: String, onResult: (Boolean) -> Unit = {}) {
         if (jobId.isBlank()) return
+        val removedJob = jobsList.firstOrNull { it.id == jobId }
         dismissedJobIds = dismissedJobIds + jobId
         jobsList = jobsList.filterNot { it.id == jobId }
         pendingNewJobs = pendingNewJobs.filterNot { it.id == jobId }
         newListingsAvailable = pendingNewJobs.size
 
-        if (userId.isBlank()) return
+        if (userId.isBlank()) {
+            onResult(true)
+            return
+        }
         viewModelScope.launch {
-            try {
+            val success = try {
                 repository.dismissJob(userId, jobId)
             } catch (e: Exception) {
                 Log.e("HomeViewModel", "Error dismissing job", e)
+                false
             }
+            if (!success) {
+                // Persistence failed - undo the optimistic update so the UI doesn't
+                // claim the job is dismissed when it isn't.
+                dismissedJobIds = dismissedJobIds - jobId
+                if (removedJob != null && jobsList.none { it.id == jobId }) {
+                    jobsList = listOf(removedJob) + jobsList
+                }
+            }
+            onResult(success)
         }
     }
 

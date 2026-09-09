@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class ApplicationTab {
-    PENDING, VIEWED, SHORTLISTED, OFFERED, REJECTED, CANCELLED
+    PENDING, VIEWED, SHORTLISTED, CONSIDERED, OFFERED, REJECTED, CANCELLED
 }
 
 class AppliedViewModel(
@@ -35,6 +35,12 @@ class AppliedViewModel(
 
     private val _recentlyUpdatedApplicationId = MutableStateFlow<String?>(null)
     val recentlyUpdatedApplicationId: StateFlow<String?> = _recentlyUpdatedApplicationId.asStateFlow()
+
+    // True whenever an existing application's status changed (e.g. an employer
+    // moved it to Shortlisted/Considered/Offered/Rejected) since the seeker last
+    // opened "My Applications" — drives the red dot on the bottom nav tab.
+    private val _hasUnseenUpdate = MutableStateFlow(false)
+    val hasUnseenUpdate: StateFlow<Boolean> = _hasUnseenUpdate.asStateFlow()
 
     private var trackingJob: Job? = null
 
@@ -130,7 +136,11 @@ class AppliedViewModel(
                         val currentList = _applicationsList.value.toMutableList()
                         val index = currentList.indexOfFirst { it.id == updatedApp.id }
                         if (index != -1) {
+                            val previousStatus = currentList[index].status
                             currentList[index] = updatedApp
+                            if (!previousStatus.equals(updatedApp.status, ignoreCase = true)) {
+                                _hasUnseenUpdate.value = true
+                            }
                         } else {
                             currentList.add(0, updatedApp)
                         }
@@ -153,6 +163,10 @@ class AppliedViewModel(
 
     fun consumeRecentUpdate() {
         _recentlyUpdatedApplicationId.value = null
+    }
+
+    fun markUpdatesSeen() {
+        _hasUnseenUpdate.value = false
     }
 
     override fun onCleared() {

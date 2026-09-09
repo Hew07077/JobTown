@@ -80,7 +80,8 @@ fun ScheduleDetailScreen(
     onUpdateStatus: (scheduleId: String, status: String) -> Unit,
     onRespondInvite: (scheduleId: String, status: String) -> Unit,
     onUpdateSchedule: (InterviewSchedule) -> Unit = {},
-    onDeleteSchedule: (scheduleId: String) -> Unit = {}
+    onDeleteSchedule: (scheduleId: String) -> Unit = {},
+    onDecision: (schedule: InterviewSchedule, decision: String) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     var showRescheduleDialog by remember { mutableStateOf(false) }
@@ -88,6 +89,9 @@ fun ScheduleDetailScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showRejectConfirm by remember { mutableStateOf(false) }
     var showCancelConfirm by remember { mutableStateOf(false) }
+    var showOfferConfirm by remember { mutableStateOf(false) }
+    var showRejectDecisionConfirm by remember { mutableStateOf(false) }
+    var showCompleteDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = BackgroundWhite,
@@ -394,7 +398,7 @@ fun ScheduleDetailScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         OutlinedButton(
-                            onClick = { onUpdateStatus(schedule.id, "Completed") },
+                            onClick = { showCompleteDialog = true },
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Mark completed")
@@ -404,6 +408,64 @@ fun ScheduleDetailScreen(
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Cancel", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                } else if (statusText.equals("Completed", ignoreCase = true)) {
+                    val linkedApplication = applicants.firstOrNull { app ->
+                        app.userId == schedule.userId &&
+                            app.jobId == schedule.jobId &&
+                            !app.status.equals("Cancelled", ignoreCase = true)
+                    }
+                    val decidedStatus = linkedApplication?.status?.takeIf {
+                        it.equals("Offered", ignoreCase = true) || it.equals("Rejected", ignoreCase = true)
+                    }
+
+                    if (decidedStatus != null) {
+                        val isOffer = decidedStatus.equals("Offered", ignoreCase = true)
+                        AssistChip(
+                            onClick = {},
+                            label = {
+                                Text(
+                                    if (isOffer) "Offer sent to candidate" else "Candidate rejected",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = if (isOffer) SageGreenLight else Color(0xFFFFEBEE),
+                                labelColor = if (isOffer) DeepGreenDark else Color(0xFFC62828)
+                            )
+                        )
+                    } else {
+                        Text(
+                            text = "Interview complete — decide the outcome for this candidate.",
+                            fontSize = 13.sp,
+                            color = TextDark.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Button(
+                                onClick = { showOfferConfirm = true },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(50.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                            ) {
+                                Text("Send offer", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(
+                                onClick = { showRejectDecisionConfirm = true },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(50.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
+                            ) {
+                                Text("Reject", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -542,6 +604,77 @@ fun ScheduleDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRejectConfirm = false }) { Text("Back", color = TextDark) }
+            }
+        )
+    }
+
+    if (showCompleteDialog && schedule != null) {
+        AlertDialog(
+            onDismissRequest = { showCompleteDialog = false },
+            title = { Text("Complete interview", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "How did it go with ${schedule.seekerName.ifBlank { "the candidate" }}? " +
+                        "Choose an outcome to complete this interview."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDecision(schedule, "Considered")
+                        showCompleteDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                ) { Text("Considered", color = Color.White) }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        onDecision(schedule, "Rejected")
+                        showCompleteDialog = false
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
+                ) { Text("Rejected") }
+            }
+        )
+    }
+
+    if (showOfferConfirm && schedule != null) {
+        AlertDialog(
+            onDismissRequest = { showOfferConfirm = false },
+            title = { Text("Send offer", fontWeight = FontWeight.Bold) },
+            text = { Text("Mark this candidate's application as Offered? They'll see the update in their applications.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDecision(schedule, "Offered")
+                        showOfferConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                ) { Text("Confirm offer", color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOfferConfirm = false }) { Text("Back", color = TextDark) }
+            }
+        )
+    }
+
+    if (showRejectDecisionConfirm && schedule != null) {
+        AlertDialog(
+            onDismissRequest = { showRejectDecisionConfirm = false },
+            title = { Text("Reject candidate", fontWeight = FontWeight.Bold) },
+            text = { Text("Mark this candidate's application as Rejected? They'll see the update in their applications.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDecision(schedule, "Rejected")
+                        showRejectDecisionConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Confirm reject", color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRejectDecisionConfirm = false }) { Text("Back", color = TextDark) }
             }
         )
     }

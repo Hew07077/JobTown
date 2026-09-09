@@ -41,7 +41,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -102,11 +101,10 @@ fun MyAppliedScreen(
             if (!isTrackingLive) {
                 onStartTracking(userId)
             }
+            // Clear the bottom-nav red dot now that the seeker is looking at
+            // their applications.
+            viewModel.markUpdatesSeen()
         }
-    }
-
-    DisposableEffect(user?.id) {
-        onDispose { viewModel.stopTracking() }
     }
 
     Scaffold(
@@ -173,6 +171,7 @@ fun MyAppliedScreen(
                         ApplicationTab.PENDING -> "Pending"
                         ApplicationTab.VIEWED -> "Viewed"
                         ApplicationTab.SHORTLISTED -> "Shortlisted"
+                        ApplicationTab.CONSIDERED -> "Considered"
                         ApplicationTab.OFFERED -> "Offered"
                         ApplicationTab.REJECTED -> "Rejected"
                         ApplicationTab.CANCELLED -> "Cancelled"
@@ -268,6 +267,7 @@ private fun EmptyApplicationsState(selectedTab: ApplicationTab) {
                 ApplicationTab.PENDING -> "No pending applications"
                 ApplicationTab.VIEWED -> "No viewed applications"
                 ApplicationTab.SHORTLISTED -> "No shortlisted applications"
+                ApplicationTab.CONSIDERED -> "No applications under consideration"
                 ApplicationTab.OFFERED -> "No offered applications"
                 ApplicationTab.REJECTED -> "No rejected applications"
                 ApplicationTab.CANCELLED -> "No cancelled applications"
@@ -282,6 +282,7 @@ private fun EmptyApplicationsState(selectedTab: ApplicationTab) {
                 ApplicationTab.PENDING -> "Jobs you apply for will show up here until the employer opens them."
                 ApplicationTab.VIEWED -> "Applications the employer has opened will appear here."
                 ApplicationTab.SHORTLISTED -> "Applications the employer has shortlisted will appear here."
+                ApplicationTab.CONSIDERED -> "Applications moved here after an interview, while the employer decides on an offer."
                 ApplicationTab.OFFERED -> "Applications you've been offered will appear here."
                 ApplicationTab.REJECTED -> "Applications the employer has rejected will appear here."
                 ApplicationTab.CANCELLED -> "Withdrawn or expired applications will appear in this list."

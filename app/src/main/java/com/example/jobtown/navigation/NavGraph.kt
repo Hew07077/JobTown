@@ -26,6 +26,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.jobtown.Screen
 import com.example.jobtown.data.model.ChatRoom
+import com.example.jobtown.data.model.InterviewSchedule
 import com.example.jobtown.data.model.User
 import com.example.jobtown.data.model.UserRole
 import com.example.jobtown.data.model.NotificationType
@@ -154,6 +155,10 @@ fun AppNavGraph(
                 appliedViewModel.loadEmployerApplications(user.id)
             } else {
                 appliedViewModel.loadApplications(user.id)
+                // Keep this running for the whole session (not just while "My
+                // Applications" is open) so the bottom-nav red dot can reflect a
+                // status change even if the seeker is elsewhere in the app.
+                appliedViewModel.startTracking(user.id)
             }
             chatViewModel.loadUserChatRooms(user.id)
             scheduleViewModel.loadSchedules(user.id, user.role == UserRole.EMPLOYER)
@@ -165,6 +170,102 @@ fun AppNavGraph(
 
     val totalUnreadChatCount = remember(chatRoomsList) {
         chatRoomsList.sumOf { it.unreadCount }
+    }
+
+    // Red dot on the Schedule tab: for a job seeker, a company has scheduled (or
+    // rescheduled) an interview that's waiting on a response. For an employer, a
+    // candidate has asked to reschedule and needs a decision.
+    val isEmployerUserForNav = loggedInUser?.role == UserRole.EMPLOYER
+    val hasScheduleAlert = remember(scheduleViewModel.schedulesList, isEmployerUserForNav) {
+        if (isEmployerUserForNav) {
+            scheduleViewModel.schedulesList.any { it.status.equals("Reschedule Requested", ignoreCase = true) }
+        } else {
+            scheduleViewModel.schedulesList.any {
+                it.status.equals("Pending", ignoreCase = true) || it.status.equals("Scheduled", ignoreCase = true)
+            }
+        }
+    }
+
+    // Red dot on the Applied tab: a job seeker's application status changed
+    // (e.g. moved to Shortlisted/Considered/Offered/Rejected) since they last
+    // opened "My Applications".
+    val hasApplicationAlert by appliedViewModel.hasUnseenUpdate.collectAsStateWithLifecycle()
+
+    // Shared by both the interview list and interview detail screens.
+    // - "Rejected" rejects the candidate outright and removes the interview card,
+    //   mirroring how a seeker's "Not interested" dismissal removes a job from their list.
+    // - "Considered" is what "Complete interview" now sends: it just marks the
+    //   interview Completed and moves the application into the Considered list —
+    //   the actual offer/reject call happens afterwards from there (or from the
+    //   schedule detail screen's post-completion decision buttons), since Offered
+    //   is purely an application-status decision, not a schedule status.
+    // - Any other decision (e.g. "Offered") is that later hire decision.
+    fun handleInterviewDecision(targetSchedule: InterviewSchedule, decision: String) {
+        val currentUserId = loggedInUser?.id.orEmpty()
+        val isEmployer = loggedInUser?.role == UserRole.EMPLOYER
+        val matchingApp = appliedViewModel.applicationsList.firstOrNull { app ->
+            app.userId == targetSchedule.userId &&
+                app.jobId == targetSchedule.jobId &&
+                !app.status.equals("Cancelled", ignoreCase = true)
+        }
+
+        fun notifyDecision() {
+            if (matchingApp == null) return
+            coroutineScope.launch {
+                val company = loggedInUser?.companyName
+                    ?.ifBlank { loggedInUser?.name }
+                    .orEmpty()
+                    .ifBlank { "A company" }
+                NotificationRepository.notifyUser(
+                    userId = matchingApp.userId,
+                    title = "Application update",
+                    body = "$company updated your application for ${matchingApp.jobTitle} to $decision.",
+                    type = NotificationType.APPLICATION_STATUS,
+                    relatedId = matchingApp.id
+                )
+            }
+        }
+
+        if (decision.equals("Rejected", ignoreCase = true)) {
+            scheduleViewModel.deleteSchedule(targetSchedule.id, currentUserId, isEmployer) { deleted ->
+                if (matchingApp != null) {
+                    appliedViewModel.updateApplicationStatus(matchingApp.id, "Rejected") { updated ->
+                        if (updated) notifyDecision()
+                    }
+                }
+                snackbarMessage = if (deleted) {
+                    "Candidate rejected and interview removed from your list."
+                } else {
+                    "Couldn't remove the interview card. Try again."
+                }
+            }
+        } else if (decision.equals("Considered", ignoreCase = true)) {
+            scheduleViewModel.updateScheduleStatus(targetSchedule.id, "Completed", currentUserId, isEmployer) { completedOk ->
+                if (matchingApp != null) {
+                    appliedViewModel.updateApplicationStatus(matchingApp.id, "Considered") { updated ->
+                        if (updated) notifyDecision()
+                    }
+                }
+                snackbarMessage = if (completedOk) {
+                    "Interview marked complete — candidate moved to Considered."
+                } else {
+                    "Failed to complete the interview."
+                }
+            }
+        } else {
+            scheduleViewModel.updateScheduleStatus(targetSchedule.id, "Completed", currentUserId, isEmployer) { completedOk ->
+                if (matchingApp != null) {
+                    appliedViewModel.updateApplicationStatus(matchingApp.id, decision) { updated ->
+                        if (updated) notifyDecision()
+                    }
+                }
+                snackbarMessage = if (completedOk) {
+                    "Interview completed — offer sent to candidate."
+                } else {
+                    "Failed to complete the interview."
+                }
+            }
+        }
     }
 
     fun startOrOpenChat(
@@ -254,7 +355,9 @@ fun AppNavGraph(
                 JobTownBottomNavigationBar(
                     navController = navController,
                     currentUser = loggedInUser,
-                    unreadChatCount = totalUnreadChatCount
+                    unreadChatCount = totalUnreadChatCount,
+                    hasScheduleAlert = hasScheduleAlert,
+                    hasApplicationAlert = hasApplicationAlert
                 )
             }
         }
@@ -521,6 +624,7 @@ fun AppNavGraph(
             }
 
             composable("apply_job") {
+                val context = LocalContext.current
                 val selectedJob = homeViewModel.selectedJob
                 val isEmployer = loggedInUser?.role == UserRole.EMPLOYER
                 if (selectedJob != null && !isEmployer) {
@@ -564,7 +668,15 @@ fun AppNavGraph(
                         },
                         onNotInterested = {
                             loggedInUser?.id?.let { uid ->
-                                homeViewModel.dismissJob(uid, selectedJob.id)
+                                homeViewModel.dismissJob(uid, selectedJob.id) { success ->
+                                    if (!success) {
+                                        Toast.makeText(
+                                            context,
+                                            "Couldn't save that - it may show up again later. Check your connection and try again.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
                             }
                         }
                     )
@@ -851,7 +963,10 @@ fun AppNavGraph(
                         }
                     },
                     onClearPrefill = { scheduleViewModel.clearPrefill() },
-                    onProfileClick = { navController.navigate("profile") }
+                    onProfileClick = { navController.navigate("profile") },
+                    onCompleteDecision = { targetSchedule, decision ->
+                        handleInterviewDecision(targetSchedule, decision)
+                    }
                 )
             }
 
@@ -863,6 +978,12 @@ fun AppNavGraph(
                 val currentUserId = loggedInUser?.id.orEmpty()
                 val isEmployer = loggedInUser?.role == UserRole.EMPLOYER
                 val schedule = scheduleViewModel.schedulesList.find { it.id == scheduleId }
+
+                LaunchedEffect(scheduleId, currentUserId) {
+                    if (isEmployer && currentUserId.isNotBlank() && appliedViewModel.applicationsList.isEmpty()) {
+                        appliedViewModel.loadEmployerApplications(currentUserId)
+                    }
+                }
 
                 ScheduleDetailScreen(
                     schedule = schedule,
@@ -916,6 +1037,12 @@ fun AppNavGraph(
                         scheduleViewModel.deleteSchedule(targetScheduleId, currentUserId, isEmployer) { success ->
                             snackbarMessage = if (success) "Interview removed." else "Couldn't delete this interview. Try again."
                             if (success) navController.popBackStack()
+                        }
+                    },
+                    onDecision = { targetSchedule, decision ->
+                        handleInterviewDecision(targetSchedule, decision)
+                        if (decision.equals("Rejected", ignoreCase = true)) {
+                            navController.popBackStack()
                         }
                     }
                 )

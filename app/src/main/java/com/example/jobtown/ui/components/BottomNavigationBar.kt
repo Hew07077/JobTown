@@ -37,14 +37,17 @@ data class BottomNavItem(
     val route: String,
     val title: String,
     val icon: ImageVector,
-    val badgeCount: Int = 0
+    val badgeCount: Int = 0,
+    val showDot: Boolean = false
 )
 
 @Composable
 fun JobTownBottomNavigationBar(
     navController: NavController,
     currentUser: User?,
-    unreadChatCount: Int = 0
+    unreadChatCount: Int = 0,
+    hasScheduleAlert: Boolean = false,
+    hasApplicationAlert: Boolean = false
 ) {
     val isEmployer = currentUser?.role == UserRole.EMPLOYER
     val applicationsTabRoute = if (isEmployer) Screen.ManageJobs.route else Screen.Applied.route
@@ -58,12 +61,14 @@ fun JobTownBottomNavigationBar(
         BottomNavItem(
             route = applicationsTabRoute,
             title = if (isEmployer) "Manage" else "Applied",
-            icon = Icons.Default.AssignmentTurnedIn
+            icon = Icons.Default.AssignmentTurnedIn,
+            showDot = hasApplicationAlert
         ),
         BottomNavItem(
             route = Screen.Schedule.route,
             title = "Schedule",
-            icon = Icons.Default.Event
+            icon = Icons.Default.Event,
+            showDot = hasScheduleAlert
         ),
         BottomNavItem(
             route = Screen.Chat.route,
@@ -126,6 +131,20 @@ fun JobTownBottomNavigationBar(
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = item.icon,
+                                        contentDescription = item.title,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            } else if (item.showDot) {
+                                // Plain red dot (no count) — signals there's something
+                                // new to look at without implying an exact number.
+                                BadgedBox(
+                                    badge = {
+                                        Badge(containerColor = Color(0xFFD32F2F))
                                     }
                                 ) {
                                     Icon(

@@ -74,7 +74,8 @@ fun ScheduleScreen(
     onDeleteSchedule: (scheduleId: String) -> Unit = {},
     onClearPrefill: () -> Unit = {},
     applicants: List<JobApplication> = emptyList(),
-    onProfileClick: () -> Unit = {}
+    onProfileClick: () -> Unit = {},
+    onCompleteDecision: (schedule: InterviewSchedule, decision: String) -> Unit = { _, _ -> }
 ) {
     val safeSchedules = schedules ?: emptyList()
     var showCreateDialog by remember(prefill) { mutableStateOf(isEmployer && !prefill.isEmpty) }
@@ -85,15 +86,33 @@ fun ScheduleScreen(
     var cancelTarget by remember { mutableStateOf<InterviewSchedule?>(null) }
     var editTarget by remember { mutableStateOf<InterviewSchedule?>(null) }
     var deleteTarget by remember { mutableStateOf<InterviewSchedule?>(null) }
+    var completeTarget by remember { mutableStateOf<InterviewSchedule?>(null) }
 
-    val filteredSchedules = remember(safeSchedules, selectedFilterTab) {
+    val filteredSchedules = remember(safeSchedules, selectedFilterTab, applicants) {
+        fun matchedAppStatus(schedule: InterviewSchedule): String? =
+            applicants.firstOrNull { app ->
+                app.userId == schedule.userId &&
+                    app.jobId == schedule.jobId &&
+                    !app.status.equals("Cancelled", ignoreCase = true)
+            }?.status
+
+        // A completed interview sits in "Considered" until the employer has decided
+        // an outcome (Offered) for the linked application - once decided, it moves to
+        // "Completed". If no matching application is found, default to Considered so
+        // it isn't lost from view.
+        fun isAwaitingDecision(schedule: InterviewSchedule): Boolean {
+            val status = matchedAppStatus(schedule) ?: return true
+            return status.equals("Considered", ignoreCase = true)
+        }
+
         when (selectedFilterTab) {
             1 -> safeSchedules.filter { it.status.equals("Pending", ignoreCase = true) || it.status.equals("Scheduled", ignoreCase = true) }
             2 -> safeSchedules.filter { it.status.equals("Accepted", ignoreCase = true) }
             3 -> safeSchedules.filter { it.status.equals("Reschedule Requested", ignoreCase = true) }
-            4 -> safeSchedules.filter { it.status.equals("Completed", ignoreCase = true) }
-            5 -> safeSchedules.filter { it.status.equals("Cancelled", ignoreCase = true) }
-            6 -> safeSchedules.filter { it.status.equals("Rejected", ignoreCase = true) }
+            4 -> safeSchedules.filter { it.status.equals("Completed", ignoreCase = true) && isAwaitingDecision(it) }
+            5 -> safeSchedules.filter { it.status.equals("Completed", ignoreCase = true) && !isAwaitingDecision(it) }
+            6 -> safeSchedules.filter { it.status.equals("Cancelled", ignoreCase = true) }
+            7 -> safeSchedules.filter { it.status.equals("Rejected", ignoreCase = true) }
             else -> safeSchedules
         }
     }
@@ -147,7 +166,7 @@ fun ScheduleScreen(
                     indicator = {},
                     divider = {}
                 ) {
-                    val tabs = listOf("All", "Pending", "Accepted", "Rescheduled", "Completed", "Cancelled", "Rejected")
+                    val tabs = listOf("All", "Pending", "Accepted", "Rescheduled", "Considered", "Completed", "Cancelled", "Rejected")
                     tabs.forEachIndexed { index, title ->
                         Tab(
                             selected = selectedFilterTab == index,
@@ -230,7 +249,8 @@ fun ScheduleScreen(
                                 onRejectConfirm = { rejectTarget = schedule },
                                 onCancelConfirm = { cancelTarget = schedule },
                                 onEditSchedule = { editTarget = schedule },
-                                onDeleteSchedule = { deleteTarget = schedule }
+                                onDeleteSchedule = { deleteTarget = schedule },
+                                onCompleteClick = { completeTarget = schedule }
                             )
                         }
                     }
@@ -250,6 +270,37 @@ fun ScheduleScreen(
                 )
                 onUpdateSchedule(updated)
                 rescheduleTarget = null
+            }
+        )
+    }
+
+    completeTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { completeTarget = null },
+            title = { Text("Complete interview", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "How did it go with ${target.seekerName.ifBlank { "the candidate" }}? " +
+                        "Choose an outcome to complete this interview."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onCompleteDecision(target, "Considered")
+                        completeTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                ) { Text("Considered", color = Color.White) }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        onCompleteDecision(target, "Rejected")
+                        completeTarget = null
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
+                ) { Text("Rejected") }
             }
         )
     }
@@ -370,7 +421,8 @@ private fun ScheduleCard(
     onRejectConfirm: () -> Unit,
     onCancelConfirm: () -> Unit,
     onEditSchedule: () -> Unit,
-    onDeleteSchedule: () -> Unit
+    onDeleteSchedule: () -> Unit,
+    onCompleteClick: () -> Unit
 ) {
     val context = LocalContext.current
     val statusText = schedule.status.ifBlank { "Pending" }
@@ -557,7 +609,7 @@ private fun ScheduleCard(
                         }
                     }
                     if (statusText.equals("Pending", ignoreCase = true) || statusText.equals("Accepted", ignoreCase = true)) {
-                        OutlinedButton(onClick = { onUpdateStatus(schedule.id, "Completed") }) {
+                        OutlinedButton(onClick = onCompleteClick) {
                             Text("Complete", fontSize = 12.sp)
                         }
                     }

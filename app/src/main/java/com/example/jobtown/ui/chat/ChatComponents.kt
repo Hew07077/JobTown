@@ -356,8 +356,11 @@ fun MessageBubble(
                             "😍", "👎", "😡", "🤔", "✅", "🙌"
                         )
                         // Recently-used custom picks surface first so they act like a
-                        // personal quick-list, capped so the sheet doesn't grow unbounded.
-                        val quickEmojis = recentCustomEmojis.filterNot { it in baseEmojis }.take(10) + baseEmojis
+                        // personal quick-list. The whole quick-react row is capped at
+                        // 10 emoji total (not counting the "add your own" control below).
+                        val quickEmojis = (recentCustomEmojis.filterNot { it in baseEmojis } + baseEmojis)
+                            .distinct()
+                            .take(10)
 
                         quickEmojis.forEach { emoji ->
                             Text(

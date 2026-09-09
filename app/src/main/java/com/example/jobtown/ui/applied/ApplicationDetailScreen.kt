@@ -344,11 +344,15 @@ fun ApplicationDetailScreen(
                         Spacer(modifier = Modifier.height(10.dp))
 
                         // Once an offer has been made, the employer can no longer move the
-                        // application back to Shortlisted/Offered — Reject is the only
-                        // status change left available (e.g. if the offer falls through).
+                        // application back to earlier stages — Reject is the only status
+                        // change left available (e.g. if the offer falls through).
                         val isOffered = application.status.equals("Offered", ignoreCase = true)
+                        val isConsidered = application.status.equals("Considered", ignoreCase = true) ||
+                                application.status.equals("Interview", ignoreCase = true)
 
-                        if (!isOffered) {
+                        if (!isOffered && !isConsidered) {
+                            // Pre-interview stage: shortlist, or move to Considered once
+                            // the candidate has been interviewed.
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -365,15 +369,32 @@ fun ApplicationDetailScreen(
                                 }
 
                                 Button(
-                                    onClick = { onStatusChange(application.id, "Offered") },
+                                    onClick = { onStatusChange(application.id, "Considered") },
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(48.dp),
                                     shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
                                 ) {
-                                    Text("Offer", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Interviewed", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                                 }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+
+                        if (isConsidered) {
+                            // Post-interview stage: the only forward move is an offer;
+                            // Reject (below) remains the other option.
+                            Button(
+                                onClick = { onStatusChange(application.id, "Offered") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                            ) {
+                                Text("Offer", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
