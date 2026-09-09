@@ -53,7 +53,7 @@ internal fun formatCertificatesForDisplay(certificates: String): Pair<String, St
 
 internal fun applicationStatusBackground(status: String): Color {
     return when (status.lowercase()) {
-        "shortlisted", "viewed" -> SageGreenMain.copy(alpha = 0.45f)
+        "scheduled", "interview scheduled", "viewed" -> SageGreenMain.copy(alpha = 0.45f)
         "considered", "interview" -> Color(0xFFE3F2FD)
         "rejected", "cancelled" -> Color(0xFFFFEBEE)
         "offered", "accepted" -> Color(0xFFE8F5E9)
@@ -80,7 +80,7 @@ internal fun JobApplication.applicationTab(): ApplicationTab {
     return when (status.trim().lowercase()) {
         "", "pending", "applied", "submitted" -> ApplicationTab.PENDING
         "viewed" -> ApplicationTab.VIEWED
-        "shortlisted" -> ApplicationTab.SHORTLISTED
+        "scheduled", "interview scheduled" -> ApplicationTab.SCHEDULED
         "considered", "interview" -> ApplicationTab.CONSIDERED
         "offered", "accepted" -> ApplicationTab.OFFERED
         "rejected" -> ApplicationTab.REJECTED
@@ -88,6 +88,7 @@ internal fun JobApplication.applicationTab(): ApplicationTab {
         else -> ApplicationTab.PENDING
     }
 }
+
 
 internal fun JobApplication.canCancel(): Boolean {
     val normalized = status.trim().lowercase()

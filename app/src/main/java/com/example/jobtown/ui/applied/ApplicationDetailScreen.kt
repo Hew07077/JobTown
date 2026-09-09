@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Event
@@ -297,119 +298,120 @@ fun ApplicationDetailScreen(
                         AppliedSectionTitle("Actions")
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Button(
-                                onClick = { onChatClick(application.userId, application.applicantName) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Chat", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            }
+                        val isRejected = application.status.equals("Rejected", ignoreCase = true)
+                        val isOffered = application.status.equals("Offered", ignoreCase = true)
 
+                        if (isRejected) {
                             OutlinedButton(
                                 onClick = {
-                                    onScheduleClick(
-                                        application.id,
-                                        application.userId,
-                                        application.applicantName,
-                                        application.jobTitle,
-                                        application.companyName
-                                    )
+                                    onStatusChange(application.id, "Deleted")
+                                    onBackClick()
                                 },
                                 modifier = Modifier
-                                    .weight(1f)
+                                    .fillMaxWidth()
                                     .height(48.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, DeepGreenDark)
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
+                                border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.5f))
                             ) {
                                 Icon(
-                                    Icons.Default.Event,
+                                    imageVector = Icons.Default.Delete,
                                     contentDescription = null,
-                                    tint = DeepGreenDark,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Schedule", fontSize = 14.sp, color = DeepGreenDark, fontWeight = FontWeight.SemiBold)
+                                Text("Delete from list", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Once an offer has been made, the employer can no longer move the
-                        // application back to earlier stages — Reject is the only status
-                        // change left available (e.g. if the offer falls through).
-                        val isOffered = application.status.equals("Offered", ignoreCase = true)
-                        val isConsidered = application.status.equals("Considered", ignoreCase = true) ||
-                                application.status.equals("Interview", ignoreCase = true)
-
-                        if (!isOffered && !isConsidered) {
-                            // Pre-interview stage: shortlist, or move to Considered once
-                            // the candidate has been interviewed.
+                        } else {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
+                                Button(
+                                    onClick = { onChatClick(application.userId, application.applicantName) },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Chat", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                }
+
                                 OutlinedButton(
-                                    onClick = { onStatusChange(application.id, "Shortlisted") },
+                                    onClick = {
+                                        onScheduleClick(
+                                            application.id,
+                                            application.userId,
+                                            application.applicantName,
+                                            application.jobTitle,
+                                            application.companyName
+                                        )
+                                    },
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(48.dp),
                                     shape = RoundedCornerShape(12.dp),
                                     border = BorderStroke(1.dp, DeepGreenDark)
                                 ) {
-                                    Text("Shortlist", color = DeepGreenDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                }
-
-                                Button(
-                                    onClick = { onStatusChange(application.id, "Considered") },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
-                                ) {
-                                    Text("Interviewed", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    Icon(
+                                        Icons.Default.Event,
+                                        contentDescription = null,
+                                        tint = DeepGreenDark,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Schedule", fontSize = 14.sp, color = DeepGreenDark, fontWeight = FontWeight.SemiBold)
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
-                        }
 
-                        if (isConsidered) {
-                            // Post-interview stage: the only forward move is an offer;
-                            // Reject (below) remains the other option.
-                            Button(
-                                onClick = { onStatusChange(application.id, "Offered") },
+                            // In ApplicationDetailScreen, update the status buttons block:
+                            if (!isOffered) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { onStatusChange(application.id, "Scheduled") },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(48.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(1.dp, DeepGreenDark)
+                                    ) {
+                                        Text("Schedule", color = DeepGreenDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+
+                                    Button(
+                                        onClick = { onStatusChange(application.id, "Offered") },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(48.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                                    ) {
+                                        Text("Offer", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                            }
+
+                            OutlinedButton(
+                                onClick = { onStatusChange(application.id, "Rejected") },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
+                                border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.5f))
                             ) {
-                                Text("Offer", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Reject", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
-
-                        OutlinedButton(
-                            onClick = { onStatusChange(application.id, "Rejected") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
-                            border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.5f))
-                        ) {
-                            Text("Reject", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
