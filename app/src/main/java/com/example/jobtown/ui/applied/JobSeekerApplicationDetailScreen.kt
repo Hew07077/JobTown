@@ -276,14 +276,22 @@ fun JobseekerApplicationDetailScreen(
                         AppliedSectionTitle("Actions")
                         Spacer(modifier = Modifier.height(12.dp))
 
+                        // ... inside JobseekerApplicationDetailScreen ...
                         val isCancelledOrRejected = application.status.equals("Cancelled", ignoreCase = true) ||
-                                application.status.equals("Rejected", ignoreCase = true)
+                                application.status.equals("Rejected", ignoreCase = true) ||
+                                application.status.equals("DeletedByEmployer", ignoreCase = true)
+
+                        // Inside JobseekerApplicationDetailScreen_8.kt (under isCancelledOrRejected block):
 
                         if (isCancelledOrRejected) {
                             OutlinedButton(
                                 onClick = {
-                                    onCancelApplication(application.copy(status = "Deleted"))
-                                    onBackClick()
+                                    viewModel.deleteApplicationForRole(
+                                        applicationId = application.id,
+                                        isEmployer = false
+                                    ) {
+                                        onBackClick()
+                                    }
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -342,6 +350,7 @@ fun JobseekerApplicationDetailScreen(
                                     )
                                 }
                             }
+
                         }
                     }
                 }

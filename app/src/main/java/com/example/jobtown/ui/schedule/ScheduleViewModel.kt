@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.jobtown.data.model.InterviewSchedule
+import com.example.jobtown.data.repository.ApplicationRepository
 import com.example.jobtown.data.repository.ScheduleRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.catch
@@ -13,7 +14,8 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 class ScheduleViewModel(
-    private val scheduleRepository: ScheduleRepository
+    private val scheduleRepository: ScheduleRepository,
+    private val applicationRepository: ApplicationRepository
 ) : ViewModel() {
 
     var schedulesList by mutableStateOf<List<InterviewSchedule>>(emptyList())
@@ -64,17 +66,14 @@ class ScheduleViewModel(
         isEmployer: Boolean,
         onResult: (Boolean, String?) -> Unit
     ) {
-        // Guard against scheduling the same candidate for the same job twice —
-        // enforced here so it applies no matter which screen/button started
-        // the creation flow.
         val duplicate = schedulesList.any { existing ->
             existing.userId == newSchedule.userId &&
-                (newSchedule.jobId.isBlank() || existing.jobId == newSchedule.jobId) &&
-                !existing.status.equals("Cancelled", ignoreCase = true) &&
-                !existing.status.equals("Rejected", ignoreCase = true)
+                    (newSchedule.jobId.isBlank() || existing.jobId == newSchedule.jobId) &&
+                    !existing.status.equals("Cancelled", ignoreCase = true) &&
+                    !existing.status.equals("Rejected", ignoreCase = true)
         }
         if (duplicate) {
-            onResult(false, "An interview is already scheduled for this candidate. Cancel it first to schedule a new one.")
+            onResult(false, "An interview is already scheduled for this candidate.")
             return
         }
 
@@ -82,10 +81,21 @@ class ScheduleViewModel(
             isSaving = true
             val scheduleWithId = newSchedule.copy(id = UUID.randomUUID().toString())
 
-            // Push to Supabase backend database
             val success = scheduleRepository.createSchedule(scheduleWithId)
 
             if (success) {
+                // 1. Find the application for this user and job
+                // 2. Automatically update its status to "Scheduled"
+                if (newSchedule.jobId.isNotBlank() && newSchedule.userId.isNotBlank()) {
+                    val apps = applicationRepository.getApplicationsForEmployer(currentUserId)
+                    val targetApp = apps.firstOrNull {
+                        it.userId == newSchedule.userId && it.jobId == newSchedule.jobId
+                    }
+                    targetApp?.let { app ->
+                        applicationRepository.updateApplicationStatus(app.id, "Scheduled")
+                    }
+                }
+
                 schedulesList = scheduleRepository.getSchedulesForUser(currentUserId, isEmployer)
                 clearPrefill()
                 onResult(true, "Interview successfully scheduled and sent to candidate!")
@@ -113,6 +123,7 @@ class ScheduleViewModel(
             }
         }
     }
+
 
     fun updateSchedule(
         updatedSchedule: InterviewSchedule,

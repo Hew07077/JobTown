@@ -51,11 +51,13 @@ internal fun formatCertificatesForDisplay(certificates: String): Pair<String, St
     return displayText to firstUrl
 }
 
+// In ApplicationUi_8.kt
+
 internal fun applicationStatusBackground(status: String): Color {
     return when (status.lowercase()) {
         "scheduled", "interview scheduled", "viewed" -> SageGreenMain.copy(alpha = 0.45f)
         "considered", "interview" -> Color(0xFFE3F2FD)
-        "rejected", "cancelled" -> Color(0xFFFFEBEE)
+        "rejected", "cancelled", "deletedbyemployer", "deletedbyseeker", "deleted" -> Color(0xFFFFEBEE)
         "offered", "accepted" -> Color(0xFFE8F5E9)
         else -> SageGreenMain.copy(alpha = 0.35f)
     }
@@ -63,7 +65,7 @@ internal fun applicationStatusBackground(status: String): Color {
 
 internal fun applicationStatusTextColor(status: String): Color {
     return when (status.lowercase()) {
-        "rejected", "cancelled" -> Color(0xFFC62828)
+        "rejected", "cancelled", "deletedbyemployer", "deletedbyseeker", "deleted" -> Color(0xFFC62828)
         "offered", "accepted" -> Color(0xFF2E7D32)
         "considered", "interview" -> Color(0xFF1565C0)
         else -> DeepGreenDark

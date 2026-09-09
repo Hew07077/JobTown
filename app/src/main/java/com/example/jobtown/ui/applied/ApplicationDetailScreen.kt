@@ -226,7 +226,6 @@ fun ApplicationDetailScreen(
 
                         AppliedDivider()
 
-                        // Certificate with Tap to Open feature
                         val certVal: String = application.certificates.ifBlank { "None attached" }
                         val (certDisplayText, certUrl) = formatCertificatesForDisplay(certVal)
 
@@ -255,7 +254,6 @@ fun ApplicationDetailScreen(
 
                         AppliedDivider()
 
-                        // Resume Section
                         val hasResume = application.resumeUrl.isNotBlank()
                         val resumeDisplayName = if (hasResume) "Attached Resume Document (PDF)" else "No resume attached"
 
@@ -302,10 +300,12 @@ fun ApplicationDetailScreen(
                         val isOffered = application.status.equals("Offered", ignoreCase = true)
 
                         if (isRejected) {
+                            // Status is REJECTED: Hide Chat & Schedule controls, display ONLY "Delete from list"
                             OutlinedButton(
                                 onClick = {
-                                    onStatusChange(application.id, "Deleted")
-                                    onBackClick()
+                                    viewModel.deleteApplicationForRole(application.id, isEmployer = true) {
+                                        onBackClick()
+                                    }
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -342,6 +342,7 @@ fun ApplicationDetailScreen(
 
                                 OutlinedButton(
                                     onClick = {
+                                        onStatusChange(application.id, "Scheduled")
                                         onScheduleClick(
                                             application.id,
                                             application.userId,
@@ -369,32 +370,39 @@ fun ApplicationDetailScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // In ApplicationDetailScreen, update the status buttons block:
                             if (!isOffered) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
+                                    // ApplicationDetailScreen.kt
                                     OutlinedButton(
-                                        onClick = { onStatusChange(application.id, "Scheduled") },
+                                        onClick = {
+                                            // Update application status to "Scheduled"
+                                            onStatusChange(application.id, "Scheduled")
+
+                                            onScheduleClick(
+                                                application.id,
+                                                application.userId,
+                                                application.applicantName,
+                                                application.jobTitle,
+                                                application.companyName
+                                            )
+                                        },
                                         modifier = Modifier
                                             .weight(1f)
                                             .height(48.dp),
                                         shape = RoundedCornerShape(12.dp),
                                         border = BorderStroke(1.dp, DeepGreenDark)
                                     ) {
-                                        Text("Schedule", color = DeepGreenDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                    }
-
-                                    Button(
-                                        onClick = { onStatusChange(application.id, "Offered") },
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(48.dp),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                                    ) {
-                                        Text("Offer", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                        Icon(
+                                            Icons.Default.Event,
+                                            contentDescription = null,
+                                            tint = DeepGreenDark,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Schedule", fontSize = 14.sp, color = DeepGreenDark, fontWeight = FontWeight.Bold)
                                     }
                                 }
 

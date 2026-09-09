@@ -109,7 +109,6 @@ fun InterviewEditorScreen(
 
     val initialRange = remember(existing?.time) { parseTimeRange(existing?.time.orEmpty()) }
 
-    // Parse candidate preferred time string if present ("yyyy-MM-dd at hh:mm a")
     val preferredParsed = remember(existing?.preferredTime) {
         val pref = existing?.preferredTime.orEmpty().trim()
         if (pref.contains(" at ")) {
@@ -132,7 +131,6 @@ fun InterviewEditorScreen(
         mutableStateOf(preferredParsed.second ?: initialRange.first)
     }
 
-    // Auto-set End Time to Preferred Start Time + 1 Hour (or fall back to initial range)
     var endTime by remember {
         mutableStateOf(
             preferredParsed.second?.let { addOneHour(it) }
@@ -242,7 +240,6 @@ fun InterviewEditorScreen(
                                 return@Button
                             }
 
-                            // --- TIME VALIDATION ---
                             val startClock = parseClock(startTime)
                             val endClock = parseClock(endTime)
                             val startMinutes = startClock.first * 60 + startClock.second
@@ -281,7 +278,7 @@ fun InterviewEditorScreen(
                                     date = date.trim(),
                                     time = formatTimeRange(startTime, endTime),
                                     locationOrLink = encodeMeeting(meetingKind, meetingValue),
-                                    status = "Pending",
+                                    status = "Scheduled",
                                     notes = notes.trim(),
                                     rescheduleReason = if (isEdit) "" else base.rescheduleReason,
                                     preferredTime = if (isEdit) "" else base.preferredTime

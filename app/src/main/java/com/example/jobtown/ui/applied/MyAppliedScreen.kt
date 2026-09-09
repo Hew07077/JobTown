@@ -1,5 +1,6 @@
 package com.example.jobtown.ui.applied
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
@@ -33,6 +35,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
@@ -88,11 +91,13 @@ fun MyAppliedScreen(
     val selectedTab by viewModel.selectedTab.collectAsState()
     val applicationsList by viewModel.applicationsListState.collectAsState()
     val applications = remember(applicationsList, selectedTab) {
-        viewModel.getFilteredApplications(selectedTab)
+        viewModel.getFilteredApplications(selectedTab, isEmployer = false)
     }
 
     val tabCounts = remember(applicationsList) {
-        ApplicationTab.entries.associateWith { tab -> viewModel.getFilteredApplications(tab).size }
+        ApplicationTab.entries.associateWith { tab ->
+            viewModel.getFilteredApplications(tab, isEmployer = false).size
+        }
     }
 
     LaunchedEffect(user?.id) {
@@ -132,7 +137,8 @@ fun MyAppliedScreen(
                                 model = logoUrl,
                                 contentDescription = "Profile",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier
+                                    .fillMaxSize()
                                     .clip(CircleShape)
                                     .background(SageGreenLight)
                             )
@@ -227,6 +233,12 @@ fun MyAppliedScreen(
                                     onChatWithCompany = { onChatWithCompany(application) },
                                     onApplyClick = {
                                         viewModel.updateApplicationStatus(application.id, "applied")
+                                    },
+                                    onDeleteClick = {
+                                        viewModel.deleteApplicationForRole(
+                                            applicationId = application.id,
+                                            isEmployer = false
+                                        )
                                     }
                                 )
                             }
@@ -305,7 +317,8 @@ fun ApplicationCard(
     isHighlighted: Boolean = false,
     onCardClick: () -> Unit = {},
     onChatWithCompany: () -> Unit,
-    onApplyClick: () -> Unit
+    onApplyClick: () -> Unit,
+    onDeleteClick: () -> Unit = {}
 ) {
     var employerAvatarUrl by remember { mutableStateOf<String?>(null) }
     var jobCompanyImageUrl by remember { mutableStateOf<String?>(null) }
@@ -328,6 +341,10 @@ fun ApplicationCard(
     val activePhotoUrl = jobCompanyImageUrl?.takeIf { it.isNotBlank() }
         ?: employerAvatarUrl?.takeIf { it.isNotBlank() }
     val statusText = application.status.ifBlank { "Pending" }
+
+    val isCancelledOrRejected = application.status.equals("Cancelled", ignoreCase = true) ||
+            application.status.equals("Rejected", ignoreCase = true) ||
+            application.status.equals("DeletedByEmployer", ignoreCase = true)
 
     Card(
         modifier = Modifier
@@ -433,6 +450,28 @@ fun ApplicationCard(
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
+                    )
+                }
+            } else if (isCancelledOrRejected) {
+                OutlinedButton(
+                    onClick = onDeleteClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
+                    border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.5f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Delete from list",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             } else {
