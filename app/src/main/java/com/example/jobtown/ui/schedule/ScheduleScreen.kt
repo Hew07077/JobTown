@@ -3,6 +3,7 @@ package com.example.jobtown.ui.schedule
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -89,26 +90,13 @@ fun ScheduleScreen(
     var completeTarget by remember { mutableStateOf<InterviewSchedule?>(null) }
 
     val filteredSchedules = remember(safeSchedules, selectedFilterTab, applicants) {
-        fun matchedAppStatus(schedule: InterviewSchedule): String? =
-            applicants.firstOrNull { app ->
-                app.userId == schedule.userId &&
-                        app.jobId == schedule.jobId &&
-                        !app.status.equals("Cancelled", ignoreCase = true)
-            }?.status
-
-        fun isAwaitingDecision(schedule: InterviewSchedule): Boolean {
-            val status = matchedAppStatus(schedule) ?: return true
-            return status.equals("Considered", ignoreCase = true)
-        }
-
         when (selectedFilterTab) {
             1 -> safeSchedules.filter { it.status.equals("Pending", ignoreCase = true) || it.status.equals("Scheduled", ignoreCase = true) }
             2 -> safeSchedules.filter { it.status.equals("Accepted", ignoreCase = true) }
             3 -> safeSchedules.filter { it.status.equals("Reschedule Requested", ignoreCase = true) }
-            4 -> safeSchedules.filter { it.status.equals("Completed", ignoreCase = true) && isAwaitingDecision(it) }
-            5 -> safeSchedules.filter { it.status.equals("Completed", ignoreCase = true) && !isAwaitingDecision(it) }
-            6 -> safeSchedules.filter { it.status.equals("Cancelled", ignoreCase = true) }
-            7 -> safeSchedules.filter { it.status.equals("Rejected", ignoreCase = true) }
+            4 -> safeSchedules.filter { it.status.equals("Completed", ignoreCase = true) }
+            5 -> safeSchedules.filter { it.status.equals("Cancelled", ignoreCase = true) }
+            6 -> safeSchedules.filter { it.status.equals("Rejected", ignoreCase = true) }
             else -> safeSchedules
         }
     }
@@ -138,7 +126,8 @@ fun ScheduleScreen(
                                 model = logoUrl,
                                 contentDescription = "Profile",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier
+                                    .fillMaxSize()
                                     .clip(CircleShape)
                                     .background(SageGreenLight)
                             )
@@ -171,70 +160,52 @@ fun ScheduleScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            ScrollableTabRow(
-                selectedTabIndex = selectedFilterTab,
-                containerColor = Color.White,
-                contentColor = DeepGreenDark,
-                edgePadding = 12.dp,
-                divider = {
-                    HorizontalDivider(thickness = 1.dp, color = Color(0xFFE6EDE4))
-                },
-                modifier = Modifier.fillMaxWidth()
+            // --- STATUS FILTER CHIPS BAR (matches the Home screen job-type filter style) ---
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val tabs = listOf("All", "Pending", "Accepted", "Rescheduled", "Considered", "Completed", "Cancelled", "Rejected")
+                val tabs = listOf("All", "Pending", "Accepted", "Rescheduled", "Completed", "Cancelled", "Rejected")
 
-                tabs.forEachIndexed { index, title ->
+                items(tabs.size) { index ->
+                    val title = tabs[index]
                     val tabCount = when (index) {
                         0 -> safeSchedules.size
                         1 -> safeSchedules.count { it.status.equals("Pending", ignoreCase = true) || it.status.equals("Scheduled", ignoreCase = true) }
                         2 -> safeSchedules.count { it.status.equals("Accepted", ignoreCase = true) }
                         3 -> safeSchedules.count { it.status.equals("Reschedule Requested", ignoreCase = true) }
-                        4 -> safeSchedules.count { schedule ->
-                            val appStatus = applicants.firstOrNull { app ->
-                                app.userId == schedule.userId && app.jobId == schedule.jobId && !app.status.equals("Cancelled", ignoreCase = true)
-                            }?.status
-                            schedule.status.equals("Completed", ignoreCase = true) && (appStatus?.equals("Considered", ignoreCase = true) ?: true)
-                        }
-                        5 -> safeSchedules.count { schedule ->
-                            val appStatus = applicants.firstOrNull { app ->
-                                app.userId == schedule.userId && app.jobId == schedule.jobId && !app.status.equals("Cancelled", ignoreCase = true)
-                            }?.status
-                            schedule.status.equals("Completed", ignoreCase = true) && !(appStatus?.equals("Considered", ignoreCase = true) ?: true)
-                        }
-                        6 -> safeSchedules.count { it.status.equals("Cancelled", ignoreCase = true) }
-                        7 -> safeSchedules.count { it.status.equals("Rejected", ignoreCase = true) }
+                        4 -> safeSchedules.count { it.status.equals("Completed", ignoreCase = true) }
+                        5 -> safeSchedules.count { it.status.equals("Cancelled", ignoreCase = true) }
+                        6 -> safeSchedules.count { it.status.equals("Rejected", ignoreCase = true) }
                         else -> 0
                     }
+                    val isSelected = selectedFilterTab == index
+                    val isCancelledTab = title.equals("Cancelled", ignoreCase = true) || title.equals("Rejected", ignoreCase = true)
 
-                    // We determine if there is a 'change' simply by checking if the count > 0
-                    // for actionable tabs. You can adjust the logic for the red dot here.
-                    val showRedDot = (index == 1 || index == 3) && tabCount > 0
-
-                    Tab(
-                        selected = selectedFilterTab == index,
+                    FilterChip(
+                        selected = isSelected,
                         onClick = { selectedFilterTab = index },
-                        selectedContentColor = DeepGreenDark,
-                        unselectedContentColor = TextDark.copy(alpha = 0.55f)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(vertical = 14.dp)
-                        ) {
+                        label = {
                             Text(
                                 text = "$title ($tabCount)",
-                                fontWeight = if (selectedFilterTab == index) FontWeight.Bold else FontWeight.Medium,
-                                fontSize = 14.sp
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                             )
-                            if (showRedDot) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .background(Color.Red, CircleShape)
-                                )
-                            }
-                        }
-                    }
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = if (isCancelledTab) MaterialTheme.colorScheme.error else DeepGreenDark,
+                            selectedLabelColor = Color.White,
+                            containerColor = Color.White,
+                            labelColor = if (isCancelledTab) MaterialTheme.colorScheme.error else TextDark
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = isSelected,
+                            borderColor = if (isCancelledTab) MaterialTheme.colorScheme.error.copy(alpha = 0.4f) else SageGreenDark.copy(alpha = 0.3f),
+                            selectedBorderColor = if (isCancelledTab) MaterialTheme.colorScheme.error else DeepGreenDark
+                        )
+                    )
                 }
             }
 
@@ -278,6 +249,7 @@ fun ScheduleScreen(
                                 ScheduleCard(
                                     schedule = schedule,
                                     isEmployer = isEmployer,
+                                    candidateName = schedule.candidateDisplayName(applicants),
                                     onCardClick = { navController.navigate(Screen.ScheduleDetail.createRoute(schedule.id)) },
                                     onUpdateStatus = onUpdateStatus,
                                     onRespondInvite = onRespondInvite,
@@ -314,30 +286,63 @@ fun ScheduleScreen(
     completeTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { completeTarget = null },
-            title = { Text("Complete interview", fontWeight = FontWeight.Bold) },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Complete Interview", fontWeight = FontWeight.Bold)
+                    IconButton(
+                        onClick = { completeTarget = null },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Cancel", tint = TextDark)
+                    }
+                }
+            },
             text = {
                 Text(
-                    "How did it go with ${target.seekerName.ifBlank { "the candidate" }}? " +
-                            "Choose an outcome to complete this interview."
+                    "Select the application outcome for ${target.candidateDisplayName(applicants).ifBlank { "this candidate" }}. " +
+                            "The interview will be marked as Completed."
                 )
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        onCompleteDecision(target, "Considered")
-                        completeTarget = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
-                ) { Text("Considered", color = Color.White) }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = {
-                        onCompleteDecision(target, "Rejected")
-                        completeTarget = null
-                    },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
-                ) { Text("Rejected") }
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            onCompleteDecision(target, "Considered")
+                            completeTarget = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
+                    ) {
+                        Text("Considered", color = Color.White)
+                    }
+                    Button(
+                        onClick = {
+                            onCompleteDecision(target, "Offered")
+                            completeTarget = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                    ) {
+                        Text("Offered", color = Color.White)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            onCompleteDecision(target, "Rejected")
+                            completeTarget = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828))
+                    ) {
+                        Text("Rejected")
+                    }
+                }
             }
         )
     }
@@ -346,7 +351,7 @@ fun ScheduleScreen(
         AlertDialog(
             onDismissRequest = { rejectTarget = null },
             title = { Text("Reject Interview Invitation", fontWeight = FontWeight.Bold) },
-            text = { Text("Reject this interview invite? The employer will see the status as Rejected. This is different from cancelling an already accepted interview.") },
+            text = { Text("Reject this interview invite? The employer will see the status as Rejected.") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -368,7 +373,7 @@ fun ScheduleScreen(
         AlertDialog(
             onDismissRequest = { cancelTarget = null },
             title = { Text("Cancel Interview", fontWeight = FontWeight.Bold) },
-            text = { Text("Cancel this scheduled interview? The status will be marked as Cancelled, not Rejected.") },
+            text = { Text("Cancel this scheduled interview? The status will be marked as Cancelled.") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -390,7 +395,7 @@ fun ScheduleScreen(
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text("Delete interview", fontWeight = FontWeight.Bold) },
-            text = { Text("Remove this cancelled interview from your list? This cannot be undone.") },
+            text = { Text("Remove this interview from your list? This cannot be undone.") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -451,6 +456,7 @@ fun ScheduleScreen(
 private fun ScheduleCard(
     schedule: InterviewSchedule,
     isEmployer: Boolean,
+    candidateName: String = schedule.seekerName,
     onCardClick: () -> Unit,
     onUpdateStatus: (scheduleId: String, status: String) -> Unit,
     onRespondInvite: (scheduleId: String, status: String) -> Unit,
@@ -464,6 +470,7 @@ private fun ScheduleCard(
     val context = LocalContext.current
     val statusText = schedule.status.ifBlank { "Pending" }
     val cancelled = schedule.isCancelledInterview()
+    val isCompletedOrCancelled = statusText.equals("Completed", ignoreCase = true) || cancelled
     val meetingKind = detectMeetingKind(schedule.locationOrLink)
     val meetingValue = meetingDisplayValue(schedule.locationOrLink)
 
@@ -508,11 +515,11 @@ private fun ScheduleCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (schedule.seekerName.isNotBlank()) {
+            if (candidateName.isNotBlank()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Person, contentDescription = null, tint = SageGreenDark, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = schedule.seekerName, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextDark)
+                    Text(text = candidateName, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextDark)
                 }
                 Spacer(modifier = Modifier.height(6.dp))
             }
@@ -607,7 +614,7 @@ private fun ScheduleCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            if (cancelled) {
+            if (isCompletedOrCancelled) {
                 OutlinedButton(
                     onClick = onDeleteSchedule,
                     modifier = Modifier.fillMaxWidth(),
@@ -618,37 +625,30 @@ private fun ScheduleCard(
                     Text("Delete from list", fontSize = 12.sp)
                 }
             } else if (isEmployer) {
-                val isLocked = statusText.equals("Accepted", ignoreCase = true) ||
-                        statusText.equals("Completed", ignoreCase = true)
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (isLocked) {
-                        OutlinedButton(
-                            onClick = {},
-                            enabled = false,
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                disabledContentColor = TextDark.copy(alpha = 0.4f)
-                            )
-                        ) {
-                            Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Locked", fontSize = 12.sp)
-                        }
-                    } else {
+                val isAccepted = statusText.equals("Accepted", ignoreCase = true)
+                if (isAccepted) {
+                    OutlinedButton(
+                        onClick = onCompleteClick,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Complete", fontSize = 12.sp)
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Button(
                             onClick = onEditSchedule,
                             colors = ButtonDefaults.buttonColors(containerColor = DeepGreenDark)
                         ) {
                             Text("Edit", fontSize = 12.sp, color = Color.White)
                         }
-                    }
-                    if (statusText.equals("Pending", ignoreCase = true) || statusText.equals("Accepted", ignoreCase = true)) {
-                        OutlinedButton(onClick = onCompleteClick) {
-                            Text("Complete", fontSize = 12.sp)
+                        if (statusText.equals("Pending", ignoreCase = true) || statusText.equals("Scheduled", ignoreCase = true)) {
+                            OutlinedButton(onClick = onCompleteClick) {
+                                Text("Complete", fontSize = 12.sp)
+                            }
                         }
-                    }
-                    OutlinedButton(onClick = { onUpdateStatus(schedule.id, "Cancelled") }) {
-                        Text("Cancel", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                        OutlinedButton(onClick = { onUpdateStatus(schedule.id, "Cancelled") }) {
+                            Text("Cancel", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             } else {
@@ -677,9 +677,7 @@ private fun ScheduleCard(
                             Text("Reject", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                         }
                     }
-                } else if (statusText.equals("Accepted", ignoreCase = true) ||
-                    statusText.equals("Reschedule Requested", ignoreCase = true)
-                ) {
+                } else if (statusText.equals("Reschedule Requested", ignoreCase = true)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -859,11 +857,11 @@ internal fun RescheduleRequestDialog(
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                Text("Reason for reschedule", fontWeight = FontWeight.SemiBold, color = DeepGreenDark, fontSize = 13.sp)
+                Text("Reason for reschedule*", fontWeight = FontWeight.SemiBold, color = DeepGreenDark, fontSize = 13.sp)
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it },
-                    label = { Text("Why do you need to reschedule?*") },
+                    label = { Text("Why do you need to reschedule?") },
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)

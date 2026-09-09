@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import com.example.jobtown.data.model.InterviewSchedule
+import com.example.jobtown.data.model.JobApplication
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -80,15 +81,71 @@ fun isOnlineLocation(value: String): Boolean {
     val target = value.trim()
     if (target.isBlank()) return false
     return target.startsWith("http://", ignoreCase = true) ||
-        target.startsWith("https://", ignoreCase = true) ||
-        target.contains("meet.google", ignoreCase = true) ||
-        target.contains("zoom.us", ignoreCase = true) ||
-        target.contains("teams.microsoft", ignoreCase = true) ||
-        target.startsWith("meet:", ignoreCase = true)
+            target.startsWith("https://", ignoreCase = true) ||
+            target.contains("meet.google", ignoreCase = true) ||
+            target.contains("zoom.us", ignoreCase = true) ||
+            target.contains("teams.microsoft", ignoreCase = true) ||
+            target.startsWith("meet:", ignoreCase = true)
 }
 
 fun InterviewSchedule.isCancelledInterview(): Boolean =
     status.equals("Cancelled", ignoreCase = true) || status.equals("Rejected", ignoreCase = true)
+
+/**
+ * Finds the [JobApplication] behind an interview schedule, so the candidate's full
+ * application (education, experience, resume, cover letter, etc.) can be shown alongside
+ * the interview details. Prefers an exact userId + jobId match, then falls back to just
+ * userId (covers schedules created before jobId was always recorded).
+ */
+fun findApplicationForSchedule(
+    schedule: InterviewSchedule,
+    applicants: List<JobApplication>
+): JobApplication? {
+    if (schedule.userId.isBlank()) return null
+    return applicants.firstOrNull {
+        it.userId == schedule.userId && schedule.jobId.isNotBlank() && it.jobId == schedule.jobId
+    } ?: applicants.firstOrNull { it.userId == schedule.userId }
+}
+
+/** Display name for the candidate on a schedule: prefers the schedule's own seekerName,
+ * falling back to the linked application's applicant name if that's blank. */
+fun InterviewSchedule.candidateDisplayName(applicants: List<JobApplication>): String =
+    seekerName.ifBlank { findApplicationForSchedule(this, applicants)?.applicantName.orEmpty() }
+
+/** Opens a resume/portfolio URL (or any external link) in the browser. */
+fun openExternalLink(context: Context, url: String) {
+    val clean = url.trim()
+    if (clean.isBlank()) return
+    try {
+        val target = if (clean.startsWith("http://", ignoreCase = true) ||
+            clean.startsWith("https://", ignoreCase = true)
+        ) clean else "https://$clean"
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
+    } catch (_: Exception) {
+        Toast.makeText(context, "Unable to open link", Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** A single parsed certificate entry: the human-readable label (e.g. "CCNA — Google (2026)")
+ * and the certificate file/link URL, if one is embedded in the text. */
+data class CertificateEntry(val label: String, val url: String?)
+
+private val urlRegex = Regex("(https?://\\S+)")
+
+fun parseCertificateEntries(value: String): List<CertificateEntry> =
+    value.split("\n")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .map { line ->
+            val match = urlRegex.find(line)
+            val url = match?.value?.trimEnd('.', ',', ')', ']')
+            val label = if (url != null) {
+                line.replace(url, "").trim().trimEnd('—', '-', '•', ':').trim()
+            } else {
+                line
+            }
+            CertificateEntry(label = label.ifBlank { "Certificate" }, url = url)
+        }
 
 fun openInterviewDestination(context: Context, locationOrLink: String) {
     val kind = detectMeetingKind(locationOrLink)

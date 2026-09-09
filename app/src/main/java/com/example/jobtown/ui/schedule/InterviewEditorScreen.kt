@@ -96,7 +96,7 @@ fun InterviewEditorScreen(
     }
     var seekerName by remember {
         mutableStateOf(
-            existing?.seekerName?.ifBlank { prefill.seekerName.orEmpty() }
+            existing?.candidateDisplayName(applicants)?.ifBlank { prefill.seekerName.orEmpty() }
                 ?: prefill.seekerName.orEmpty().ifBlank {
                     uniqueApplicants.find { it.userId == selectedApplicantId }?.applicantName.orEmpty()
                 }
@@ -362,7 +362,7 @@ fun InterviewEditorScreen(
                     }
                 } else {
                     OutlinedTextField(
-                        value = seekerName.ifBlank { existing?.seekerName.orEmpty() },
+                        value = seekerName.ifBlank { existing?.candidateDisplayName(applicants).orEmpty() },
                         onValueChange = { if (!isEdit) seekerName = it },
                         readOnly = isEdit,
                         label = { Text("Candidate") },
@@ -373,7 +373,8 @@ fun InterviewEditorScreen(
 
                 OutlinedTextField(
                     value = title,
-                    onValueChange = { title = it },
+                    onValueChange = { if (!isEdit) title = it },
+                    readOnly = isEdit,
                     label = { Text("Job title") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
