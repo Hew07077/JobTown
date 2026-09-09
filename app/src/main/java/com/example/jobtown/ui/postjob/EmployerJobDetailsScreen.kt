@@ -75,7 +75,6 @@ import com.example.jobtown.ui.theme.SageGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.SageGreenMain
 import com.example.jobtown.ui.theme.TextDark
-import com.example.jobtown.utils.LocationOptions
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -93,6 +92,20 @@ fun EmployerJobDetailScreen(
     onBackClick: () -> Unit = { navController?.popBackStack() }
 ) {
     val context = LocalContext.current
+
+    // Maintain dynamic state for user details to reflect new locations instantly
+    var activeUser by remember { mutableStateOf(currentUser) }
+
+    // Fetch latest user profile directly on screen load regardless of ID changes
+    LaunchedEffect(Unit) {
+        val userId = currentUser?.id.orEmpty()
+        if (userId.isNotBlank()) {
+            val freshUser = UserRepository.fetchUserById(userId)
+            if (freshUser != null) {
+                activeUser = freshUser
+            }
+        }
+    }
 
     // Initialize state in ViewModel
     LaunchedEffect(initialJob) {
@@ -202,9 +215,11 @@ fun EmployerJobDetailScreen(
         }
     }
 
-    val savedAddresses = remember(currentUser?.location) {
-        LocationOptions.parseAddresses(currentUser?.location.orEmpty())
-            .map { it.display() }
+    // Directly parse addresses with pipe '|' delimiter
+    val savedAddresses = remember(activeUser) {
+        activeUser?.location.orEmpty()
+            .split("|")
+            .map { it.trim() }
             .filter { it.isNotBlank() }
     }
 
@@ -368,7 +383,9 @@ fun EmployerJobDetailScreen(
                                 isOkuFriendly = fields.isOkuFriendly,
                                 expiredAt = displayIsoExpiryDate
                             )
-                            viewModel.updateJob(updatedJob)
+                            viewModel.updateJob(updatedJob) { updatedUser ->
+                                activeUser = updatedUser
+                            }
                         }
                     )
                 } else {
