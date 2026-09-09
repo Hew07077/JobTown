@@ -56,12 +56,16 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.jobtown.data.model.Job
 import com.example.jobtown.data.model.User
+import com.example.jobtown.data.repository.UserRepository
 import com.example.jobtown.ui.theme.BackgroundWhite
 import com.example.jobtown.ui.theme.DeepGreenDark
 import com.example.jobtown.ui.theme.SageGreenDark
 import com.example.jobtown.ui.theme.SageGreenLight
 import com.example.jobtown.ui.theme.SageGreenMain
 import com.example.jobtown.ui.theme.TextDark
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -259,25 +263,46 @@ fun PostJobScreen(
     onJobPosted: (Job, onComplete: (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onBackClick: () -> Unit = { navController?.popBackStack() }
 ) {
-    val employerAvatar = remember(currentUser?.avatarUrl) {
-        currentUser?.avatarUrl?.trim()?.takeIf { it.isNotBlank() }
+    var activeUser by remember { mutableStateOf(currentUser) }
+
+    LaunchedEffect(Unit) {
+        val userId = currentUser?.id.orEmpty()
+        if (userId.isNotBlank()) {
+            val freshUser = UserRepository.fetchUserById(userId)
+            if (freshUser != null) {
+                activeUser = freshUser
+            }
+        }
     }
 
-    val savedAddresses = remember(currentUser?.location) {
-        com.example.jobtown.utils.LocationOptions.parseAddresses(currentUser?.location.orEmpty())
-            .map { it.display() }
+    val employerAvatar = remember(activeUser?.avatarUrl) {
+        activeUser?.avatarUrl?.trim()?.takeIf { it.isNotBlank() }
+    }
+
+    // Split saved addresses using '|' delimiter
+    val savedAddresses = remember(activeUser) {
+        activeUser?.location.orEmpty()
+            .split("|")
+            .map { it.trim() }
             .filter { it.isNotBlank() }
     }
 
     val fields = rememberJobFormFields(
-        company = currentUser?.companyName?.ifBlank { currentUser.name } ?: currentUser?.name ?: "",
+        company = activeUser?.companyName?.ifBlank { activeUser?.name } ?: activeUser?.name ?: "",
         location = savedAddresses.firstOrNull().orEmpty(),
         useCustomLocation = savedAddresses.isEmpty()
     )
 
-    LaunchedEffect(currentUser?.companyName, currentUser?.name) {
+    LaunchedEffect(activeUser?.companyName, activeUser?.name) {
         if (fields.company.isBlank()) {
-            fields.company = currentUser?.companyName?.ifBlank { currentUser.name } ?: currentUser?.name ?: ""
+            fields.company = activeUser?.companyName?.ifBlank { activeUser?.name } ?: activeUser?.name ?: ""
+        }
+    }
+
+    LaunchedEffect(savedAddresses) {
+        if (fields.location.isBlank() && savedAddresses.isNotEmpty()) {
+            fields.location = savedAddresses.first()
+            fields.useCustomLocation = false
         }
     }
 
@@ -334,7 +359,7 @@ fun PostJobScreen(
             )
         }
     }
-//
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -389,31 +414,40 @@ fun PostJobScreen(
                 onSubmit = {
                     isSubmitting = true
                     val userId = currentUser?.id?.trim()?.ifEmpty { null }
-                    val newJob = Job(
-                        id = UUID.randomUUID().toString(),
-                        title = fields.title.trim(),
-                        company = fields.company.trim(),
-                        companyImageUrl = employerAvatar,
-                        location = fields.location.trim(),
-                        salary = fields.formattedSalary(),
-                        salaryRange = fields.formattedSalary(),
-                        type = fields.type,
-                        description = fields.description.trim(),
-                        requirements = fields.requirementsList(),
-                        skills = fields.skillsList(),
-                        isFeatured = fields.isFeatured,
-                        isOkuFriendly = fields.isOkuFriendly,
-                        employerId = userId,
-                        postedByUserId = userId,
-                        status = "active",
-                        expiredAt = displayIsoExpiryDate
-                    )
-                    onJobPosted(newJob) { success, message ->
-                        isSubmitting = false
-                        if (success) {
-                            navController?.popBackStack()
-                        } else {
-                            fields.errorMessage = message ?: "Failed to post job to Supabase."
+                    val newLocation = fields.location.trim()
+
+                    CoroutineScope(Dispatchers.IO).launch {
+                        if (!userId.isNullOrBlank() && newLocation.isNotBlank()) {
+                            UserRepository.addSavedAddressToEmployer(userId, newLocation)
+                        }
+
+                        val newJob = Job(
+                            id = UUID.randomUUID().toString(),
+                            title = fields.title.trim(),
+                            company = fields.company.trim(),
+                            companyImageUrl = employerAvatar,
+                            location = newLocation,
+                            salary = fields.formattedSalary(),
+                            salaryRange = fields.formattedSalary(),
+                            type = fields.type,
+                            description = fields.description.trim(),
+                            requirements = fields.requirementsList(),
+                            skills = fields.skillsList(),
+                            isFeatured = fields.isFeatured,
+                            isOkuFriendly = fields.isOkuFriendly,
+                            employerId = userId,
+                            postedByUserId = userId,
+                            status = "active",
+                            expiredAt = displayIsoExpiryDate
+                        )
+
+                        onJobPosted(newJob) { success, message ->
+                            isSubmitting = false
+                            if (success) {
+                                navController?.popBackStack()
+                            } else {
+                                fields.errorMessage = message ?: "Failed to post job to Supabase."
+                            }
                         }
                     }
                 }

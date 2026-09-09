@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.example.jobtown.Screen
@@ -73,7 +74,7 @@ fun JobTownBottomNavigationBar(
     )
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
+    val currentDestination = navBackStackEntry?.destination
 
     Surface(
         color = SageGreenMain,
@@ -87,7 +88,10 @@ fun JobTownBottomNavigationBar(
             modifier = Modifier.height(72.dp)
         ) {
             items.forEach { item ->
-                val isSelected = currentRoute == item.route
+                // Check hierarchy to stay selected even if sub-routes or search params are active
+                val isSelected = currentDestination?.hierarchy?.any {
+                    it.route?.startsWith(item.route) == true
+                } == true
 
                 val iconScale by animateFloatAsState(
                     targetValue = if (isSelected) 1.15f else 1.0f,
@@ -155,7 +159,7 @@ fun JobTownBottomNavigationBar(
                         unselectedTextColor = DeepGreenDark.copy(alpha = 0.5f)
                     ),
                     onClick = {
-                        if (currentRoute != item.route) {
+                        if (!isSelected) {
                             navController.navigate(item.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true

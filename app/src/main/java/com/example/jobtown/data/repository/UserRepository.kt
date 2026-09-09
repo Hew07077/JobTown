@@ -120,7 +120,7 @@ object UserRepository {
     suspend fun fetchSavedAddresses(userId: String): List<String> = withContext(Dispatchers.IO) {
         val user = fetchUserById(userId) ?: return@withContext emptyList()
         if (user.location.isBlank()) emptyList()
-        else user.location.split(";").map { it.trim() }.filter { it.isNotBlank() }
+        else user.location.split("|").map { it.trim() }.filter { it.isNotBlank() }
     }
 
     suspend fun addSavedAddressToEmployer(userId: String, newAddress: String): Boolean = withContext(Dispatchers.IO) {
@@ -129,13 +129,16 @@ object UserRepository {
 
         try {
             val user = fetchUserById(userId) ?: return@withContext false
-            val existingAddresses = user.location.split(";")
+            // Split using pipe '|' delimiter
+            val existingAddresses = user.location
+                .split("|")
                 .map { it.trim() }
                 .filter { it.isNotBlank() }
 
             if (!existingAddresses.any { it.equals(trimmedAddress, ignoreCase = true) }) {
                 val updatedAddressesList = existingAddresses + trimmedAddress
-                val updatedLocationString = updatedAddressesList.joinToString("; ")
+                // Join using pipe '|' delimiter
+                val updatedLocationString = updatedAddressesList.joinToString(" | ")
                 val updatedUser = user.copy(location = updatedLocationString)
                 return@withContext saveUserToSupabase(updatedUser)
             }

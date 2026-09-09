@@ -3,6 +3,7 @@ package com.example.jobtown.ui.postjob
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.jobtown.data.model.Job
+import com.example.jobtown.data.model.User
 import com.example.jobtown.data.repository.UserRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,14 +36,20 @@ class EmployerJobDetailViewModel : ViewModel() {
         }
     }
 
-    fun updateJob(updatedJob: Job) {
+    fun updateJob(updatedJob: Job, onUserUpdated: (User) -> Unit = {}) {
         viewModelScope.launch {
             _isLoading.value = true
 
-            // Sync new location to employer profile if needed
+            // Sync new location to employer profile using pipe | logic
             val employerId = updatedJob.employerId ?: updatedJob.postedByUserId.orEmpty()
             if (employerId.isNotBlank() && updatedJob.location.isNotBlank()) {
-                UserRepository.addSavedAddressToEmployer(employerId, updatedJob.location)
+                val added = UserRepository.addSavedAddressToEmployer(employerId, updatedJob.location)
+                if (added) {
+                    val freshUser = UserRepository.fetchUserById(employerId)
+                    if (freshUser != null) {
+                        onUserUpdated(freshUser)
+                    }
+                }
             }
 
             val success = UserRepository.updateJob(updatedJob)
@@ -66,7 +73,7 @@ class EmployerJobDetailViewModel : ViewModel() {
             if (success) {
                 _eventFlow.emit(JobDetailUiEvent.JobDeleted)
             } else {
-                _eventFlow.emit(JobDetailUiEvent.ShowError("Failed to delete job listing. Please try again."))
+                _eventFlow.emit(JobDetailUiEvent.ShowError("Failed to delete job listing. Please check your network or try again."))
             }
         }
     }
