@@ -175,7 +175,7 @@ fun ResetPasswordScreen(
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                     isSaving = false
-                                    errorMessage = "Couldn't update your password. The reset link may have expired -- please request a new one."
+                                    errorMessage = "The new password cannot same with the current password"
                                 }
                             }
                         },
