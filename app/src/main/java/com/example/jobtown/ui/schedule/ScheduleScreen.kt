@@ -708,6 +708,7 @@ internal fun RescheduleRequestDialog(
     onSubmit: (reason: String, preferredTime: String) -> Unit
 ) {
     var reason by remember { mutableStateOf("") }
+    var reasonTouched by remember { mutableStateOf(false) }
     val defaultDate = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) }
     var date by remember { mutableStateOf(defaultDate) }
     var time by remember { mutableStateOf("10:00 AM") }
@@ -793,7 +794,10 @@ internal fun RescheduleRequestDialog(
                 Surface(shadowElevation = 12.dp, color = Color.White) {
                     Button(
                         onClick = {
-                            if (reason.isBlank()) return@Button
+                            if (reason.isBlank()) {
+                                reasonTouched = true
+                                return@Button
+                            }
                             onSubmit(reason.trim(), "$date at $time")
                         },
                         modifier = Modifier
@@ -863,6 +867,12 @@ internal fun RescheduleRequestDialog(
                     onValueChange = { reason = it },
                     label = { Text("Why do you need to reschedule?") },
                     minLines = 3,
+                    isError = reasonTouched && reason.isBlank(),
+                    supportingText = {
+                        if (reasonTouched && reason.isBlank()) {
+                            Text("Please tell the employer why you need to reschedule", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 )
